@@ -5,6 +5,7 @@ Visual Scripting IDE for ROS 2 (Robot Operating System)
 ROS 2 Blueprint Studio is a standalone desktop application that allows you to create, configure, and run ROS 2 nodes using a visual node-based editor similar to Unreal Engine Blueprints.
 
 It runs entirely on Windows (and Linux) without requiring a local ROS 2 installation, thanks to Docker integration.
+<img width="1399" height="931" alt="image" src="https://github.com/user-attachments/assets/c27e1f6e-4da8-4d37-8a0c-54e057f956f6" />
 
 Key Features
 
@@ -21,8 +22,12 @@ Key Features
  Project System: Save and load your blueprints as JSON files.
 
  Modern UI: Dark theme, dockable panels, and user-friendly interface.
+	
 
- Prerequisites
+Alpha Version / PoC: This tool was created to simplify ROS2 usage on Windows. Code quality is subject to improvement. Feedback is welcome!
+ 
+
+	Prerequisites
 
 To run this application, you must have Docker installed and running.
 
