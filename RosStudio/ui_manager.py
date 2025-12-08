@@ -2,21 +2,24 @@ import os
 import json
 from PySide6 import QtWidgets, QtCore, QtGui
 
-# === КАСТОМНЫЙ СПИСОК С ВИЗУАЛЬНЫМ DRAG & DROP ===
+# === 1. Drag & Drop List Widget ===
 class DraggableListWidget(QtWidgets.QListWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, user_lib_path=""):
         super().__init__(parent)
+        self.user_lib_path = user_lib_path
+        
         self.setDragEnabled(True)
-        self.setDefaultDropAction(QtCore.Qt.CopyAction)
-        # Настраиваем, чтобы можно было тащить
         self.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragOnly)
+        self.setDefaultDropAction(QtCore.Qt.CopyAction)
         
+        # Context Menu
+        self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_context_menu)
+
     def startDrag(self, supportedActions):
-        """Создает красивый призрак ноды при перетаскивании"""
         item = self.currentItem()
         if not item: return
-        
         code = item.data(QtCore.Qt.UserRole)
         if not code: return
 
@@ -26,32 +29,61 @@ class DraggableListWidget(QtWidgets.QListWidget):
         drag = QtGui.QDrag(self)
         drag.setMimeData(mime_data)
         
-        # --- ВИЗУАЛИЗАЦИЯ (Ghost) ---
-        # Делаем "скриншот" элемента списка
+        # Create a visual representation for the drag
         rect = self.visualItemRect(item)
         pixmap = self.viewport().grab(rect)
-        
-        # Можно сделать его полупрозрачным
         painter = QtGui.QPainter(pixmap)
         painter.setCompositionMode(QtGui.QPainter.CompositionMode_DestinationIn)
-        painter.fillRect(pixmap.rect(), QtGui.QColor(0, 0, 0, 200))
+        painter.fillRect(pixmap.rect(), QtGui.QColor(0, 0, 0, 150))
         painter.end()
-        
         drag.setPixmap(pixmap)
-        # Центрируем картинку под мышкой
         drag.setHotSpot(QtCore.QPoint(pixmap.width() // 2, pixmap.height() // 2))
-        
         drag.exec(supportedActions)
 
+    def show_context_menu(self, pos):
+        """Context menu for deleting user templates."""
+        item = self.itemAt(pos)
+        if not item: return
+        
+        code = item.data(QtCore.Qt.UserRole)
+        
+        # Only allow deleting user library items
+        if code and str(code).startswith("USER_LIB:"):
+            menu = QtWidgets.QMenu(self)
+            menu.setStyleSheet("QMenu { background-color: #333; color: white; border: 1px solid #555; } QMenu::item:selected { background-color: #555; }")
+            
+            delete_action = menu.addAction("Delete Template")
+            action = menu.exec(self.mapToGlobal(pos))
+            
+            if action == delete_action:
+                self.delete_template(item, code)
+
+    def delete_template(self, item, code):
+        filename = code.split(":", 1)[1]
+        path = os.path.join(self.user_lib_path, filename)
+        
+        confirm = QtWidgets.QMessageBox.question(
+            self, "Confirm Delete", 
+            f"Are you sure you want to delete '{filename}'?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        
+        if confirm == QtWidgets.QMessageBox.Yes:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception as e:
+                    print(f"Error deleting file: {e}")
+            self.takeItem(self.row(item))
+
+# === 2. UI Manager ===
 class UiManager:
     def __init__(self, main_window):
         self.main_window = main_window
-        
         self.tabs = None
         self.console_sys = None
         self.console_ros = None
         self.node_list = None
-        
         self.actions = {}
         
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -79,9 +111,6 @@ class UiManager:
             QListWidget::item, DraggableListWidget::item { padding: 6px; border-bottom: 1px solid #eee; }
             QListWidget::item:selected, DraggableListWidget::item:selected { background-color: #bbdefb; color: #000; }
             QTextEdit { background-color: #1e1e1e; color: #00ff00; border: none; font-family: 'Consolas', monospace; font-size: 10pt; }
-            QToolBar { background: #e0e0e0; border-bottom: 1px solid #bbb; spacing: 5px; padding: 3px; }
-            QToolButton { background-color: transparent; border: 1px solid transparent; border-radius: 3px; padding: 4px; }
-            QToolButton:hover { background-color: #d0d0d0; }
         """)
 
     def _create_central_widget(self):
@@ -100,16 +129,16 @@ class UiManager:
             toolbar.addAction(action)
             return action
 
-        self.actions['save'] = add_action("Save", QtWidgets.QStyle.SP_DialogSaveButton, "Сохранить проект")
-        self.actions['open'] = add_action("Open", QtWidgets.QStyle.SP_DialogOpenButton, "Открыть проект")
+        self.actions['save'] = add_action("Save", QtWidgets.QStyle.SP_DialogSaveButton, "Save Project")
+        self.actions['open'] = add_action("Open", QtWidgets.QStyle.SP_DialogOpenButton, "Open Project")
         toolbar.addSeparator()
-        self.actions['group'] = add_action("Group", QtWidgets.QStyle.SP_DirClosedIcon, "Сгруппировать (Ctrl+G)")
+        self.actions['group'] = add_action("Group", QtWidgets.QStyle.SP_DirClosedIcon, "Group Selection (Ctrl+G)")
         toolbar.addSeparator()
-        self.actions['run'] = add_action("Run", QtWidgets.QStyle.SP_MediaPlay, "Запуск")
-        self.actions['stop'] = add_action("Stop", QtWidgets.QStyle.SP_MediaStop, "Стоп")
+        self.actions['run'] = add_action("Run", QtWidgets.QStyle.SP_MediaPlay, "Run/Deploy")
+        self.actions['stop'] = add_action("Stop", QtWidgets.QStyle.SP_MediaStop, "Stop")
         self.actions['stop'].setEnabled(False)
         toolbar.addSeparator()
-        self.actions['clear'] = add_action("Clear", QtWidgets.QStyle.SP_TrashIcon, "Очистить")
+        self.actions['clear'] = add_action("Clear", QtWidgets.QStyle.SP_TrashIcon, "Clear Graph")
 
     def _create_docks(self):
         dock_sys = QtWidgets.QDockWidget("System Log", self.main_window)
@@ -128,32 +157,38 @@ class UiManager:
         dock = QtWidgets.QDockWidget("Library", self.main_window)
         dock.setAllowedAreas(QtCore.Qt.LeftDockWidgetArea | QtCore.Qt.RightDockWidgetArea)
         
-        # ЗАМЕНЯЕМ QListWidget НА НАШ DraggableListWidget
-        self.node_list = DraggableListWidget()
+        self.node_list = DraggableListWidget(user_lib_path=self.user_lib_path)
         self.node_list.itemDoubleClicked.connect(callback_double_click)
         
         dock.setWidget(self.node_list)
         self.main_window.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock)
-        
         self.refresh_palette()
 
     def refresh_palette(self):
         self.node_list.clear()
         
-        self._add_palette_item("Py: Publisher", "PY_PUB", "#2e7d32")
-        self._add_palette_item("Py: Subscriber", "PY_SUB", "#2e7d32")
-        self._add_palette_item("Py: Custom Code", "PY_CUSTOM", "#1b5e20")
+        # --- PYTHON NODES ---
+        self._add_separator("Python Nodes")
+        self._add_palette_item("Py: String Pub", "PY_STRING_PUB", "#2e7d32")
+        self._add_palette_item("Py: String Sub", "PY_STRING_SUB", "#2e7d32")
+        self._add_palette_item("Py: Twist Pub", "PY_TWIST_PUB", "#2e7d32")
+        self._add_palette_item("Py: Twist Sub", "PY_TWIST_SUB", "#2e7d32")
+        self._add_palette_item("Py: Custom Node", "PY_CUSTOM", "#1b5e20")
         
+        # --- C++ NODES ---
         self._add_separator("C++ Nodes")
-        self._add_palette_item("C++: Publisher", "CPP_PUB", "#1565c0")
-        self._add_palette_item("C++: Subscriber", "CPP_SUB", "#1565c0")
-        self._add_palette_item("C++: Custom Code", "CPP_CUSTOM", "#0d47a1")
+        self._add_palette_item("C++: String Pub", "CPP_STRING_PUB", "#1565c0")
+        self._add_palette_item("C++: String Sub", "CPP_STRING_SUB", "#1565c0")
+        self._add_palette_item("C++: Twist Pub", "CPP_TWIST_PUB", "#1565c0")
+        self._add_palette_item("C++: Twist Sub", "CPP_TWIST_SUB", "#1565c0")
+        self._add_palette_item("C++: Custom Node", "CPP_CUSTOM", "#0d47a1")
         
+        # --- TOOLS ---
         self._add_separator("Tools")
         self._add_palette_item("Data Monitor", "MONITOR", "#006064")
 
+        # --- USER LIB ---
         self._add_separator("My Blueprints")
-        
         if os.path.exists(self.user_lib_path):
             files = [f for f in os.listdir(self.user_lib_path) if f.endswith('.json')]
             if not files:
