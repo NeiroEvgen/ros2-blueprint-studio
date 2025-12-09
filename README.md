@@ -42,12 +42,13 @@ If you want to modify the code or contribute:
 
 1.  **Clone this repository:**
     ```bash
-    git clone [https://github.com/NeiroEvgen/ros2-visual-studio.git](https://github.com/NeiroEvgen/ros2-visual-studio.git)
+    git clone https://github.com/NeiroEvgen/ros2-visual-studio.git
     cd ros2-visual-studio
     ```
 
 2.  **Install dependencies:**
     ```bash
+    cd RosStudio
     pip install -r requirements.txt
     ```
 
