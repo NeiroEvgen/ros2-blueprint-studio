@@ -13,26 +13,27 @@ It runs entirely on **Windows** (and Linux) without requiring a local ROS 2 inst
 ## 🚀 Key Features
 
 * **🔌 Visual Scripting:** Connect nodes with wires to create topics and data flows intuitively.
-* **🐍 & ⚙️ Python & C++ Support:** Two separate tabs for creating graphs in Python or C++. The IDE automatically compiles C++ nodes inside the container.
+* **🚀 Portable Mode:** Runs as a single `.exe` file on Windows (or binary on Linux). No installation required.
 * **🐳 Docker Powered:** No need to install ROS 2 locally. All nodes run inside an isolated Docker container (`osrf/ros:humble-desktop`).
+* **🐍 & ⚙️ Python & C++ Support:** Two separate tabs for creating graphs in Python or C++. The IDE automatically compiles C++ nodes inside the container.
 * **📝 Custom Code Nodes:** Double-click a node to open the built-in code editor and write your own logic on the fly.
 * **📦 Subgraphs (Grouping):** Group multiple nodes into a single block to keep your graph clean.
 * **💾 Project System:** Save and load your blueprints as JSON files.
-* **🎨 Modern UI:** Dark theme, dockable panels, and a user-friendly interface.
+* **🎨 Modern UI:** Professional dark theme (Material Design), dockable panels, and a user-friendly interface.
 
 ## 🛠️ Prerequisites
 
 To run this application, you must have Docker installed and running.
 
 * **Windows:** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/).
-* **Linux:** Install Docker Engine.
+* **Linux:** Install Docker Engine
 
 ## 📥 How to Run
 
-### Option 1: Download EXE (Windows) - *Recommended*
+### Option 1: Download Release (Recommended)
 
 1.  Go to the **[Releases](../../releases)** page of this repository.
-2.  Download the latest `Ros2Studio.exe`.
+2.  Download the latest executable (`ROS2Studio.exe` for Windows).
 3.  Run the file.
     > **Note:** The first launch might take a few minutes as it pulls the ROS 2 Docker image (~2GB).
 
@@ -42,13 +43,12 @@ If you want to modify the code or contribute:
 
 1.  **Clone this repository:**
     ```bash
-    git clone https://github.com/NeiroEvgen/ros2-visual-studio.git
+    git clone [https://github.com/NeiroEvgen/ros2-visual-studio.git](https://github.com/NeiroEvgen/ros2-visual-studio.git)
     cd ros2-visual-studio
     ```
 
 2.  **Install dependencies:**
     ```bash
-    cd RosStudio
     pip install -r requirements.txt
     ```
 
@@ -70,7 +70,16 @@ If you want to modify the code or contribute:
 
 If you want to build the executable yourself from the source:
 
-```bash
-pip install pyinstaller
+### 🟦 Windows Build
 
-pyinstaller --noconsole --onefile --name="Ros2Studio" --hidden-import=NodeGraphQt --hidden-import=docker --hidden-import=PySide6.QtSvg --hidden-import=PySide6.QtXml --paths=. main.py
+Run this command in PowerShell or CMD:
+
+```bash
+pyinstaller --noconsole --onefile --clean --name="ROS2Studio" --add-data "assets;assets" --collect-all qt_material --hidden-import PySide6.QtSvg --hidden-import PySide6.QtXml --hidden-import NodeGraphQt main.py
+```
+
+### 🐧 Linux / macOS Build
+```bash
+pyinstaller --noconsole --onefile --clean --name="ROS2Studio" --add-data "assets:assets" --collect-all qt_material --hidden-import PySide6.QtSvg --hidden-import PySide6.QtXml --hidden-import NodeGraphQt main.py
+```
+
