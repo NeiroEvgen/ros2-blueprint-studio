@@ -1,0 +1,4 @@
+PySide6
+NodeGraphQt
+docker
+qt-material
