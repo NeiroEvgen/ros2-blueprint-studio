@@ -8,7 +8,8 @@ ROS 2 Blueprint Studio is a standalone desktop application that allows you to cr
 
 It runs entirely on **Windows** (and Linux) without requiring a local ROS 2 installation, thanks to **Docker** integration.
 
-<img width="1399" height="931" alt="image" src="https://github.com/user-attachments/assets/c27e1f6e-4da8-4d37-8a0c-54e057f956f6" />
+<img width="1402" height="932" alt="image" src="https://github.com/user-attachments/assets/2d05dd1f-b345-4a85-b102-4faef3e8aab1" />
+
 
 ## 🚀 Key Features
 
