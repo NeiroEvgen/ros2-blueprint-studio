@@ -14,24 +14,22 @@ class RosContainerManager:
         self.image_name = "osrf/ros:humble-desktop"
         self.container_name = "ros2_orchestrator_session"
         
-        # Try connecting via named pipe (Windows default)
         try:
             self.client = docker.DockerClient(base_url='npipe:////./pipe/docker_engine')
             self.client.ping()
         except Exception:
-            # Fallback to environment variables
             try:
                 self.client = docker.from_env()
                 self.client.ping() 
             except docker.errors.DockerException as e:
-                raise ConnectionError(f"Docker Error: {e}")
+                raise ConnectionError(f"Ошибка Docker: {e}")
 
     def ensure_image(self, status_callback=None):
         try:
             self.client.images.get(self.image_name)
-            if status_callback: status_callback(f"Image found locally.")
+            if status_callback: status_callback(f"Образ найден.")
         except docker.errors.ImageNotFound:
-            if status_callback: status_callback(f"Pulling image (this may take a while)...")
+            if status_callback: status_callback(f"Загрузка образа...")
             self.client.images.pull(self.image_name)
 
     def start_session(self, status_callback=None):
@@ -42,14 +40,17 @@ class RosContainerManager:
         except docker.errors.NotFound:
             pass
 
-        # === Graphics Setup ===
+        # === НАСТРОЙКА ГРАФИКИ ===
         environment = {}
         if platform.system() == 'Windows':
-            # Special DNS name for Windows host
             environment['DISPLAY'] = 'host.docker.internal:0.0'
         else:
-            # Linux X11 forwarding
             environment['DISPLAY'] = ':0'
+            
+        volumes_map = {}
+        if platform.system() != 'Windows':
+             # На Linux/Raspberry это дает доступ ко всем /dev/ttyUSB*, video* и т.д.
+            volumes_map['/dev'] = {'bind': '/dev', 'mode': 'rw'}
 
         self.container = self.client.containers.run(
             self.image_name,
@@ -58,17 +59,19 @@ class RosContainerManager:
             detach=True,
             tty=True,
             environment=environment,
-            shm_size="512m"     
+            shm_size="512m",
+            # 👇 МАГИЯ ЗДЕСЬ 👇
+            privileged=True,       # Дает права root на железо
+            volumes=volumes_map,   # Пробрасывает устройства (на Linux)
+            network_mode='host'    # Чтобы видеть топики робота в одной сети
         )
         
-        # Install TurtleSim if missing
+        # Ставим turtlesim (на всякий случай)
         self.container.exec_run("apt-get update && apt-get install -y ros-humble-turtlesim")
         self.container.exec_run("mkdir -p /root/ros2_ws/src")
-        
-        if status_callback: status_callback("Session started (GUI Enabled).")
+        if status_callback: status_callback("Сессия начата (GUI Enabled).")
 
     def inject_and_run_script(self, filename, code, status_callback=None):
-        """Injects and runs a Python script."""
         self._inject_file(f"/root/{filename}", code)
         
         cmd = (
@@ -87,15 +90,15 @@ class RosContainerManager:
         pkg_name = "cpp_blueprints_pkg"
         src_path = f"/root/ros2_ws/src/{pkg_name}"
         
-        if status_callback: status_callback("Preparing C++ build...")
+        if status_callback: status_callback("Подготовка C++ сборки...")
 
         self.container.exec_run(f"mkdir -p {src_path}/src")
 
-        # 1. CMakeLists.txt
+        # 1. CMakeLists.txt (ОБНОВЛЕНО: Полный набор зависимостей)
         cmake_content = self._generate_cmake(pkg_name, cpp_nodes_data)
         self._inject_file(f"{src_path}/CMakeLists.txt", cmake_content)
         
-        # 2. package.xml
+        # 2. package.xml (ОБНОВЛЕНО: Полный набор зависимостей)
         package_xml = f"""<?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
@@ -111,6 +114,11 @@ class RosContainerManager:
   <depend>geometry_msgs</depend> 
   <depend>sensor_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>turtlesim</depend>
+  <depend>visualization_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
@@ -121,7 +129,7 @@ class RosContainerManager:
         for node in cpp_nodes_data:
             self._inject_file(f"{src_path}/src/{node['filename']}", node['code'])
 
-        if status_callback: status_callback("Compiling C++ (colcon build)...")
+        if status_callback: status_callback("Компиляция C++ (colcon build)...")
         
         build_cmd = (
             f"bash -c 'source /opt/ros/humble/setup.bash && "
@@ -132,10 +140,10 @@ class RosContainerManager:
         
         if res.exit_code != 0:
             err_msg = res.output.decode('utf-8')
-            if status_callback: status_callback(f"BUILD ERROR:\n{err_msg}")
+            if status_callback: status_callback(f"ОШИБКА СБОРКИ:\n{err_msg}")
             return
 
-        if status_callback: status_callback("Build success. Starting nodes...")
+        if status_callback: status_callback("Сборка успешна. Запуск нод...")
 
         for node in cpp_nodes_data:
             exec_name = node['filename'].replace('.cpp', '')
@@ -151,6 +159,7 @@ class RosContainerManager:
         time.sleep(2)
 
     def _generate_cmake(self, pkg_name, nodes):
+        # ОБНОВЛЕНО: Подключаем все важные библиотеки ROS 2
         content = f"""cmake_minimum_required(VERSION 3.8)
 project({pkg_name})
 
@@ -164,13 +173,21 @@ find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(turtlesim REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 """
         for node in nodes:
             exec_name = node['filename'].replace('.cpp', '')
             src_file = f"src/{node['filename']}"
             content += f"""
 add_executable({exec_name} {src_file})
-ament_target_dependencies({exec_name} rclcpp std_msgs geometry_msgs sensor_msgs nav_msgs)
+ament_target_dependencies({exec_name} 
+    rclcpp std_msgs geometry_msgs sensor_msgs nav_msgs turtlesim 
+    visualization_msgs tf2 tf2_ros tf2_geometry_msgs
+)
 install(TARGETS {exec_name} DESTINATION lib/${{PROJECT_NAME}})
 """
         content += "\nament_package()\n"

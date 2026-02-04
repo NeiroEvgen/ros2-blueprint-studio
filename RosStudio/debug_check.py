@@ -1,49 +1,35 @@
 import sys
 
-def main():
-    print("--- DIAGNOSTIC START ---")
+print("--- НАЧАЛО ТЕСТА ---")
 
-    print("1. Checking Python environment...")
-    print(f"   Version: {sys.version}")
+print("1. Проверка Python...")
+print(f"   Версия: {sys.version}")
 
-    print("2. Importing PySide6...")
-    try:
-        from PySide6 import QtWidgets
-        print("   PySide6: OK")
-    except ImportError as e:
-        print(f"   [ERROR] PySide6 import failed: {e}")
-    except Exception as e:
-        print(f"   [ERROR] Unexpected error importing PySide6: {e}")
+print("2. Импорт PySide6...")
+try:
+    from PySide6 import QtWidgets
+    print("   PySide6 УСПЕШНО.")
+except Exception as e:
+    print(f"   !!! ОШИБКА PySide6: {e}")
 
-    print("3. Importing NodeGraphQt...")
-    try:
-        import NodeGraphQt
-        print("   NodeGraphQt: OK")
-    except ImportError as e:
-        print(f"   [ERROR] NodeGraphQt import failed: {e}")
-    except Exception as e:
-        print(f"   [ERROR] Unexpected error importing NodeGraphQt: {e}")
+print("3. Импорт NodeGraphQt...")
+try:
+    import NodeGraphQt
+    print("   NodeGraphQt УСПЕШНО.")
+except Exception as e:
+    print(f"   !!! ОШИБКА NodeGraphQt: {e}")
 
-    print("4. Testing GUI (a small window should appear)...")
-    try:
-        app = QtWidgets.QApplication(sys.argv)
-        
-        msg = "SUCCESS: GUI is working!\nPlease close this window to finish the test."
-        window = QtWidgets.QLabel(msg)
-        window.setWindowTitle("Debug Check")
-        window.setAlignment(Qt.AlignCenter) if 'Qt' in locals() else None
-        window.resize(400, 200)
-        window.show()
-        
-        print("   Window created, waiting for closure...")
-        app.exec()
-        print("   Window closed. Test passed.")
-        
-    except Exception as e:
-        print(f"   [ERROR] GUI initialization failed: {e}")
+print("4. Проверка GUI (должно появиться маленькое окно)...")
+try:
+    app = QtWidgets.QApplication(sys.argv)
+    window = QtWidgets.QLabel("ЕСЛИ ВЫ ЭТО ЧИТАЕТЕ - ВСЕ ОК!\nЗакройте это окно.")
+    window.resize(400, 200)
+    window.show()
+    print("   Окно создано, ждем закрытия...")
+    app.exec()
+    print("   Окно закрыто. Тест пройден.")
+except Exception as e:
+    print(f"   !!! ОШИБКА GUI: {e}")
 
-    print("--- DIAGNOSTIC END ---")
-    input("Press Enter to exit...")
-
-if __name__ == "__main__":
-    main()
+print("--- КОНЕЦ ТЕСТА ---")
+input("Нажмите Enter, чтобы выйти...")

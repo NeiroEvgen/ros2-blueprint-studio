@@ -1,54 +1,52 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 
+# === 1. ПОДСВЕТКА СИНТАКСИСА (Highlighter) ===
 class CodeHighlighter(QtGui.QSyntaxHighlighter):
-    """
-    Syntax highlighter for Python and C++ code in the QPlainTextEdit.
-    """
     def __init__(self, parent=None, mode='python'):
         super().__init__(parent)
         self.rules = []
 
-        # --- Text Formats ---
+        # Форматы
         keyword_format = QtGui.QTextCharFormat()
-        keyword_format.setForeground(QtGui.QColor("#569CD6"))  # VSCode Blue
+        keyword_format.setForeground(QtGui.QColor("#569CD6")) # Синий VSCode
         keyword_format.setFontWeight(QtGui.QFont.Bold)
 
         class_format = QtGui.QTextCharFormat()
-        class_format.setForeground(QtGui.QColor("#4EC9B0"))  # Turquoise
+        class_format.setForeground(QtGui.QColor("#4EC9B0")) # Бирюзовый
 
         string_format = QtGui.QTextCharFormat()
-        string_format.setForeground(QtGui.QColor("#CE9178"))  # Orange
+        string_format.setForeground(QtGui.QColor("#CE9178")) # Оранжевый
 
         comment_format = QtGui.QTextCharFormat()
-        comment_format.setForeground(QtGui.QColor("#6A9955"))  # Green
+        comment_format.setForeground(QtGui.QColor("#6A9955")) # Зеленый
         
-        # --- Keywords ---
+        # Ключевые слова
         if mode == 'python':
             keywords = [
                 "def", "class", "import", "from", "if", "else", "elif", 
                 "return", "try", "except", "pass", "while", "for", "in", 
                 "print", "self", "super", "None", "True", "False"
             ]
-        else:  # cpp
+        else: # cpp
             keywords = [
                 "class", "public", "private", "protected", "void", "int", 
                 "float", "double", "char", "string", "return", "if", "else", 
                 "for", "while", "include", "using", "namespace", "auto", "const"
             ]
 
-        # --- Rules ---
+        # Правила
         for word in keywords:
             pattern = QtCore.QRegularExpression(r'\b' + word + r'\b')
             self.rules.append((pattern, keyword_format))
 
-        # Strings ("..." and '...')
+        # Строки ("...")
         self.rules.append((QtCore.QRegularExpression(r'".*"'), string_format))
         self.rules.append((QtCore.QRegularExpression(r"'.*'"), string_format))
         
-        # Class Names (Capitalized words)
+        # Классы
         self.rules.append((QtCore.QRegularExpression(r'\b[A-Z][a-zA-Z0-9_]+\b'), class_format))
 
-        # Comments
+        # Комментарии
         if mode == 'python':
             self.rules.append((QtCore.QRegularExpression(r'#.*'), comment_format))
         else:
@@ -61,11 +59,8 @@ class CodeHighlighter(QtGui.QSyntaxHighlighter):
                 match = match_iter.next()
                 self.setFormat(match.capturedStart(), match.capturedLength(), format)
 
-
+# === 2. НОМЕРА СТРОК ===
 class LineNumberArea(QtWidgets.QWidget):
-    """
-    Widget to display line numbers on the left side of the editor.
-    """
     def __init__(self, editor):
         super().__init__(editor)
         self.codeEditor = editor
@@ -76,11 +71,8 @@ class LineNumberArea(QtWidgets.QWidget):
     def paintEvent(self, event):
         self.codeEditor.lineNumberAreaPaintEvent(event)
 
-
+# === 3. САМ РЕДАКТОР ===
 class CodeEditor(QtWidgets.QPlainTextEdit):
-    """
-    Advanced text editor with line numbers and syntax highlighting.
-    """
     def __init__(self, parent=None, mode='python'):
         super().__init__(parent)
         self.lineNumberArea = LineNumberArea(self)
@@ -89,16 +81,17 @@ class CodeEditor(QtWidgets.QPlainTextEdit):
         self.cursorPositionChanged.connect(self.highlightCurrentLine)
         self.updateLineNumberAreaWidth(0)
         
-        # Font Configuration
+        # Шрифт
         font = QtGui.QFont("Consolas", 11)
         font.setStyleHint(QtGui.QFont.Monospace)
         self.setFont(font)
         
-        # Dark Theme Styles
+        # Цвета (Dark Theme)
         self.setStyleSheet("""
             QPlainTextEdit { background-color: #1e1e1e; color: #d4d4d4; border: none; }
         """)
         
+        # Подключаем подсветку
         self.highlighter = CodeHighlighter(self.document(), mode)
 
     def lineNumberAreaWidth(self):
@@ -127,7 +120,7 @@ class CodeEditor(QtWidgets.QPlainTextEdit):
 
     def lineNumberAreaPaintEvent(self, event):
         painter = QtGui.QPainter(self.lineNumberArea)
-        painter.fillRect(event.rect(), QtGui.QColor("#2d2d2d"))  # Gutter background
+        painter.fillRect(event.rect(), QtGui.QColor("#2d2d2d")) # Фон номеров
 
         block = self.firstVisibleBlock()
         blockNumber = block.blockNumber()
@@ -157,20 +150,17 @@ class CodeEditor(QtWidgets.QPlainTextEdit):
             extraSelections.append(selection)
         self.setExtraSelections(extraSelections)
 
-
+# === 4. ДИАЛОГОВОЕ ОКНО ===
 class AdvancedCodeDialog(QtWidgets.QDialog):
-    """
-    Dialog window wrapper for the code editor.
-    """
     def __init__(self, code, language='python', parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Code Editor ({language})")
         self.resize(1000, 700)
         
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(0,0,0,0)
         
-        # Toolbar
+        # Тулбар (можно добавить кнопки Save/Load)
         toolbar = QtWidgets.QFrame()
         toolbar.setStyleSheet("background: #333; height: 40px;")
         toolbar_layout = QtWidgets.QHBoxLayout(toolbar)
