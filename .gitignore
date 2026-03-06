@@ -3,5 +3,3 @@ __pycache__/
 *.pyc
 .blueprint/
 BlueprintStudioProjects/
-build/
-dist/
