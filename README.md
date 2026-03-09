@@ -9,18 +9,22 @@ ROS 2 Blueprint Studio is a standalone desktop application that allows you to cr
 It runs entirely on **Windows** (and Linux) without requiring a local ROS 2 installation, thanks to **Docker** integration.
 
 <img width="1400" height="902" alt="image" src="https://github.com/user-attachments/assets/4e427ea7-a8b4-4dbc-b70e-c98e6cdb00fc" />
+  
+## 🚀 Key Features (v0.5.0 Evolution)
 
+* **🔌 Visual Scripting & Template Palette:** Design ROS 2 systems intuitively by connecting nodes. Version 0.5.0 introduces a C++ Template Library, allowing you to drag-and-drop native source templates directly onto the canvas for instant customization.
 
-## 🚀 Key Features
+* **📦 Hierarchical Subgraphs (Macros):** Manage complexity by grouping related nodes into CompositeNodes. This recursive architecture allows you to "dive deep" into subsystems, keeping your top-level logic clean and readable even for 100+ node projects.
 
-* **🔌 Visual Scripting:** Connect nodes with wires to create topics and data flows intuitively.
-* **🚀 Portable Mode:** Runs as a single `.exe` file on Windows (or binary on Linux). No installation required.
-* **🐳 Docker Powered:** No need to install ROS 2 locally. All nodes run inside an isolated Docker container (`osrf/ros:humble-desktop`).
-* **🐍 & ⚙️ Python & C++ Support:** Two separate tabs for creating graphs in Python or C++. The IDE automatically compiles C++ nodes inside the container.
-* **📝 Custom Code Nodes:** Double-click a node to open the built-in code editor and write your own logic on the fly.
-* **📦 Subgraphs (Grouping):** Group multiple nodes into a single block to keep your graph clean.
-* **💾 Project System:** Save and load your blueprints as JSON files.
-* **🎨 Modern UI:** Professional dark theme (Material Design), dockable panels, and a user-friendly interface.
+* **🐳 Docker & 🛠️ Bare-Metal Hybrid:** Run your nodes in isolated Docker containers (osrf/ros:humble-desktop) or use the new Native Dependency Generator to install and run everything directly on your host Ubuntu system.
+
+* **🐍 & ⚙️ Native C++ / Python Workflow:** Full support for both languages with built-in code editors. C++ nodes are compiled natively within the environment, ensuring maximum performance for real-time R&D.
+
+* **💾 Robust Project System & UI Persistence:** Blueprints are saved as structured JSON files. The new UI State manager ensures your node coordinates, colors, and workspace layout are perfectly preserved between sessions.
+
+* **📝 One-Click Export & Launch:** Automatically generate standard ROS 2 packages, including CMakeLists.txt and package.xml. The Launch Generator creates Python launch files to deploy your entire system in one go.
+
+* **🚀 Portable & Modern:** Runs as a single binary on Linux (or .exe on Windows) with zero installation required. Features a professional dark-themed Material Design interface with dockable panels for a personalized workspace.
 
 ## 🛠️ Prerequisites
 
@@ -83,3 +87,4 @@ pyinstaller --noconsole --onefile --clean --name="ROS2Studio" --add-data "assets
 ```bash
 pyinstaller --noconsole --onefile --clean --name="ROS2Studio" --add-data "assets:assets" --collect-all qt_material --hidden-import PySide6.QtSvg --hidden-import PySide6.QtXml --hidden-import NodeGraphQt main.py
 ```
+
