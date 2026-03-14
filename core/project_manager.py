@@ -289,6 +289,7 @@ class ProjectManager:
     #               ЗАГРУЗКА (RESTORED)
     # ==========================================
     def load_project(self, project_path):
+        import copy # Добавляем импорт глубокого копирования
         try:
             if project_path.endswith('.json') or project_path.endswith('.yaml'):
                 project_path = os.path.dirname(os.path.dirname(project_path))
@@ -304,18 +305,31 @@ class ProjectManager:
             self.graph_py.clear_session()
             self.graph_cpp.clear_session()
             
-            py_data, py_map = self._prepare_data_for_loading(project_state["graphs"].get("python", {}))
-            cpp_data, cpp_map = self._prepare_data_for_loading(project_state["graphs"].get("cpp", {}))
+            py_data_raw = project_state["graphs"].get("python", {})
+            cpp_data_raw = project_state["graphs"].get("cpp", {})
             
+            # --- 1. ЖЕСТКО ЗАПОМИНАЕМ СВЯЗИ (До того, как движок их зачистит) ---
+            py_conns = copy.deepcopy(py_data_raw.get('connections', []))
+            cpp_conns = copy.deepcopy(cpp_data_raw.get('connections', []))
+            
+            py_data, py_map = self._prepare_data_for_loading(py_data_raw)
+            cpp_data, cpp_map = self._prepare_data_for_loading(cpp_data_raw)
+            
+            # --- 2. ВОССТАНАВЛИВАЕМ НОДЫ ---
             self.graph_py.deserialize_session(py_data)
             self.graph_cpp.deserialize_session(cpp_data)
             
-            # Восстанавливаем код, с учетом новых папок
+            # --- 3. ВОССТАНАВЛИВАЕМ КОД ---
             self._restore_files_and_code(self.graph_py, py_map, src_dir)
             self._restore_files_and_code(self.graph_cpp, cpp_map, src_dir)
             
+            # --- 4. СОЗДАЕМ ДИНАМИЧЕСКИЕ ПОРТЫ ---
             self._restore_dynamic_ports(self.graph_py)
             self._restore_dynamic_ports(self.graph_cpp)
+            
+            # --- 5. ПРИНУДИТЕЛЬНО КЛЕИМ СВЯЗИ ОБРАТНО ---
+            self._restore_connections(self.graph_py, py_conns, py_data_raw.get('nodes', {}))
+            self._restore_connections(self.graph_cpp, cpp_conns, cpp_data_raw.get('nodes', {}))
             
             return True
         except Exception as e:
@@ -326,30 +340,30 @@ class ProjectManager:
     def _prepare_data_for_loading(self, session_data):
         files_map = {}
         nodes = session_data.get('nodes', [])
-        # Поддержка старого и нового формата (list vs dict)
         if isinstance(nodes, list):
             for n in nodes:
                 c = n.get('custom', {})
-                if 'source_file' in c: files_map[n.get('id')] = c['source_file']; del c['source_file']
+                if 'source_file' in c: 
+                    files_map[n.get('name')] = c['source_file'] 
+                    del c['source_file']
         elif isinstance(nodes, dict):
             for nid, n in nodes.items():
                 c = n.get('custom', {})
-                if 'source_file' in c: files_map[nid] = c['source_file']; del c['source_file']
+                if 'source_file' in c: 
+                    files_map[n.get('name')] = c['source_file'] 
+                    del c['source_file']
         return session_data, files_map
 
     def _restore_files_and_code(self, graph, files_map, src_dir):
-        """
-        Восстанавливает код в нодах. Ищет файлы в src/cpp или src/python.
-        """
+        """Восстанавливает код, ища файлы по имени ноды"""
         for node in graph.all_nodes():
-            if node.id in files_map:
-                fname = files_map[node.id]
-                
-                # Пытаемся найти файл в подпапках
+            if node.name() in files_map:  
+                fname = files_map[node.name()]
+                 # Пытаемся найти файл в подпапках
                 possible_paths = [
                     os.path.join(src_dir, "cpp", fname),
                     os.path.join(src_dir, "python", fname),
-                    os.path.join(src_dir, fname) # Для старых проектов
+                    os.path.join(src_dir, fname)
                 ]
                 
                 found_path = None
@@ -357,13 +371,13 @@ class ProjectManager:
                     if os.path.exists(p):
                         found_path = p
                         break
-                
+
                 # Свойства ноды
                 if not node.has_property('source_file'):
                     node.create_property('source_file', value=fname, widget_type=0)
                 else:
                     node.set_property('source_file', fname)
-                
+
                 # Читаем код
                 if found_path:
                     try:
@@ -498,3 +512,53 @@ class ProjectManager:
                 if not node.has_property('saved_ports_config'): node.create_property('saved_ports_config', value=ports_config, widget_type=0)
                 else: node.set_property('saved_ports_config', ports_config)
             except: pass
+    
+    def _restore_connections(self, graph, connections_data, raw_nodes_data):
+        if not connections_data: return
+
+        # 1. Достаем имена нод по их старым (мертвым) ID
+        id_to_name = {}
+        if isinstance(raw_nodes_data, dict):
+            for nid, ndata in raw_nodes_data.items():
+                id_to_name[nid] = ndata.get('name')
+        elif isinstance(raw_nodes_data, list):
+            for ndata in raw_nodes_data:
+                id_to_name[ndata.get('id')] = ndata.get('name')
+
+        # 2. Создаем карту новых, живых нод по их имени
+        name_to_node = {node.name(): node for node in graph.all_nodes()}
+        
+        restored_count = 0
+
+        for conn in connections_data:
+            out_data = conn.get('out', [])
+            in_data = conn.get('in', [])
+            
+            if len(out_data) == 2 and len(in_data) == 2:
+                # Получаем имена нод по старым ID
+                out_name = id_to_name.get(out_data[0])
+                in_name = id_to_name.get(in_data[0])
+                
+                # Ищем новые ноды по именам
+                out_node = name_to_node.get(out_name)
+                in_node = name_to_node.get(in_name)
+                
+                if out_node and in_node:
+                    out_port_name = out_data[1]
+                    in_port_name = in_data[1]
+                    
+                    out_port = next((p for p in out_node.output_ports() if p.name() == out_port_name), None)
+                    in_port = next((p for p in in_node.input_ports() if p.name() == in_port_name), None)
+                    
+                    if out_port and in_port:
+                        try:
+                            out_port.connect_to(in_port)
+                            restored_count += 1
+                        except Exception as e:
+                            print(f" Ошибка соединения портов: {e}")
+                    else:
+                        print(f" Порты не найдены! Искали: {out_port_name} -> {in_port_name}")
+                else:
+                    print(f" Ноды не найдены по именам! {out_name} -> {in_name}")
+
+        print(f"🔗 ВОССТАНОВЛЕНО СВЯЗЕЙ: {restored_count} из {len(connections_data)}")

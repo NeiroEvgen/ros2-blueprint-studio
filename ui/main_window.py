@@ -119,6 +119,9 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.del_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Delete), self)
         self.del_shortcut.activated.connect(self.on_delete_selection)
         
+        # --CTRL+S ---
+        self.save_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+S"), self)
+        self.save_shortcut.activated.connect(self.on_save_project)
         # Context Menus
         self.setup_custom_context_menu(self.graph_py)
         self.setup_custom_context_menu(self.graph_cpp)
@@ -220,6 +223,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         if self.current_project_path:
             self.project_manager.save_project(self.current_project_path)
             self._start_watcher_safe(self.current_project_path)
+            self.system_log(" Project saved (Ctrl+S)") # <--- ВОТ ЭТА СТРОЧКА
         else:
             root = WorkspaceManager.get_workspace_root()
             path = QtWidgets.QFileDialog.getExistingDirectory(self, "Save Project", root)

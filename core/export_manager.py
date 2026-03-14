@@ -107,10 +107,10 @@ if [ -f /app/ros2_ws/install/setup.bash ]; then
 fi
 
 # Запуск проекта
-echo "🚀 Starting ROS 2 Blueprint Node..."
+echo " Starting ROS 2 Blueprint Node..."
 exec ros2 launch {launch_path}
 """
-        with open(os.path.join(export_dir, "entrypoint.sh"), "w", newline='\n') as f:
+        with open(os.path.join(export_dir, "entrypoint.sh"), "w", encoding='utf-8', newline='\n') as f:
             f.write(entrypoint_content)
 
         # 3. Генерируем Dockerfile с учетом лучших практик ROS 2
@@ -151,7 +151,7 @@ RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
 """
-        with open(os.path.join(export_dir, "Dockerfile"), "w") as f:
+        with open(os.path.join(export_dir, "Dockerfile"), "w", encoding='utf-8') as f:
             f.write(dockerfile)
 
         # 4. Генерируем README
@@ -164,7 +164,7 @@ ENTRYPOINT ["/entrypoint.sh"]
 4. Run the container:
    docker run -it --net=host my_ros2_project
 """
-        with open(os.path.join(export_dir, "README.txt"), "w") as f:
+        with open(os.path.join(export_dir, "README.txt"), "w", encoding='utf-8') as f:
             f.write(readme)
 
         # 5. Архивация
