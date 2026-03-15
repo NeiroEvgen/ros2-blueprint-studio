@@ -10,21 +10,22 @@ It runs entirely on **Windows** (and Linux) without requiring a local ROS 2 inst
 
 <img width="1400" height="902" alt="image" src="https://github.com/user-attachments/assets/4e427ea7-a8b4-4dbc-b70e-c98e6cdb00fc" />
   
-## 🚀 Key Features (v0.5.0 Evolution)
+🚀 Key Features (v0.5.0 Evolution)
 
-* **🔌 Visual Scripting & Template Palette:** Design ROS 2 systems intuitively by connecting nodes. Version 0.5.0 introduces a C++ Template Library, allowing you to drag-and-drop native source templates directly onto the canvas for instant customization.
+🔌 Visual Scripting & Custom Node Palette: Design ROS 2 systems intuitively by connecting nodes. Version 0.5.0 introduces a customizable Node Library, allowing you to save your own C++ or Python node templates and drag-and-drop them directly onto the canvas for instant reuse.
 
-* **📦 Hierarchical Subgraphs (Macros):** Manage complexity by grouping related nodes into CompositeNodes. This recursive architecture allows you to "dive deep" into subsystems, keeping your top-level logic clean and readable even for 100+ node projects.
+📦 Hierarchical Subgraphs (Macros): Manage complexity by grouping related logic into CompositeNodes. This nested architecture allows you to "dive deep" into subsystems, keeping your top-level architecture clean and readable even for large-scale projects.
 
-* **🐳 Docker & 🛠️ Bare-Metal Hybrid:** Run your nodes in isolated Docker containers (osrf/ros:humble-desktop) or use the new Native Dependency Generator to install and run everything directly on your host Ubuntu system.
+🐳 Flexible Deployment (Docker & Bare-Metal): Run your entire generated architecture in isolated Docker containers (osrf/ros:humble-desktop) with a single click, or use the Native Dependency Generator to fetch requirements and run natively on your host Ubuntu system.
 
-* **🐍 & ⚙️ Native C++ / Python Workflow:** Full support for both languages with built-in code editors. C++ nodes are compiled natively within the environment, ensuring maximum performance for real-time R&D.
+🐍 & ⚙️ Seamless C++ / Python Workflow: Full support for both languages with built-in code editors. The studio automatically generates standard CMakeLists.txt and package.xml files and builds your C++ nodes using standard colcon tools under the hood.
+      🚧 Work in Progress: The Python compiler is currently taking a nap due to core refactoring. Stick to C++ for now!
 
-* **💾 Robust Project System & UI Persistence:** Blueprints are saved as structured JSON files. The new UI State manager ensures your node coordinates, colors, and workspace layout are perfectly preserved between sessions.
+💾 Robust Project System & UI Persistence: Blueprints and node properties are cleanly saved as structured YAML files. The UI State manager ensures your node coordinates, dynamic ports, colors, and workspace layout are perfectly preserved between sessions.
 
-* **📝 One-Click Export & Launch:** Automatically generate standard ROS 2 packages, including CMakeLists.txt and package.xml. The Launch Generator creates Python launch files to deploy your entire system in one go.
+📝 One-Click Export & Launch: The studio acts as an intelligent boilerplate generator. It scans your code for dependencies (Smart Scan) and creates standard ROS 2 packages with Python launch files to deploy your entire system instantly.
 
-* **🚀 Portable & Modern:** Runs as a single binary on Linux (or .exe on Windows) with zero installation required. Features a professional dark-themed Material Design interface with dockable panels for a personalized workspace.
+🚀 Standalone Cross-Platform GUI: Features a professional dark-themed Material Design interface built with Qt. Designed to run as a standalone application on Linux and Windows, offering dockable panels and real-time terminal monitoring.
 
 ## 🛠️ Prerequisites
 
