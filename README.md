@@ -19,7 +19,7 @@ It runs entirely on **Windows** (and Linux) without requiring a local ROS 2 inst
 🐳 Flexible Deployment (Docker & Bare-Metal): Run your entire generated architecture in isolated Docker containers (osrf/ros:humble-desktop) with a single click, or use the Native Dependency Generator to fetch requirements and run natively on your host Ubuntu system.
 
 🐍 & ⚙️ Seamless C++ / Python Workflow: Full support for both languages with built-in code editors. The studio automatically generates standard CMakeLists.txt and package.xml files and builds your C++ nodes using standard colcon tools under the hood.
-      🚧 Work in Progress: The Python compiler is currently taking a nap due to core refactoring. Stick to C++ for now!
+>🚧 Work in Progress: The Python compiler is currently taking a nap due to core refactoring. Stick to C++ for now!
 
 💾 Robust Project System & UI Persistence: Blueprints and node properties are cleanly saved as structured YAML files. The UI State manager ensures your node coordinates, dynamic ports, colors, and workspace layout are perfectly preserved between sessions.
 
@@ -66,11 +66,11 @@ If you want to modify the code or contribute:
 ## ⚡ Quick Start Guide
 
 1.  **Launch the App:** Ensure Docker is running in the background.
-2.  **Add Nodes:** On the left "Library" panel, double-click on `Py: Publisher` and `Py: Subscriber`.
+2.  **Add Nodes:** On the left "Library" panel, double-click on ` Publisher` and ` Subscriber`.
 3.  **Connect:** Drag a wire from the **out** port of the Publisher to the **in** port of the Subscriber.
 4.  **Run:** Click the **Run button** (Play icon) in the toolbar.
 5.  **Observe:** Watch the "ROS 2 Output" panel at the bottom. You should see messages flowing between nodes.
-6.  **Custom Logic:** Add a `Py: Custom Code` node, double-click it, and write your own data processing logic!
+6.  **Custom Logic:** Add a `Custom Code` node, double-click it, and write your own data processing logic!
 
 ## 🏗️ Building into EXE
 
