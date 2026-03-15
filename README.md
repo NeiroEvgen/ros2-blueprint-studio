@@ -49,7 +49,7 @@ If you want to modify the code or contribute:
 
 1.  **Clone this repository:**
     ```bash
-    git clone [https://github.com/NeiroEvgen/ros2-visual-studio.git](https://github.com/NeiroEvgen/ros2-visual-studio.git)
+    git clone [https://github.com/NeiroEvgen/ros2-blueprint-studio.git](https://github.com/NeiroEvgen/ros2-blueprint-studio.git)
     cd ros2-visual-studio
     ```
 
