@@ -186,6 +186,10 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         
         graphs = [self.graph_py, self.graph_cpp]
         self.project_manager.sync_node_from_file(filename, content, ports, graphs, self.system_log)
+        
+        # --- AutoRout ---
+        self.auto_route_hardcoded_topics(self.graph_py)
+        self.auto_route_hardcoded_topics(self.graph_cpp)
                             #file_changed // sync_node_from_file
     # === UTILS ===
 
@@ -318,6 +322,60 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         if node.type_ == 'nodes.utility.MonitorNode' and not port_in.connected_ports():
             node.set_color(*TYPE_COLORS["DEFAULT"])
             node.set_property('name', "Monitor")
+    
+    def auto_route_hardcoded_topics(self, graph):
+        """Автоматически соединяет паблишеры и сабскрайберы с одинаковыми именами топиков"""
+        pubs_by_topic = {}
+        subs_by_topic = {}
+
+        # 1. Собираем все порты по именам топиков
+        for node in graph.all_nodes():
+            for port in node.output_ports():
+                topic_name = port.name()
+                if topic_name not in pubs_by_topic:
+                    pubs_by_topic[topic_name] = []
+                pubs_by_topic[topic_name].append(port)
+
+            for port in node.input_ports():
+                topic_name = port.name()
+                if topic_name not in subs_by_topic:
+                    subs_by_topic[topic_name] = []
+                subs_by_topic[topic_name].append(port)
+
+        # 2. Ищем совпадения и натягиваем провода
+        routed_count = 0
+        for topic, pub_ports in pubs_by_topic.items():
+            if topic in subs_by_topic:
+                sub_ports = subs_by_topic[topic]
+                for pub_port in pub_ports:
+                    for sub_port in sub_ports:
+                        # Проверяем, чтобы не дублировать уже существующую связь
+                        if sub_port not in pub_port.connected_ports():
+                            try:
+                                pub_port.connect_to(sub_port)
+                                
+                                # В NodeGraphQt это свойства, а не методы!
+                                pub_port.color = (50, 205, 50, 255)
+                                sub_port.color = (50, 205, 50, 255)
+                                
+                                pub_port.border_color = (0, 255, 0, 255)
+                                sub_port.border_color = (0, 255, 0, 255)
+
+                                # Блокируем намертво
+                                pub_port.locked = True
+                                sub_port.locked = True
+                                
+                                # Принудительно заставляем ноду перерисовать себя в UI
+                                pub_port.node().update()
+                                sub_port.node().update()
+                                
+                                routed_count += 1
+                            except Exception as e:
+                                # Теперь, если что-то пойдет не так, мы увидим это в терминале!
+                                print(f" Error auto-rout: {e}")
+                                
+        if routed_count > 0:
+            self.system_log(f" Auto-Routed {routed_count} hardcoded connections!")
 
     # === CONTEXT MENU ===
     def setup_custom_context_menu(self, graph):
@@ -345,7 +403,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             short_name = name.split('/')[-1]
             in_menu.add_command(f"Add {short_name}", partial(self.on_add_input_clicked, graph, name, color))
 
-    def on_manual_rescan(self, graph):
+    def on_manual_rescan(self, graph, *args, **kwargs):
         selected = graph.selected_nodes()
         if not selected: return
         for node in selected:
