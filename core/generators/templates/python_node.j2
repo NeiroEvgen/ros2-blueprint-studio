@@ -1,0 +1,46 @@
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+
+class {{ class_name }}(Node):
+    def __init__(self):
+        super().__init__('{{ node_name }}')
+        
+        # Параметры ROS 2
+        {% for param in parameters %}
+        self.declare_parameter('{{ param.name }}', {{ param.value if param.type != 'string' else "'" + param.value + "'" }})
+        self.{{ param.name }} = self.get_parameter('{{ param.name }}').value
+        {% endfor %}
+        
+        {% for pub in publishers %}
+        self.pub_{{ pub.name }} = self.create_publisher(String, '{{ pub.topic }}', 10)
+        {% endfor %}
+        
+        {% for sub in subscribers %}
+        self.sub_{{ sub.name }} = self.create_subscription(
+            String,
+            '{{ sub.topic }}',
+            self.{{ sub.name }}_callback,
+            10)
+        {% endfor %}
+        
+        self.get_logger().info('{{ class_name }} node has been started')
+
+    {% for sub in subscribers %}
+    def {{ sub.name }}_callback(self, msg):
+        self.get_logger().info(f'Received: {msg.data}')
+    {% endfor %}
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = {{ class_name }}()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()

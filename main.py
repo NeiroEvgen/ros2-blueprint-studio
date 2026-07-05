@@ -9,6 +9,17 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from ui.launcher_dialog import LauncherDialog
 from ui.main_window import RosVisualRunner
 
+from NodeGraphQt.qgraphics import node_base as _nb
+_orig_asm = _nb.NodeItem.auto_switch_mode
+def _safe_asm(self):
+    try:
+        if self.viewer() is None:
+            return
+        _orig_asm(self)
+    except Exception:
+        pass
+_nb.NodeItem.auto_switch_mode = _safe_asm
+
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     

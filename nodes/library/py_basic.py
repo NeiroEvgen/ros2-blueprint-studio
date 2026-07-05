@@ -17,3 +17,13 @@ class PyStringSubNode(RosNodeBase):
         self.add_text_input('node_name','Name',text='py_str_sub')
         self.add_text_input('topic_name','Topic',text='/chatter')
         self._init_template('py_string_sub')
+
+class PyCustomNode(RosNodeBase):
+    __identifier__ = 'ros.nodes.py'
+    NODE_NAME = 'CustomNode'
+
+    def __init__(self):
+        super(PyCustomNode, self).__init__()
+        self.add_text_input('node_name', 'Node Name', text='my_custom_node')
+        self.set_color(40, 40, 80)
+        self._init_template('Custom')

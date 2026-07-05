@@ -60,7 +60,8 @@ class CppCompiler(BaseCompiler):
     
     def generate_cmakelists(self, node_names):
         """Умный генератор CMakeLists.txt (STATELESS - сканирует граф сам)"""
-        content = "cmake_minimum_required(VERSION 3.8)\nproject(cpp_blueprints_pkg)\n\n"
+        pkg = getattr(self, 'package_name', None) or 'cpp_blueprints_pkg'
+        content = f"cmake_minimum_required(VERSION 3.8)\nproject({pkg})\n\n"
         content += "find_package(ament_cmake REQUIRED)\n"
         
         # 🌟 СКАНИРУЕМ ГРАФ ЗАНОВО ПРЯМО ЗДЕСЬ 🌟

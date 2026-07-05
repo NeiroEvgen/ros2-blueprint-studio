@@ -1,0 +1,53 @@
+#include <memory>
+#include "rclcpp/rclcpp.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "std_msgs/msg/string.hpp"
+
+using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
+class {{ class_name }} : public rclcpp_lifecycle::LifecycleNode {
+public:
+    explicit {{ class_name }}(const rclcpp::NodeOptions & options)
+    : rclcpp_lifecycle::LifecycleNode("{{ node_name }}", options) {}
+
+    CallbackReturn on_configure(const rclcpp_lifecycle::State &) override {
+        RCLCPP_INFO(get_logger(), "Configuring...");
+        
+        // Параметры ROS 2
+        {% for param in parameters %}
+        this->declare_parameter("{{ param.name }}", {{ param.value if param.type != 'string' else '"' + param.value + '"' }});
+        {% endfor %}
+
+        {% for pub in publishers %}
+        pub_{{ pub.name }}_ = this->create_publisher<std_msgs::msg::String>("{{ pub.topic }}", 10);
+        {% endfor %}
+        return CallbackReturn::SUCCESS;
+    }
+
+    CallbackReturn on_activate(const rclcpp_lifecycle::State & state) override {
+        LifecycleNode::on_activate(state);
+        RCLCPP_INFO(get_logger(), "Activated");
+        return CallbackReturn::SUCCESS;
+    }
+
+    CallbackReturn on_deactivate(const rclcpp_lifecycle::State & state) override {
+        LifecycleNode::on_deactivate(state);
+        RCLCPP_INFO(get_logger(), "Deactivated");
+        return CallbackReturn::SUCCESS;
+    }
+
+private:
+    {% for pub in publishers %}
+    rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr pub_{{ pub.name }}_;
+    {% endfor %}
+};
+
+int main(int argc, char * argv[]) {
+    rclcpp::init(argc, argv);
+    rclcpp::executors::SingleThreadedExecutor exe;
+    auto node = std::make_shared<{{ class_name }}>(rclcpp::NodeOptions());
+    exe.add_node(node->get_node_base_interface());
+    exe.spin();
+    rclcpp::shutdown();
+    return 0;
+}

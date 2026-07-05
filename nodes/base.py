@@ -18,8 +18,18 @@ MSG_COLORS = {
 class RosNodeBase(BaseNode):
     def __init__(self):
         super(RosNodeBase, self).__init__()
-        self.create_property('saved_ports_config', value=[], widget_type=0)
-    
+        for _prop, _default in (
+            ('parent_group_id', ''),
+            ('group_uid', ''),
+            ('container_group', 'main'),
+            ('is_imported', False),
+            ('source_file', ''),
+            ('code_content', ''),
+        ):
+            if not self.has_property(_prop):
+                self.create_property(_prop, _default)
+        if not self.has_property('saved_ports_config'):
+            self.create_property('saved_ports_config', value=[], widget_type=0)  
     def _init_template(self, template_key):
         """
         Умная загрузка: переводит старые ключи в новые универсальные
@@ -54,7 +64,10 @@ class RosNodeBase(BaseNode):
         if not raw_code:
             raw_code = f"// Error: Template '{final_key}' not found for lang {'Cpp' if is_cpp else 'Py'}"
 
-        self.create_property('code_content', raw_code, widget_type=0)
+        if self.has_property('code_content'):
+            self.set_property('code_content', raw_code)
+        else:
+            self.create_property('code_content', raw_code, widget_type=0)
 
     
     def add_exec_input(self, name='ExecIn'):

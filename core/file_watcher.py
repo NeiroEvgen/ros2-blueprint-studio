@@ -56,6 +56,8 @@ class FileWatcher(QtCore.QObject):
         # Сканируем порты с учетом расширения файла
         ports = self._scan_ports(content, path)
         
+        if path not in self.watcher.files():
+            self.watcher.addPath(path)
         # Отправляем сигнал
         self.file_changed.emit(path, content, ports)
 

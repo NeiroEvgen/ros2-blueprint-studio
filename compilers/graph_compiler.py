@@ -20,6 +20,7 @@ class GraphCompiler:
         
         cpp_comp = CppCompiler(self.graph)
         cpp_comp.connection_map = connection_map
+        cpp_comp.package_name = getattr(self, 'package_name', None)
         
         compiled_scripts = []
         

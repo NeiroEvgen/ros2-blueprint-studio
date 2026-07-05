@@ -21,15 +21,16 @@ class ExportManager:
         target_src = os.path.join(export_dir, "src", "user_project") 
         
         # Копируем исходники в подпапку, чтобы colcon корректно видел пакет
-        shutil.copytree(src_dir, target_src)
+        shutil.copytree(src_dir, target_src,
+                ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
 
         deps = set()
         
         # Ищем форматы пакетов с сообщениями: #include "nav_msgs/msg/odometry.hpp" -> nav_msgs
         pattern_msg = re.compile(r'#include\s+["<]([^/]+)/(msg|srv|action)/[^">]+[">]')
         # Ищем известные хардкорные ROS-либы (например, tf2_ros, cv_bridge)
-        pattern_libs = re.compile(r'#include\s+["<](tf2_ros|tf2|tf2_geometry_msgs|image_transport|cv_bridge)/[^">]+[">]')
-
+        pattern_libs = re.compile(r'#include\s+["<](tf2_ros|tf2|tf2_geometry_msgs|image_transport|cv_bridge|opencv2)/[^">]+[">]')
+        
         # Сканируем скопированные исходники
         for root_dir, _, files in os.walk(target_src):
             for file in files:
@@ -40,7 +41,10 @@ class ExportManager:
                         for match in pattern_msg.findall(content):
                             deps.add(match[0])
                         for match in pattern_libs.findall(content):
-                            deps.add(match)
+                            if match == "opencv2":
+                                deps.add("opencv")
+                            else:
+                                deps.add(match)
         
         # rclcpp обычно уже прописан жестко, но на всякий случай оставим
         deps.discard('rclcpp')
@@ -68,8 +72,12 @@ class ExportManager:
                     cmake_txt = f.read()
                 
                 find_pkgs_str = ""
+                cmake_deps = []
                 for dep in deps:
                     # Добавляем find_package, если его еще нет
+                    actual_cmake_name = "OpenCV" if dep == "opencv" else dep
+                    cmake_deps.append(actual_cmake_name)
+                    
                     if f"find_package({dep}" not in cmake_txt:
                         find_pkgs_str += f"find_package({dep} REQUIRED)\n"
                 
@@ -82,7 +90,7 @@ class ExportManager:
                     
                     # Прописываем эти зависимости во все экзешники/ноды!
                     # Ищем "ament_target_dependencies(ИМЯ_НОДЫ текущие_зависимости)" и добавляем новые
-                    extra_deps_str = " ".join(deps)
+                    extra_deps_str = " ".join(cmake_deps)
                     target_deps_pattern = re.compile(r'(ament_target_dependencies\s*\(\s*[^ \)]+)(.*?)\)')
                     cmake_txt = target_deps_pattern.sub(rf'\1\2 {extra_deps_str})', cmake_txt)
 

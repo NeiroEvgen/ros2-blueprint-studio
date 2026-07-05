@@ -5,6 +5,9 @@ import traceback
 import re
 import shutil
 from core.workspace_manager import WorkspaceManager
+from core.generators.cpp_generator import CppGenerator
+from core.generators.python_generator import PythonGenerator
+from ui.launch_compiler import LaunchCompiler
 
 # YAML настройки для корректного сохранения кортежей (цветов и позиций)
 def tuple_representer(dumper, data):
@@ -35,14 +38,18 @@ class ProjectManager:
     #               СОХРАНЕНИЕ
     # ==========================================
     def save_project(self, project_path):
+        print("[SAVE DEBUG] save_project ВЫЗВАН, path=", project_path)
         try:
+            # === ШАГ 0: ГЕНЕРАЦИЯ ДИНАМИЧЕСКОГО ИМЕНИ ПАКЕТА ===
+            raw_name = os.path.basename(project_path)
+            pkg_name = re.sub(r'[^a-z0-9_]', '_', raw_name.lower())
+            
             blueprint_dir = os.path.join(project_path, ".blueprint")
             src_dir = os.path.join(project_path, "src")
             
             # 1. ЖЕСТКОЕ РАЗДЕЛЕНИЕ ПАПОК
-            project_type = WorkspaceManager.get_project_type(project_path) # 'cpp' или 'python'
+            project_type = WorkspaceManager.get_project_type(project_path)
             
-            # Определяем подпапку: src/cpp или src/python
             if project_type == "cpp":
                 code_dir = os.path.join(src_dir, "cpp")
             else:
@@ -50,11 +57,10 @@ class ProjectManager:
             
             launch_dir = os.path.join(src_dir, "launch")
 
-            # Создаем структуру
             for d in [blueprint_dir, src_dir, code_dir, launch_dir]:
                 if not os.path.exists(d): os.makedirs(d)
 
-            logging.info(f"Saving project type: {project_type} into {code_dir}")
+            logging.info(f"Saving project {pkg_name} ({project_type}) into {code_dir}")
 
             # 2. Сохраняем графы
             self._backup_dynamic_ports(self.graph_py)
@@ -62,36 +68,67 @@ class ProjectManager:
             
             py_data = self.graph_py.serialize_session()
             cpp_data = self.graph_cpp.serialize_session()
-            
-            # 3. ГЕНЕРАЦИЯ КОДА
-            self._process_and_save_files(py_data, code_dir, project_type)
-            self._process_and_save_files(cpp_data, code_dir, project_type)
+            print(f"[SAVE DEBUG] project_type={project_type}")
+            print(f"[SAVE DEBUG] cpp_data nodes={len(cpp_data.get('nodes', {}))}, py_data nodes={len(py_data.get('nodes', {}))}")
+            print(f"[SAVE DEBUG] cpp_data keys={list(cpp_data.keys())}")
+            # 3. ГЕНЕРАЦИЯ КОДА (только активный граф; возвращает файлы с группами)
+            if project_type == "cpp":
+                created_files = self._process_and_save_files(cpp_data, code_dir, project_type)
+            else:
+                created_files = self._process_and_save_files(py_data, code_dir, project_type)
+            created_files = created_files or []
 
-            # Сохраняем состояние графов
+            print(f"[SAVE DEBUG] created_files = {created_files}")
+
             state = {"meta": {"version": "3.6"}, "graphs": {"python": py_data, "cpp": cpp_data}}
             with open(os.path.join(blueprint_dir, "state.yaml"), 'w', encoding='utf-8') as f:
                 yaml.dump(state, f, sort_keys=False)
-
-            # 4. ГЕНЕРАЦИЯ LAUNCH ФАЙЛА
-            created_files = []
-            for f in os.listdir(code_dir):
-                if project_type == "cpp" and f.endswith(".cpp"):
-                    created_files.append({'language': 'cpp', 'filename': f})
-                elif project_type == "python" and f.endswith(".py"):
-                    created_files.append({'language': 'python', 'filename': f})
-
-            from ui.launch_compiler import LaunchCompiler
-            compiler = LaunchCompiler(created_files)
-            launch_code = compiler.compile()
             
-            with open(os.path.join(launch_dir, "project_launch.py"), 'w', encoding='utf-8') as f:
-                f.write(launch_code)
+            # 3.1 ОЧИСТКА ФАЙЛОВ-ПРИЗРАКОВ (удалённые ноды, терминалы)
+            valid_files = {cf['filename'] for cf in created_files}
+            ext = ".cpp" if project_type == "cpp" else ".py"
+            try:
+                for f in os.listdir(code_dir):
+                    if f.endswith(ext) and f not in valid_files:
+                        os.remove(os.path.join(code_dir, f))
+                        logging.info(f"🗑 Удалён устаревший файл: {f}")
+            except Exception as e:
+                logging.warning(f"Cleanup skipped: {e}")
+            # 4. ГЕНЕРАЦИЯ LAUNCH ФАЙЛОВ
+            from ui.launch_compiler import LaunchCompiler
 
-            # 5. CMAKE & PACKAGE.XML (Только для C++)
+            # 4.1 Главный launch — ВСЕ ноды (Run запускает весь проект разом)
+            main_compiler = LaunchCompiler(created_files, package_name=pkg_name)
+            with open(os.path.join(launch_dir, "project_launch.py"), 'w', encoding='utf-8') as f:
+                f.write(main_compiler.compile())
+
+            # 4.2 Группировка по 'group' (приходит из _process_and_save_files)
+            groups = {}
+            for cf in created_files:
+                groups.setdefault(cf.get('group', 'main'), []).append(cf)
+            print(f"[SAVE DEBUG] groups = { {k: len(v) for k, v in groups.items()} }")
+
+            # 4.3 Per-group launch
+            for gname, gfiles in groups.items():
+                gc = LaunchCompiler(gfiles, package_name=pkg_name)
+                with open(os.path.join(launch_dir, f"{gname}_launch.py"), 'w', encoding='utf-8') as f:
+                    f.write(gc.compile())
+
+            # 4.4 docker-compose из групп
+            try:
+                from core.compose_generator import ComposeGenerator
+                from core.container_config import ContainerConfigStore
+                store = ContainerConfigStore(project_path)
+                ComposeGenerator(project_path, pkg_name, store).generate(groups)
+            except Exception as ce:
+                logging.warning(f"Compose skipped: {ce}")
+
+            # 5. CMAKE & PACKAGE.XML
             cmake_path = os.path.join(src_dir, "CMakeLists.txt")
             if project_type == "python":
                 if os.path.exists(cmake_path): os.remove(cmake_path)
             else:
+                # Метод сам вычислит имя пакета внутри, если ты обновил его как мы обсуждали
                 self._generate_cpp_build_files(src_dir, created_files)
 
             return True
@@ -101,80 +138,124 @@ class ProjectManager:
             traceback.print_exc()
             return False
 
+    def _map_files_to_groups(self, created_files, cpp_data, py_data, project_type):
+        """Сопоставляет созданные файлы с деплой-группами по source_file нод."""
+        # строим карту source_file -> container_group
+        file_to_group = {}
+        data = cpp_data if project_type == "cpp" else py_data
+        nodes = data.get('nodes', {})
+        if isinstance(nodes, dict):
+            tmp = []
+            for node_id, node_val in nodes.items():
+                if isinstance(node_val, dict):
+                    node_val = dict(node_val)  # копия, чтобы не портить исходник
+                    node_val.setdefault('id', node_id)
+                    tmp.append(node_val)
+            nodes = tmp
+        else:
+            nodes = [n for n in nodes if isinstance(n, dict) and 'id' in n]
+
+        nodes_dict = {n['id']: n for n in nodes}
+        for n in nodes:
+            print(f"[FLAT DEBUG]   нода type={n.get('type')}, parent_group_id={n.get('custom', {}).get('parent_group_id')!r}")
+        groups = {}
+        for cf in created_files:
+            grp = file_to_group.get(cf['filename'], 'main')
+            groups.setdefault(grp, []).append(cf)
+        return groups
+
     def _process_and_save_files(self, session_data, target_dir, project_type):
+        print("[PROC DEBUG] _process_and_save_files ВЫЗВАН!!!")
         is_cpp_mode = (project_type == "cpp")
         forced_extension = ".cpp" if is_cpp_mode else ".py"
+        
+        # Инициализируем генератор
+        project_name = os.path.basename(os.path.dirname(target_dir))
+        generator = CppGenerator(project_name) if is_cpp_mode else PythonGenerator(project_name)
 
-        for node in self._get_nodes_iterable(session_data):
+        # Собираем все ноды в плоский список, учитывая неймспейсы сабграфов
+        try:
+            flat_nodes = self._flatten_nodes(session_data)
+            print(f"[PROC DEBUG] flat_nodes получено: {len(flat_nodes)}")
+        except Exception as e:
+            import traceback
+            print(f"[PROC DEBUG] _flatten_nodes УПАЛ: {e}")
+            traceback.print_exc()
+            flat_nodes = []
+
+        created = []
+        for node_entry in flat_nodes:
+            node = node_entry['node']
+            namespace = node_entry['namespace']
+            container_group = node_entry.get('container_group', 'main')
+            
             custom = node.get('custom', {})
-            # Визуальное имя ноды (например "Cpp Timer")
             visual_name = node.get('name', 'Unnamed')
-            node_type = node.get('type', '')
 
-            # === ROS NODE NAME FIX ===
-            # 1. Пытаемся взять имя из свойства 'node_name' (там обычно "cpp_timer")
-            # 2. Если нет, берем визуальное имя и меняем пробелы на _
-            raw_ros_name = custom.get('node_name', visual_name)
-            safe_ros_name = re.sub(r'[^a-zA-Z0-9_]', '_', raw_ros_name)
-
-            # ИМЯ ФАЙЛА (Source File)
-            raw_filename = custom.get('source_file', re.sub(r'[^a-zA-Z0-9_]', '_', visual_name))
-            base_name = os.path.splitext(raw_filename)[0]
+            ns_clean = (namespace or "").strip("/")
+            container_group = ns_clean.split("/")[0].lower() if ns_clean else "main"
+            print(f"[GROUP DEBUG] нода '{visual_name}' namespace='{namespace}' -> group='{container_group}'")
+        
+            raw_filename = custom.get('source_file') or ''
+            base_name = os.path.splitext(os.path.basename(raw_filename))[0]
+            if not base_name or base_name.startswith('.'):
+                base_name = re.sub(r'[^a-zA-Z0-9_]', '_', visual_name)
             filename = base_name + forced_extension
             file_path = os.path.join(target_dir, filename)
 
-            # ПОДБОР ШАБЛОНА
-            check_str = (visual_name + node_type).lower()
-            template_key = "Default"
-            for key_substr, t_name in KEY_MAPPING.items():
-                if key_substr in check_str:
-                    template_key = t_name
-                    break
+            # Сбор данных для Jinja2 шаблона
+            node_data = {
+                'name': custom.get('node_name', visual_name),
+                'namespace': namespace,
+                'publishers': [],
+                'subscribers': []
+            }
+            
+            # Парсим порты для определения паблишеров/подписчиков
+            for port in node.get('ports', []):
+                port_name = port.get('name', 'port')
+                # Очистка имени порта для использования в коде
+                safe_port_name = re.sub(r'[^a-zA-Z0-9_]', '_', port_name).lower()
+                
+                # Если нода внутри сабграфа, топик должен учитывать неймспейс, 
+                # если только это не глобальный топик (начинается с /)
+                topic_name = port_name
+                if namespace and not topic_name.startswith('/'):
+                    topic_name = f"{namespace}/{topic_name}"
 
-            templates_dict = CPP_TEMPLATES if is_cpp_mode else PYTHON_TEMPLATES
-            base_template = templates_dict.get(template_key, templates_dict.get("Default", ""))
+                if port.get('type') == 'out':
+                    node_data['publishers'].append({'name': safe_port_name, 'topic': topic_name})
+                elif port.get('type') == 'in':
+                    node_data['subscribers'].append({'name': safe_port_name, 'topic': topic_name})
 
-            # КОНТЕНТ (КАРАНТИН)
-            current_code = custom.get('code_content', "")
-            if is_cpp_mode:
-                if "import rclpy" in current_code or "def __init__" in current_code:
-                    current_code = base_template 
-            if not is_cpp_mode:
-                if "#include" in current_code or "rclcpp::" in current_code:
-                    current_code = base_template
+            existing_code = custom.get('code_content', '')
+            freshly_generated = generator.generate(node_data)
 
-            code_to_write = current_code if current_code else base_template
+            if existing_code and existing_code.strip():
+                
+                code_to_write = existing_code
+            else:
+                
+                code_to_write = freshly_generated
 
-            # ГЕНЕРАЦИЯ
             if code_to_write:
-                # Имя класса (без цифр в начале)
-                class_name = re.sub(r'[^a-zA-Z0-9_]', '', base_name)
-                if is_cpp_mode and class_name and class_name[0].isdigit():
-                    class_name = "Node" + class_name
-                if not class_name: class_name = "MyNode"
-
-                code_to_write = code_to_write.replace("{class_name}", class_name)
-                
-                # ВАЖНО: Вставляем безопасное имя ноды (без пробелов)
-                code_to_write = code_to_write.replace("{node_name}", safe_ros_name)
-                
-                code_to_write = code_to_write.replace("{topic_name}", "topic_1")
-                code_to_write = code_to_write.replace("{interval}", "0.5")
-                
-                for tag in ["{EXEC_IN_INIT}", "{EXEC_OUT_INIT}", "{EXEC_FIRE}", "{EXEC_VARS}"]:
-                    code_to_write = code_to_write.replace(tag, "")
-
                 custom['code_content'] = code_to_write
                 custom['source_file'] = filename
-                
+
+                created.append({
+                    'language': 'cpp' if is_cpp_mode else 'python',
+                    'filename': filename,
+                    'group': container_group,
+                })
+
                 write_needed = True
                 if os.path.exists(file_path):
                     try:
                         with open(file_path, 'r', encoding='utf-8') as existing_f:
                             if existing_f.read() == code_to_write:
-                                write_needed = False # Код идентичен, не трогаем файл!
+                                write_needed = False
                     except Exception:
-                        pass # Если не смогли прочитать (например, нет прав), будем писать
+                        pass
 
                 if write_needed:
                     try:
@@ -185,50 +266,120 @@ class ProjectManager:
                         logging.error(f"Write error {filename}: {e}")
                 else:
                     logging.info(f"Пропущен (нет изменений): {filename}")
-    
-    
+
+        return created
+
+    def _flatten_nodes(self, session_data, current_ns="", inherited_group="main"):
+        """
+        Рекурсивно собирает все ноды из сессии, учитывая вложенность групп.
+        Возвращает список: [{'node':..., 'namespace':..., 'container_group':...}]
+        """
+        flat_list = []
+        nodes = session_data.get('nodes', [])
+
+        if isinstance(nodes, dict):
+            # ключ словаря — ID ноды; вписываем его внутрь
+            tmp = []
+            for node_id, node_val in nodes.items():
+                if isinstance(node_val, dict):
+                    node_val = dict(node_val)
+                    node_val.setdefault('id', node_id)
+                    tmp.append(node_val)
+            nodes = tmp
+        else:
+            nodes = [n for n in nodes if isinstance(n, dict) and 'id' in n]
+
+        nodes_dict = {n['id']: n for n in nodes}
+        
+        for node in nodes:
+            _pgid = node.get('custom', {}).get('parent_group_id')
+            print(f"[FLAT DEBUG] нода type={node.get('type')}, parent_group_id={_pgid!r}")
+            if current_ns == "" and _pgid:
+                print(f"[FLAT DEBUG]   -> ПРОПУЩЕНА (parent_group_id={_pgid})")
+                continue
+
+            node_type = node.get('type_') or node.get('type') or ''
+            if node_type in ('ros.nodes.internal.SubGraphInputNode',
+                             'ros.nodes.internal.SubGraphOutputNode'):
+                continue
+            is_group = node_type in ['ros.nodes.RosGroup', 'ros.nodes.RosGroupNode']
+
+            if is_group:
+                group_name = node.get('custom', {}).get('node_name', node.get('name', 'group'))
+                safe_group_name = re.sub(r'[^a-zA-Z0-9_]', '_', group_name)
+                new_ns = f"{current_ns}/{safe_group_name}".replace("//", "/")
+
+                internal_ids = node.get('custom', {}).get('internal_nodes', [])
+                internal_nodes_data = [nodes_dict[nid] for nid in internal_ids if nid in nodes_dict]
+                print(f"[FLATTEN DEBUG] группа '{group_name}': internal_ids={len(internal_ids)}, найдено нод={len(internal_nodes_data)}, new_ns='{new_ns}'")
+
+                # имя группы становится деплой-группой для её детей
+                group_container = node.get('custom', {}).get('container_group') or safe_group_name.lower()
+                flat_list.extend(self._flatten_nodes(
+                    {'nodes': internal_nodes_data}, new_ns, group_container))
+            else:
+                own_group = node.get('custom', {}).get('container_group') or inherited_group
+                flat_list.append({'node': node, 'namespace': current_ns,
+                                  'container_group': own_group})
+
+        return flat_list
+
     def _generate_cpp_build_files(self, src_dir, created_files):
-        pkg_name = "cpp_blueprints_pkg"
+        # 1. ДИНАМИЧЕСКОЕ ИМЯ ПРОЕКТА (берем из папки, где лежит src)
+        project_root = os.path.dirname(src_dir)
+        raw_name = os.path.basename(project_root)
+        # Приводим к стандарту ROS: маленькие буквы, только цифры и подчеркивания
+        pkg_name = re.sub(r'[^a-z0-9_]', '_', raw_name.lower())
+        
         cpp_dir = os.path.join(src_dir, "cpp")
         
-        # 1. БАЗОВЫЕ ЗАВИСИМОСТИ (которые нужны всегда)
-        deps = set(['rclcpp', 'rclcpp_action', 'std_msgs', 'geometry_msgs', 'sensor_msgs', 'example_interfaces'])
+        # БАЗОВЫЕ ЗАВИСИМОСТИ
+        deps = set(['rclcpp', 'rclcpp_action', 'rclcpp_lifecycle', 'std_msgs', 'geometry_msgs', 'sensor_msgs', 'example_interfaces'])
 
-        # 2. УМНЫЙ СКАНЕР (ищет новые пакеты прямо в сгенерированном C++ коде)
+        # УМНЫЙ СКАНЕР (Оставляем твою логику с OpenCV)
         pattern_msg = re.compile(r'#include\s+["<]([^/]+)/(msg|srv|action)/[^">]+[">]')
-        pattern_libs = re.compile(r'#include\s+["<](tf2_ros|tf2|tf2_geometry_msgs|image_transport|cv_bridge)/[^">]+[">]')
+        pattern_libs = re.compile(r'#include\s+["<](tf2_ros|tf2|tf2_geometry_msgs|image_transport|cv_bridge|opencv2|rclcpp_lifecycle|rclcpp_components|lifecycle_msgs)/[^">]+[">]')
 
         if os.path.exists(cpp_dir):
             for file in os.listdir(cpp_dir):
                 if file.endswith(('.cpp', '.hpp', '.h')):
                     with open(os.path.join(cpp_dir, file), 'r', encoding='utf-8') as f:
                         content = f.read()
-                        # Ищем все кастомные пакеты
                         for match in pattern_msg.findall(content):
                             deps.add(match[0])
                         for match in pattern_libs.findall(content):
-                            deps.add(match)
+                            if match == "opencv2":
+                                deps.add("opencv")
+                            else:
+                                deps.add(match)
 
         # 3. ГЕНЕРАЦИЯ CMakeLists.txt
-        cmake_content = f"cmake_minimum_required(VERSION 3.8)\nproject({pkg_name})\n\n"
+        # ВНИМАНИЕ: Здесь используем обычные строки, чтобы не путаться с f-строками и скобками
+        cmake_content = "cmake_minimum_required(VERSION 3.8)\n"
+        cmake_content += f"project({pkg_name})\n\n"
+        
         cmake_content += "if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES \"Clang\")\n"
         cmake_content += "  add_compile_options(-Wall -Wextra -Wpedantic)\nendif()\n\n"
+        
         cmake_content += "find_package(ament_cmake REQUIRED)\n"
 
-        # Динамически добавляем find_package
         for dep in sorted(deps):
-            cmake_content += f"find_package({dep} REQUIRED)\n"
+            cmake_name = "OpenCV" if dep == "opencv" else dep
+            cmake_content += f"find_package({cmake_name} REQUIRED)\n"
 
         cmake_content += "\ninclude_directories(include)\n"
-        cmake_content += 'file(GLOB_RECURSE CPP_SOURCES "cpp/*.cpp")\n\n'
+        cmake_content += "file(GLOB_RECURSE CPP_SOURCES \"cpp/*.cpp\")\n\n"
+        
+        # Исправленный цикл foreach (убраны двойные скобки)
         cmake_content += "foreach(source_file ${CPP_SOURCES})\n"
         cmake_content += "  get_filename_component(exec_name ${source_file} NAME_WE)\n"
         cmake_content += "  add_executable(${exec_name} ${source_file})\n"
 
-        # Динамически линкуем зависимости ко ВСЕМ нодам
-        deps_str = " ".join(sorted(deps))
+        cmake_deps_list = [("OpenCV" if d == "opencv" else d) for d in sorted(deps)]
+        deps_str = " ".join(cmake_deps_list)
+        
         cmake_content += f"  ament_target_dependencies(${{exec_name}} {deps_str})\n"
-        cmake_content += "  install(TARGETS ${exec_name} DESTINATION lib/${PROJECT_NAME})\n"
+        cmake_content += f"  install(TARGETS ${{exec_name}} DESTINATION lib/${{PROJECT_NAME}})\n"
         cmake_content += "endforeach()\n\n"
 
         cmake_content += "install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})\n"
@@ -256,7 +407,7 @@ class ProjectManager:
         # 4. ГЕНЕРАЦИЯ package.xml
         pkg_xml = '<?xml version="1.0"?>\n'
         pkg_xml += '<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>\n'
-        pkg_xml += f'<package format="3">\n  <name>{pkg_name}</name>\n  <version>0.0.0</version>\n'
+        pkg_xml += f'<package format="3">\n  <name>{pkg_name}</name>\n  <version>0.0.0</version>\n' 
         pkg_xml += '  <description>Auto-generated by ROS2 Blueprint Studio</description>\n'
         pkg_xml += '  <maintainer email="user@email.com">User</maintainer>\n'
         pkg_xml += '  <license>TODO</license>\n  <buildtool_depend>ament_cmake</buildtool_depend>\n\n'
@@ -316,8 +467,8 @@ class ProjectManager:
             cpp_data, cpp_map = self._prepare_data_for_loading(cpp_data_raw)
             
             # --- 2. ВОССТАНАВЛИВАЕМ НОДЫ ---
-            self.graph_py.deserialize_session(py_data)
-            self.graph_cpp.deserialize_session(cpp_data)
+            self._safe_deserialize(self.graph_py, py_data)
+            self._safe_deserialize(self.graph_cpp, cpp_data)
             
             # --- 3. ВОССТАНАВЛИВАЕМ КОД ---
             self._restore_files_and_code(self.graph_py, py_map, src_dir)
@@ -330,6 +481,10 @@ class ProjectManager:
             # --- 5. ПРИНУДИТЕЛЬНО КЛЕИМ СВЯЗИ ОБРАТНО ---
             self._restore_connections(self.graph_py, py_conns, py_data_raw.get('nodes', {}))
             self._restore_connections(self.graph_cpp, cpp_conns, cpp_data_raw.get('nodes', {}))
+            
+            from nodes.group_logic import fix_group_after_load
+            fix_group_after_load(self.graph_py, self.graph_py.all_nodes())
+            fix_group_after_load(self.graph_cpp, self.graph_cpp.all_nodes())
             
             return True
         except Exception as e:
@@ -353,6 +508,30 @@ class ProjectManager:
                     files_map[n.get('name')] = c['source_file'] 
                     del c['source_file']
         return session_data, files_map
+
+    def _safe_deserialize(self, graph, data):
+        """
+        Десериализация, устойчивая к свойствам, которых нет в классе ноды
+        (старые проекты / новые поля). Недостающие свойства создаются на лету.
+        """
+        from NodeGraphQt.base.model import NodeModel
+        orig_set = NodeModel.set_property
+
+        def patched_set(self_model, name, value, *a, **kw):
+            if name not in self_model.properties and name not in self_model.custom_properties:
+                # свойства нет — создаём, чтобы загрузка не падала
+                try:
+                    self_model.custom_properties[name] = value
+                    return
+                except Exception:
+                    pass
+            return orig_set(self_model, name, value, *a, **kw)
+
+        NodeModel.set_property = patched_set
+        try:
+            graph.deserialize_session(data)
+        finally:
+            NodeModel.set_property = orig_set
 
     def _restore_files_and_code(self, graph, files_map, src_dir):
         """Восстанавливает код, ища файлы по имени ноды"""
@@ -499,19 +678,44 @@ class ProjectManager:
         if isinstance(nodes, dict): return nodes.values()
         return nodes
     
+    
     def _backup_dynamic_ports(self, graph):
         for node in graph.all_nodes():
             try:
                 ports_config = []
-                def get_val(obj): return obj() if callable(obj) else obj
-                def get_color(obj): return list(get_val(obj)) 
+                
+                # Безопасно извлекаем значение: если это функция — вызываем, если нет — берем как есть
+                def get_safe(attr):
+                    return attr() if callable(attr) else attr
+
                 for port in node.input_ports():
-                    ports_config.append({'type': 'in', 'name': port.name(), 'color': get_color(port.color), 'multi': get_val(port.multi_connection)})
+                    # Проверяем multi_connection через view или напрямую, без вызова как функции
+                    is_multi = port.view.multi_connection if hasattr(port, 'view') else False
+                    
+                    ports_config.append({
+                        'type': 'in', 
+                        'name': port.name(), 
+                        'color': list(get_safe(port.color)), 
+                        'multi': is_multi
+                    })
+
                 for port in node.output_ports():
-                    ports_config.append({'type': 'out', 'name': port.name(), 'color': get_color(port.color), 'multi': get_val(port.multi_connection)})
-                if not node.has_property('saved_ports_config'): node.create_property('saved_ports_config', value=ports_config, widget_type=0)
-                else: node.set_property('saved_ports_config', ports_config)
-            except: pass
+                    is_multi = port.view.multi_connection if hasattr(port, 'view') else False
+                    
+                    ports_config.append({
+                        'type': 'out', 
+                        'name': port.name(), 
+                        'color': list(get_safe(port.color)), 
+                        'multi': is_multi
+                    })
+
+                if not node.has_property('saved_ports_config'):
+                    node.create_property('saved_ports_config', value=ports_config, widget_type=0)
+                else:
+                    node.set_property('saved_ports_config', ports_config)
+                    
+            except Exception as e:
+                logging.error(f"Ошибка бэкапа портов в ноде {node.name()}: {e}")
     
     def _restore_connections(self, graph, connections_data, raw_nodes_data):
         if not connections_data: return

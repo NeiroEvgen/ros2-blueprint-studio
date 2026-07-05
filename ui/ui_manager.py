@@ -39,10 +39,22 @@ class UiManager:
         if not os.path.exists(self.user_lib_path):
             os.makedirs(self.user_lib_path)
 
+    def on_group_clicked(self):
+        graph = self.main_window.graph_py if self.tabs.currentIndex() == 0 else self.main_window.graph_cpp
+        from nodes.group_logic import create_group_from_selection
+        group_node, msg = create_group_from_selection(graph)
+        if group_node:
+            self.main_window.system_log(f"Group created: {group_node.name()}")
+        else:
+            self.main_window.system_log(f"Group error: {msg}")
+
+    def update_breadcrumbs(self, stack):
+        path_str = " > ".join([item["name"] for item in stack])
+        self.breadcrumb_label.setText(path_str)
+
     def setup_ui(self):
         self.main_window.setWindowTitle("ROS2 Visual Studio (File-Based)")
-        self.main_window.resize(1400, 900)
-        
+        self.main_window.resize(1400, 900)        
         central_widget = QtWidgets.QWidget()
         self.main_window.setCentralWidget(central_widget)
         main_layout = QtWidgets.QVBoxLayout(central_widget)
@@ -81,11 +93,24 @@ class UiManager:
         self.actions['stop'] = add_btn("⏹ STOP", "#c62828")
         self.actions['stop'].setEnabled(False)
         
+        self.actions['viz_mode'] = QtWidgets.QComboBox()
+        self.actions['viz_mode'].addItems(["Foxglove", "X11 (XLaunch)"])
+        self.actions['viz_mode'].setToolTip(
+            "Foxglove: веб-визуализация без X-сервера (рекомендуется)\n"
+            "X11: классический RViz через XLaunch")
+        self.actions['viz_mode'].setStyleSheet(
+            "QComboBox { background-color: #555; color: white; padding: 5px; border-radius: 3px; }")
+        top_layout.addWidget(self.actions['viz_mode'])
+
+        self.actions['visualize'] = add_btn("🦊 Visualize", "#1565c0")
+
         top_layout.addStretch()
         
         self.actions['group'] = add_btn(" Group")
+        self.actions['group'].clicked.connect(self.on_group_clicked)
         self.actions['clear'] = add_btn(" Clear")
         self.actions['export_docker'] = add_btn(" Export")
+        self.actions['import_pkg'] = add_btn(" Import Pkg")
 
         main_layout.addWidget(top_bar)
 
@@ -109,10 +134,38 @@ class UiManager:
         
         main_splitter.addWidget(palette_panel)
 
-        # ГРАФЫ
+        # === ГРАФЫ ===
+        graph_container = QtWidgets.QWidget()
+        graph_vbox = QtWidgets.QVBoxLayout(graph_container)
+        graph_vbox.setContentsMargins(0, 0, 0, 0)
+        graph_vbox.setSpacing(0)
+
+        # Breadcrumbs bar
+        self.breadcrumb_bar = QtWidgets.QFrame()
+        self.breadcrumb_bar.setFixedHeight(30)
+        self.breadcrumb_bar.setStyleSheet("background-color: #3c3c3c; border-bottom: 1px solid #222;")
+        breadcrumb_layout = QtWidgets.QHBoxLayout(self.breadcrumb_bar)
+        breadcrumb_layout.setContentsMargins(10, 0, 10, 0)
+        self.breadcrumb_label = QtWidgets.QLabel("Root")
+        self.breadcrumb_label.setStyleSheet("color: #bbb; font-weight: bold;")
+        breadcrumb_layout.addWidget(self.breadcrumb_label)
+        
+        self.btn_back = QtWidgets.QPushButton("← Back")
+        self.btn_back.setStyleSheet("""
+            QPushButton { background: #555; color: white; border-radius: 3px; padding: 2px 10px; }
+            QPushButton:hover { background: #777; }
+        """)
+        self.btn_back.clicked.connect(self.main_window.exit_subgraph)
+        breadcrumb_layout.addWidget(self.btn_back)
+        
+        breadcrumb_layout.addStretch()        
+        graph_vbox.addWidget(self.breadcrumb_bar)
+
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.setStyleSheet("QTabWidget::pane { border: 0; }")
-        main_splitter.addWidget(self.tabs)
+        graph_vbox.addWidget(self.tabs)
+        
+        main_splitter.addWidget(graph_container)
 
         # КОНСОЛИ
         console_dock = QtWidgets.QDockWidget("Logs & Terminal", self.main_window)
@@ -172,17 +225,26 @@ class UiManager:
             self.node_palette.addItem(header)
             for item in items: self.node_palette.addItem(item)
 
-        if os.path.exists(self.user_lib_path):
-            header = QtWidgets.QListWidgetItem("--- User Library ---")
-            header.setFlags(QtCore.Qt.NoItemFlags)
-            header.setForeground(QtGui.QColor("#ffaa00")); header.setBackground(QtGui.QColor("#222")); header.setTextAlignment(QtCore.Qt.AlignCenter)
-            self.node_palette.addItem(header)
-            for f in os.listdir(self.user_lib_path):
-                if f.endswith(".json"):
-                    item = QtWidgets.QListWidgetItem(f.replace(".json", ""))
-                    item.setData(QtCore.Qt.UserRole, f"USER_LIB:{f}")
-                    item.setForeground(QtGui.QColor("#ffaa00"))
-                    self.node_palette.addItem(item)
+        # --- USER PALETTES (Native Format) ---
+        user_palettes_root = os.path.join("nodes", "user_palettes")
+        if os.path.exists(user_palettes_root):
+            for palette_name in os.listdir(user_palettes_root):
+                palette_path = os.path.join(user_palettes_root, palette_name)
+                if not os.path.isdir(palette_path): continue
+                
+                header = QtWidgets.QListWidgetItem(f"--- Palette: {palette_name} ---")
+                header.setFlags(QtCore.Qt.NoItemFlags)
+                header.setForeground(QtGui.QColor("#00ffaa")); header.setBackground(QtGui.QColor("#1a1a1a")); header.setTextAlignment(QtCore.Qt.AlignCenter)
+                self.node_palette.addItem(header)
+                
+                for node_folder in os.listdir(palette_path):
+                    node_path = os.path.join(palette_path, node_folder)
+                    if os.path.isdir(node_path) and os.path.exists(os.path.join(node_path, "node.yaml")):
+                        item = QtWidgets.QListWidgetItem(node_folder)
+                        # Кодируем путь к папке ноды
+                        item.setData(QtCore.Qt.UserRole, f"USER_NODE:{palette_name}/{node_folder}")
+                        item.setForeground(QtGui.QColor("#00ffaa"))
+                        self.node_palette.addItem(item)
 
     def create_palette(self, callback):
         self.node_palette.itemDoubleClicked.connect(callback)
