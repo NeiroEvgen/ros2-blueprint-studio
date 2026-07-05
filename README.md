@@ -9,23 +9,26 @@ ROS 2 Blueprint Studio is a standalone desktop application that allows you to cr
 It runs entirely on **Windows** (and Linux) without requiring a local ROS 2 installation, thanks to **Docker** integration.
 
 <img width="1400" height="902" alt="image" src="https://github.com/user-attachments/assets/4e427ea7-a8b4-4dbc-b70e-c98e6cdb00fc" />
-  
-🚀 Key Features (v0.5.0 Evolution)
 
-🔌 Visual Scripting & Custom Node Palette: Design ROS 2 systems intuitively by connecting nodes. Version 0.5.0 introduces a customizable Node Library, allowing you to save your own C++ or Python node templates and drag-and-drop them directly onto the canvas for instant reuse.
+## 🚀 Key Features (v0.5.0)
 
-📦 Hierarchical Subgraphs (Macros): Manage complexity by grouping related logic into CompositeNodes. This nested architecture allows you to "dive deep" into subsystems, keeping your top-level architecture clean and readable even for large-scale projects.
+🔌 **Visual Scripting & Custom Node Palette:** Design ROS 2 systems intuitively by connecting nodes. Save your own C++ or Python node templates into a customizable Node Library and drag-and-drop them onto the canvas for instant reuse.
 
-🐳 Flexible Deployment (Docker & Bare-Metal): Run your entire generated architecture in isolated Docker containers (osrf/ros:humble-desktop) with a single click, or use the Native Dependency Generator to fetch requirements and run natively on your host Ubuntu system.
+📦 **Hierarchical Subgraphs (Macros):** Group related logic into composite nodes and "dive deep" into subsystems. Enter/exit subgraphs, dissolve groups (Del) or delete them with contents (Ctrl+Del) — with full save/load persistence.
 
-🐍 & ⚙️ Seamless C++ / Python Workflow: Full support for both languages with built-in code editors. The studio automatically generates standard CMakeLists.txt and package.xml files and builds your C++ nodes using standard colcon tools under the hood.
->🚧 Work in Progress: The Python compiler is currently taking a nap due to core refactoring. Stick to C++ for now!
+🐳 **Deploy Groups → docker-compose:** Each subgraph can become its own deployment unit. The studio generates per-group launch files and a ready-to-use `docker-compose.yml`, so one visual graph maps onto multiple isolated containers.
 
-💾 Robust Project System & UI Persistence: Blueprints and node properties are cleanly saved as structured YAML files. The UI State manager ensures your node coordinates, dynamic ports, colors, and workspace layout are perfectly preserved between sessions.
+🐍 & ⚙️ **C++ / Python — both alive end-to-end:** Full workflow for both languages: graph → generated code → build (colcon for C++) → live nodes in Docker. Standard `CMakeLists.txt` / `package.xml` are generated automatically with Smart Dependency Scan.
 
-📝 One-Click Export & Launch: The studio acts as an intelligent boilerplate generator. It scans your code for dependencies (Smart Scan) and creates standard ROS 2 packages with Python launch files to deploy your entire system instantly.
+📝 **Real Code Editing with Live Sync:** Double-click a node to open its actual source file in your system editor. External edits are watched and synced back into the graph — and manual changes survive regeneration.
 
-🚀 Standalone Cross-Platform GUI: Features a professional dark-themed Material Design interface built with Qt. Designed to run as a standalone application on Linux and Windows, offering dockable panels and real-time terminal monitoring.
+🦊 **Foxglove Visualization — no X server required:** One click installs and starts `foxglove_bridge` inside the container and opens Foxglove for live 3D visualization (markers, topics, cameras). No more XLaunch pain on Windows. Classic X11/RViz mode is still available as an option.
+
+💾 **Robust Project System & UI Persistence:** Blueprints and node properties are saved as structured YAML. Node coordinates, dynamic ports, colors, and workspace layout are preserved between sessions.
+
+📤 **Portable Docker Export:** Export your whole system as a self-contained Docker package (Dockerfile + sources + launch) that builds and runs anywhere — with automatic cleanup of stale files.
+
+🚀 **Standalone Cross-Platform GUI:** Dark-themed Material Design interface built with Qt, dockable panels, and real-time terminal monitoring. Runs on Windows and Linux.
 
 ## 🛠️ Prerequisites
 
