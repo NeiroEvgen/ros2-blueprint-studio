@@ -94,6 +94,11 @@ class ProjectManager:
                         logging.info(f"🗑 Удалён устаревший файл: {f}")
             except Exception as e:
                 logging.warning(f"Cleanup skipped: {e}")
+
+            pycache_dir = os.path.join(launch_dir, "__pycache__")
+            if os.path.isdir(pycache_dir):
+                shutil.rmtree(pycache_dir, ignore_errors=True)
+                
             # 4. ГЕНЕРАЦИЯ LAUNCH ФАЙЛОВ
             from ui.launch_compiler import LaunchCompiler
 
@@ -229,6 +234,16 @@ class ProjectManager:
                     node_data['subscribers'].append({'name': safe_port_name, 'topic': topic_name})
 
             existing_code = custom.get('code_content', '')
+            try:
+                if os.path.exists(file_path):
+                    with open(file_path, 'r', encoding='utf-8') as df:
+                        disk_code = df.read()
+                    if disk_code.strip():
+                        existing_code = disk_code
+                        custom['code_content'] = disk_code
+            except Exception as e:
+                logging.warning(f"Disk re-read skipped for {filename}: {e}")
+
             freshly_generated = generator.generate(node_data)
 
             if existing_code and existing_code.strip():
@@ -301,6 +316,9 @@ class ProjectManager:
             node_type = node.get('type_') or node.get('type') or ''
             if node_type in ('ros.nodes.internal.SubGraphInputNode',
                              'ros.nodes.internal.SubGraphOutputNode'):
+                continue
+            
+            if 'meta' in node_type:
                 continue
             is_group = node_type in ['ros.nodes.RosGroup', 'ros.nodes.RosGroupNode']
 

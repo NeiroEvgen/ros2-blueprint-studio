@@ -44,7 +44,9 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         # 1. UI Setup
         self.ui = UiManager(self)
         self.ui.setup_ui()
-        
+        self._palette_drop = PaletteDropFilter()
+        self.ui.node_palette.installEventFilter(self._palette_drop)
+        self._palette_drop.node_dropped.connect(self._on_node_dropped_to_palette)
         self.dashboard = ConsoleDashboard()
         
         # 4. Docker Connect
@@ -273,6 +275,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 return
             
             self.project_manager.open_node_in_editor(node, self.current_project_path)
+            self.watcher.start_watching(os.path.join(self.current_project_path, "src"))
             self.system_log(f"Opened code for: {node.name()}")
     def connect_actions(self):
         """Восстанавливает связи кнопок управления"""
@@ -283,6 +286,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         if 'import_pkg' in self.ui.actions:
             self.ui.actions['import_pkg'].clicked.connect(self.on_import_foreign_project)
         self.ui.actions['visualize'].clicked.connect(self.on_visualize)
+        self.ui.actions['export_palette'].clicked.connect(self.on_export_palette)
+        self.ui.actions['import_palette'].clicked.connect(self.on_import_palette)
 
 
 
@@ -430,36 +435,66 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             path_parts = code.replace("USER_NODE:", "").split("/")
             palette_name = path_parts[0]
             node_folder = path_parts[1]
-            
+
             base_dir = os.path.join("nodes", "user_palettes", palette_name, node_folder)
             meta_path = os.path.join(base_dir, "node.yaml")
-            
+
             if not os.path.exists(meta_path): return
-            
+
             import yaml
             with open(meta_path, 'r', encoding='utf-8') as f:
                 meta = yaml.safe_load(f)
-            
+
             graph = self.graph_py if self.ui.tabs.currentIndex() == 0 else self.graph_cpp
-            
-            # Создаем ноду базового типа
-            node = graph.create_node(meta['type'], name=meta['name'])
-            
+
+            # === ФИКС 2: уникальное имя (Name, Name_1, Name_2...) ===
+            base_name = meta['name']
+            existing = {n.name() for n in graph.all_nodes()}
+            new_name = base_name
+            i = 1
+            while new_name in existing:
+                new_name = f"{base_name}_{i}"
+                i += 1
+
+            node = graph.create_node(meta['type'], name=new_name)
+
             # Восстанавливаем свойства
             for key, val in meta.get('properties', {}).items():
-                node.set_property(key, val)
-                
+                try:
+                    node.set_property(key, val)
+                except Exception:
+                    # свойства, которых нет у базового класса, создаём
+                    try:
+                        node.create_property(key, val)
+                    except Exception:
+                        pass
+
+            # === ФИКС 1: восстанавливаем кастомные порты ===
+            have_in = set(node.inputs().keys())
+            have_out = set(node.outputs().keys())
+            for p in meta.get('ports', []):
+                pname, pdir = p.get('name'), p.get('type')
+                if not pname:
+                    continue
+                try:
+                    if pdir == 'in' and pname not in have_in:
+                        node.add_input(pname, multi_input=True, display_name=True)
+                    elif pdir == 'out' and pname not in have_out:
+                        node.add_output(pname, multi_output=True, display_name=True)
+                except Exception as pe:
+                    self.system_log(f"WARN: port '{pname}' skipped: {pe}")
+
             # Восстанавливаем код из файла (Закон удобства)
             ext = ".cpp" if "cpp" in meta['type'].lower() else ".py"
             code_path = os.path.join(base_dir, f"logic{ext}")
             if os.path.exists(code_path):
                 with open(code_path, 'r', encoding='utf-8') as f:
                     node.set_property("code_content", f.read())
-                    
-            self.system_log(f"Successfully imported user node: {node_folder}")
+
+            self.system_log(f"Successfully imported user node: {new_name}")
         except Exception as e:
             self.system_log(f"Error importing user node: {e}")
-
+            
     def on_save_node_to_palette(self, node):
         palette_name, ok = QtWidgets.QInputDialog.getText(self, "Save to Palette", "Enter Palette Name:")
         if not (ok and palette_name): return
@@ -474,7 +509,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             "name": node_name,
             "type": node.type_,
             "properties": node.model.custom_properties,
-            "ports": [{"name": p.name(), "type": p.port_type} for p in node.all_ports()]
+            "ports": ([{"name": p.name(), "type": "in"} for p in node.input_ports()]
+                      + [{"name": p.name(), "type": "out"} for p in node.output_ports()])
         }
         
         import yaml
@@ -487,10 +523,72 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         with open(os.path.join(base_dir, f"logic{ext}"), 'w', encoding='utf-8') as f:
             f.write(code if code else "")
 
-        self.system_log(f"✅ Node '{node_name}' saved to palette '{palette_name}' as native files.")
+        self.system_log(f" Node '{node_name}' saved to palette '{palette_name}' as native files.")
         # Обновляем UI палитры
         p_type = WorkspaceManager.get_project_type(self.current_project_path) if self.current_project_path else "python"
         self.ui.rebuild_palette(ALL_NODE_CLASSES, p_type)
+
+    def _on_node_dropped_to_palette(self, node_id):
+        """Нода перетащена Alt+drag'ом на палитру — сохраняем её как кастомную."""
+        for g in (self.graph_py, self.graph_cpp):
+            for n in g.all_nodes():
+                if n.id == node_id:
+                    self.on_save_node_to_palette(n)
+                    return
+                
+    def on_export_palette(self):
+        from core.palette_share import export_palette, PALETTES_ROOT
+        # Какие палитры есть
+        palettes = []
+        if os.path.isdir(PALETTES_ROOT):
+            palettes = [d for d in os.listdir(PALETTES_ROOT)
+                        if os.path.isdir(os.path.join(PALETTES_ROOT, d))]
+        if not palettes:
+            self.system_log("No user palettes to export. Save a node to a palette first.")
+            return
+        name, ok = QtWidgets.QInputDialog.getItem(
+            self, "Export Palette", "Choose palette:", palettes, 0, False)
+        if not (ok and name):
+            return
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Export palette as", f"{name}.bppalette",
+            "Blueprint Palette (*.bppalette)")
+        if not path:
+            return
+        try:
+            out = export_palette(name, path)
+            self.system_log(f"📤 Palette exported: {out}")
+        except Exception as e:
+            self.system_log(f"Export failed: {e}")
+
+    def on_import_palette(self):
+        from core.palette_share import import_palette
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Import palette", "", "Blueprint Palette (*.bppalette *.zip)")
+        if not path:
+            return
+        try:
+            pname, nodes = import_palette(path)
+        except FileExistsError as e:
+            ans = QtWidgets.QMessageBox.question(
+                self, "Palette exists",
+                f"Palette '{e}' already exists. Overwrite?")
+            if ans != QtWidgets.QMessageBox.Yes:
+                return
+            try:
+                pname, nodes = import_palette(path, overwrite=True)
+            except Exception as e2:
+                self.system_log(f"Import failed: {e2}")
+                return
+        except Exception as e:
+            self.system_log(f"Import failed: {e}")
+            return
+
+        # Обновляем палитру в UI
+        p_type = WorkspaceManager.get_project_type(self.current_project_path) \
+            if self.current_project_path else "python"
+        self.ui.rebuild_palette(ALL_NODE_CLASSES, p_type)
+        self.system_log(f"📥 Imported palette '{pname}': {len(nodes)} node(s): {', '.join(nodes)}")
 
     def on_assign_container(self, graph, *args, **kwargs):
         """Назначает выбранным нодам деплой-группу (свойство container_group)."""
@@ -712,3 +810,19 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                     
         if new_code != current: 
             node.set_property('code_content', new_code)
+class PaletteDropFilter(QtCore.QObject):
+    node_dropped = QtCore.Signal(str)  # node_id
+
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.DragEnter:
+            if event.mimeData().hasFormat("application/x-bp-node-id"):
+                event.acceptProposedAction()
+                return True
+        elif event.type() == QtCore.QEvent.Drop:
+            md = event.mimeData()
+            if md.hasFormat("application/x-bp-node-id"):
+                node_id = bytes(md.data("application/x-bp-node-id")).decode()
+                self.node_dropped.emit(node_id)
+                event.acceptProposedAction()
+                return True
+        return super().eventFilter(obj, event)

@@ -1,0 +1,119 @@
+name: ArmRenderNode
+type: ros.cpp.CppCustomNode
+properties:
+  parent_group_id: ''
+  group_uid: ''
+  container_group: main
+  is_imported: false
+  source_file: ArmRenderNode.cpp
+  code_content: "#include \"rclcpp/rclcpp.hpp\"\n#include \"visualization_msgs/msg/marker_array.hpp\"\
+    \n#include \"std_msgs/msg/float64_multi_array.hpp\"\n#include \"geometry_msgs/msg/quaternion.hpp\"\
+    \n#include <cmath>\n#include <algorithm>\n#include <chrono>\n\nusing namespace\
+    \ std::chrono_literals;\n\n// \u0420\u0435\u043D\u0434\u0435\u0440 6-\u043E\u0441\
+    \u0435\u0432\u043E\u0433\u043E \u043C\u0430\u043D\u0438\u043F\u0443\u043B\u044F\
+    \u0442\u043E\u0440\u0430 \u0438\u0437 \u0443\u0433\u043B\u043E\u0432 \u0441\u0443\
+    \u0441\u0442\u0430\u0432\u043E\u0432.\n// \u0412\u0445\u043E\u0434:  /arm/joint_cmd\
+    \  (std_msgs/Float64MultiArray, data[6]:\n//        [0] yaw \u0431\u0430\u0437\
+    \u044B, [1] \u043F\u043B\u0435\u0447\u043E, [2] \u043B\u043E\u043A\u043E\u0442\
+    \u044C, [3] \u043A\u0438\u0441\u0442\u044C pitch,\n//        [4] \u043A\u0438\u0441\
+    \u0442\u044C roll (\u043F\u043E\u043A\u0430 \u043D\u0435 \u0440\u0438\u0441\u0443\
+    \u0435\u043C), [5] \u0440\u0430\u0441\u043A\u0440\u044B\u0442\u0438\u0435 \u043F\
+    \u0430\u043B\u044C\u0446\u0435\u0432 0..1)\n// \u0412\u044B\u0445\u043E\u0434\
+    : /arm_viz_markers (MarkerArray, frame 'map')\nclass ArmRenderNode : public rclcpp::Node\
+    \ {\npublic:\n    ArmRenderNode() : Node(\"arm_render_node\") {\n        // \u0421\
+    \u0442\u0430\u0440\u0442\u043E\u0432\u0430\u044F \u043F\u043E\u0437\u0430: \u0440\
+    \u0443\u043A\u0430 \u0441\u043B\u043E\u0436\u0435\u043D\u0430 \u0432\u043D\u0438\
+    \u0437\n        q_ = {0.0, 2.60, 0.20, 0.0, 0.0, 0.5};\n\n        sub_ = create_subscription<std_msgs::msg::Float64MultiArray>(\n\
+    \            \"/arm/joint_cmd\", 10,\n            [this](const std_msgs::msg::Float64MultiArray::SharedPtr\
+    \ msg) {\n                for (size_t i = 0; i < q_.size() && i < msg->data.size();\
+    \ i++)\n                    q_[i] = msg->data[i];\n            });\n\n       \
+    \ pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(\n           \
+    \ \"/arm_viz_markers\", 10);\n        timer_ = create_wall_timer(33ms, std::bind(&ArmRenderNode::render,\
+    \ this));\n        RCLCPP_INFO(get_logger(),\n            \"\U0001F9BE ArmRenderNode:\
+    \ listening /arm/joint_cmd -> /arm_viz_markers\");\n    }\n\nprivate:\n    static\
+    \ constexpr double kPedestalH = 0.15;\n    static constexpr double kL1 = 0.35,\
+    \ kL2 = 0.30, kL3 = 0.12;\n\n    struct P { double x, y, z; };\n\n    static geometry_msgs::msg::Quaternion\
+    \ quat_z_to(double dx, double dy, double dz) {\n        geometry_msgs::msg::Quaternion\
+    \ q;\n        double n = std::sqrt(dx*dx + dy*dy + dz*dz);\n        if (n < 1e-9)\
+    \ { q.w = 1.0; return q; }\n        dx /= n; dy /= n; dz /= n;\n        double\
+    \ ax = -dy, ay = dx;\n        double an = std::sqrt(ax*ax + ay*ay);\n        double\
+    \ cosang = std::clamp(dz, -1.0, 1.0);\n        if (an < 1e-9) { if (cosang > 0)\
+    \ q.w = 1.0; else q.x = 1.0; return q; }\n        ax /= an; ay /= an;\n      \
+    \  double half = 0.5 * std::acos(cosang), s = std::sin(half);\n        q.w = std::cos(half);\
+    \ q.x = ax*s; q.y = ay*s; q.z = 0.0;\n        return q;\n    }\n\n    visualization_msgs::msg::Marker\
+    \ base_marker(int id, int type) {\n        visualization_msgs::msg::Marker m;\n\
+    \        m.header.frame_id = \"map\";\n        m.header.stamp = get_clock()->now();\n\
+    \        m.ns = \"arm\"; m.id = id; m.type = type;\n        m.action = visualization_msgs::msg::Marker::ADD;\n\
+    \        m.pose.orientation.w = 1.0;\n        m.color.a = 1.0;\n        return\
+    \ m;\n    }\n\n    visualization_msgs::msg::Marker sphere(int id, P p, double\
+    \ r,\n                                           double cr, double cg, double\
+    \ cb) {\n        auto m = base_marker(id, visualization_msgs::msg::Marker::SPHERE);\n\
+    \        m.pose.position.x = p.x; m.pose.position.y = p.y; m.pose.position.z =\
+    \ p.z;\n        m.scale.x = m.scale.y = m.scale.z = r * 2.0;\n        m.color.r\
+    \ = cr; m.color.g = cg; m.color.b = cb;\n        return m;\n    }\n\n    visualization_msgs::msg::Marker\
+    \ link(int id, P a, P b, double radius,\n                                    \
+    \     double cr, double cg, double cb) {\n        auto m = base_marker(id, visualization_msgs::msg::Marker::CYLINDER);\n\
+    \        double dx = b.x-a.x, dy = b.y-a.y, dz = b.z-a.z;\n        m.pose.position.x\
+    \ = (a.x+b.x)*0.5;\n        m.pose.position.y = (a.y+b.y)*0.5;\n        m.pose.position.z\
+    \ = (a.z+b.z)*0.5;\n        m.pose.orientation = quat_z_to(dx, dy, dz);\n    \
+    \    m.scale.x = m.scale.y = radius*2.0;\n        m.scale.z = std::sqrt(dx*dx+dy*dy+dz*dz);\n\
+    \        m.color.r = cr; m.color.g = cg; m.color.b = cb;\n        return m;\n\
+    \    }\n\n    void render() {\n        double yaw = q_[0], q1 = q_[1], q2 = q_[2],\
+    \ q4 = q_[3];\n        double grip = std::clamp(q_[5], 0.0, 1.0);\n\n        double\
+    \ a1 = q1, a2 = q1 + q2, a3 = q1 + q2 + q4;\n        P shoulder{0, 0, kPedestalH\
+    \ + 0.05};\n        P elbow_l{ shoulder.x + kL1*std::sin(a1), 0, shoulder.z +\
+    \ kL1*std::cos(a1) };\n        P wrist_l{ elbow_l.x + kL2*std::sin(a2), 0, elbow_l.z\
+    \ + kL2*std::cos(a2) };\n        P hand_l{  wrist_l.x + kL3*std::sin(a3), 0, wrist_l.z\
+    \ + kL3*std::cos(a3) };\n\n        auto rot = [&](P p) -> P {\n            return\
+    \ { p.x*std::cos(yaw) - p.y*std::sin(yaw),\n                     p.x*std::sin(yaw)\
+    \ + p.y*std::cos(yaw), p.z };\n        };\n        P elbow = rot(elbow_l), wrist\
+    \ = rot(wrist_l), hand = rot(hand_l);\n\n        visualization_msgs::msg::MarkerArray\
+    \ arr;\n        {   // \u043F\u043E\u0441\u0442\u0430\u043C\u0435\u043D\u0442\n\
+    \            auto m = base_marker(0, visualization_msgs::msg::Marker::CYLINDER);\n\
+    \            m.pose.position.z = kPedestalH*0.5;\n            m.scale.x = m.scale.y\
+    \ = 0.20; m.scale.z = kPedestalH;\n            m.color.r = m.color.g = m.color.b\
+    \ = 0.25;\n            arr.markers.push_back(m);\n        }\n        arr.markers.push_back(sphere(1,\
+    \ shoulder, 0.045, 1.0, 0.45, 0.0));\n        arr.markers.push_back(link(2, shoulder,\
+    \ elbow, 0.030, 0.55, 0.60, 0.65));\n        arr.markers.push_back(sphere(3, elbow,\
+    \ 0.040, 1.0, 0.45, 0.0));\n        arr.markers.push_back(link(4, elbow, wrist,\
+    \ 0.026, 0.55, 0.60, 0.65));\n        arr.markers.push_back(sphere(5, wrist, 0.034,\
+    \ 1.0, 0.45, 0.0));\n        arr.markers.push_back(link(6, wrist, hand, 0.030,\
+    \ 0.4, 1.0, 0.4));\n\n        // \u041F\u0430\u043B\u044C\u0446\u044B: \u0440\u0430\
+    \u0441\u043A\u0440\u044B\u0442\u0438\u0435 \u043F\u043E grip (0 = \u0441\u0436\
+    \u0430\u0442\u044B \u0432\u0434\u043E\u043B\u044C \u043B\u0430\u0434\u043E\u043D\
+    \u0438, 1 = \u0432\u0435\u0435\u0440\u043E\u043C)\n        double dirx = std::sin(a3),\
+    \ dirz = std::cos(a3);\n        for (int i = -1; i <= 1; i++) {\n            double\
+    \ spread = 0.010 + 0.022 * grip;\n            P f0_l{ hand_l.x, spread * i, hand_l.z\
+    \ };\n            P f1_l{ hand_l.x + 0.08*dirx, spread * i * (1.0 + grip),\n \
+    \                   hand_l.z + 0.08*dirz };\n            arr.markers.push_back(link(10+i,\
+    \ rot(f0_l), rot(f1_l), 0.011,\n                                       0.4, 1.0,\
+    \ 0.4));\n        }\n        pub_->publish(arr);\n    }\n\n    std::array<double,\
+    \ 6> q_;\n    rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr\
+    \ sub_;\n    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr\
+    \ pub_;\n    rclcpp::TimerBase::SharedPtr timer_;\n};\n\nint main(int argc, char\
+    \ * argv[]) {\n    rclcpp::init(argc, argv);\n    rclcpp::spin(std::make_shared<ArmRenderNode>());\n\
+    \    rclcpp::shutdown();\n    return 0;\n}"
+  saved_ports_config:
+  - type: in
+    name: joint_cmd
+    color:
+    - 255
+    - 255
+    - 255
+    multi: true
+  - type: out
+    name: arm_viz_markers
+    color:
+    - 255
+    - 255
+    - 255
+    multi: true
+  node_name: my_custom_node
+  class_name: MyCustomClass
+  topic_name: /data
+  template_key: cpp_custom
+ports:
+- name: joint_cmd
+  type: in
+- name: arm_viz_markers
+  type: out

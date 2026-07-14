@@ -1,0 +1,31 @@
+name: README
+type: ros.nodes.meta.NoteNode
+properties:
+  parent_group_id: ''
+  group_uid: ''
+  container_group: main
+  is_imported: false
+  source_file: Note.py
+  code_content: "# Hand Teleoperation Demo\n\nWave at your webcam \u2014 the 6-axis\
+    \ arm mirrors your hand in real time.\n\n## Pipeline\nwebcam (host) \u2192 MediaPipe\
+    \ hand tracking \u2192 UDP :9877 \u2192\nHandUdpReceiverNode \u2192 /hand/pose\
+    \ \u2192 ArmControllerNode (smoothing) \u2192\n/arm/joint_cmd \u2192 ArmRenderNode\
+    \ \u2192 /arm_viz_markers \u2192 Foxglove 3D\n\n## Setup (once)\n1. Drag all 3\
+    \ nodes from this palette onto the canvas (C++ project).\n2. Host side needs Python\
+    \ 3.11 + two packages:\n   pip install mediapipe==0.10.14 opencv-python\n3. Get\
+    \ the host tracker script from the repo:\n   github.com/NeiroEvgen/ros2-blueprint-studio\
+    \ \u2192 examples/hand_teleop/host/\n   (keep it in an ASCII-only path \u2014\
+    \ MediaPipe dislikes non-latin folders)\n\n## Run\n1. Press RUN and wait for the\
+    \ build to finish.\n2. On the host:  python host_hand_tracker.py\n   (a camera\
+    \ window with a hand skeleton should appear)\n3. Press VISUALIZE \u2192 in Foxglove\
+    \ add a 3D panel,\n   enable topic /arm_viz_markers, set Fixed frame = map.\n\
+    4. Wave. It waves back.\n\n## If the arm doesn't move\n- Check UDP port: container\
+    \ must expose 9877/udp\n  (docker ps should show 9877->9877/udp; recreate the\
+    \ session if not)\n- Check data flow:  ros2 topic echo /hand/pose  (inside the\
+    \ container)\n- No hand skeleton in the camera window = tracking problem, not\
+    \ ROS\n\n## Tuning (ArmControllerNode)\n- smoothing: alpha 0.25 (lower = smoother,\
+    \ laggier)\n- yaw range: (x - 0.5) * 1.6\n- hand lost for >0.5 s \u2192 arm drifts\
+    \ to idle pose"
+  saved_ports_config: []
+  title: README
+ports: []

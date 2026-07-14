@@ -77,7 +77,7 @@ class RosContainerManager:
         if platform.system() == 'Windows':
             environment['DISPLAY'] = 'host.docker.internal:0.0'
             
-            run_kwargs['ports'] = {'8765/tcp': 8765}
+            run_kwargs['ports'] = {'8765/tcp': 8765, '9877/udp': 9877}
         else:
             environment['DISPLAY'] = ':0'
             volumes_map['/tmp/.X11-unix'] = {'bind': '/tmp/.X11-unix', 'mode': 'rw'}
@@ -110,7 +110,10 @@ class RosContainerManager:
             
             # Обновляем списки и ставим зависимости, которые прописаны в package.xml
             dep_cmd = (
-                "bash -c 'apt-get update && "
+                "bash -c '"
+                "while fuser /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend >/dev/null 2>&1; "
+                "do echo \"[deps] waiting for apt lock...\"; sleep 2; done; "
+                "apt-get update && "
                 "rosdep install -y --from-paths /root/ros2_ws/src --ignore-src --rosdistro humble'"
             )
             
@@ -182,15 +185,21 @@ class RosContainerManager:
         check_pkg = self.container.exec_run(
             "bash -c \"test -d /opt/ros/humble/share/foxglove_bridge && echo yes || echo no\"")
         if b"no" in (check_pkg.output or b""):
-            log(" Устанавливаю ros-humble-foxglove-bridge (один раз)...")
+            log(" foxglove_bridge ещё не установлен. Жду apt (фоновая установка сессии)...")
             inst = self.container.exec_run(
-                "bash -c \"apt-get update && apt-get install -y ros-humble-foxglove-bridge\"",
-                stream=True)
-            for chunk in inst.output:
-                pass  # тихо ждём; можно логировать chunk при желании
-            log(" foxglove_bridge установлен.")
+                "bash -c '"
+                "while fuser /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend >/dev/null 2>&1; "
+                "do sleep 2; done; "
+                "apt-get update && apt-get install -y ros-humble-foxglove-bridge'")
+            # Честная проверка результата, а не слепой рапорт
+            recheck = self.container.exec_run(
+                "bash -c \"test -d /opt/ros/humble/share/foxglove_bridge && echo yes || echo no\"")
+            if b"no" in (recheck.output or b""):
+                tail = (inst.output or b"")[-400:].decode(errors="ignore")
+                raise RuntimeError(f"Установка foxglove_bridge не удалась. Хвост лога: {tail}")
+            log(" foxglove_bridge установлен (проверено).")
 
-        # СТАЛО (вариант с полным отвязыванием от exec-сессии):
+    
         self.container.exec_run(
             "bash -c \"source /opt/ros/humble/setup.bash && "
             "setsid nohup ros2 run foxglove_bridge foxglove_bridge "

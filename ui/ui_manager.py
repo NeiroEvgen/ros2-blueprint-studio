@@ -1,7 +1,7 @@
 import os
 from PySide6 import QtWidgets, QtCore, QtGui
 
-# === 1. УМНЫЙ СПИСОК (FIX DRAG & DROP) ===
+# === 1. УМНЫЙ СПИСОК  ===
 class DraggableListWidget(QtWidgets.QListWidget):
     def startDrag(self, supportedActions):
         item = self.currentItem()
@@ -25,6 +25,23 @@ class DraggableListWidget(QtWidgets.QListWidget):
         
         drag.exec(supportedActions)
 
+class PaletteDropFilter(QtCore.QObject):
+    node_dropped = QtCore.Signal(str)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.DragEnter:
+            if event.mimeData().hasFormat("application/x-bp-node-id"):
+                event.acceptProposedAction()
+                return True
+        elif event.type() == QtCore.QEvent.Drop:
+            md = event.mimeData()
+            if md.hasFormat("application/x-bp-node-id"):
+                node_id = bytes(md.data("application/x-bp-node-id")).decode()
+                self.node_dropped.emit(node_id)
+                event.acceptProposedAction()
+                return True
+        return super().eventFilter(obj, event)
+    
 # === 2. МЕНЕДЖЕР UI ===
 class UiManager:
     def __init__(self, main_window):
@@ -101,11 +118,11 @@ class UiManager:
         self.actions['viz_mode'].setStyleSheet(
             "QComboBox { background-color: #555; color: white; padding: 5px; border-radius: 3px; }")
         top_layout.addWidget(self.actions['viz_mode'])
-
-        self.actions['visualize'] = add_btn("🦊 Visualize", "#1565c0")
+        self.actions['visualize'] = add_btn(" Visualize", "#1565c0")
 
         top_layout.addStretch()
-        
+        self.actions['export_palette'] = add_btn(" Palette ⬆")
+        self.actions['import_palette'] = add_btn(" Palette ⬇")
         self.actions['group'] = add_btn(" Group")
         self.actions['group'].clicked.connect(self.on_group_clicked)
         self.actions['clear'] = add_btn(" Clear")
@@ -131,7 +148,7 @@ class UiManager:
         self.node_palette.setDragEnabled(True)
         self.node_palette.setStyleSheet("border: none; background: #2b2b2b;")
         palette_layout.addWidget(self.node_palette)
-        
+        self.node_palette.setAcceptDrops(True)
         main_splitter.addWidget(palette_panel)
 
         # === ГРАФЫ ===
@@ -206,15 +223,16 @@ class UiManager:
         for node_cls in node_classes:
             identifier = node_cls.type_; name = node_cls.NODE_NAME
             if project_type == "python" and "ros.cpp" in identifier: continue
-            if project_type == "cpp" and "ros.py" in identifier: continue
-            
+            if project_type == "cpp" and (".py" in identifier): continue
+            if "internal" in identifier: continue
+
             item = QtWidgets.QListWidgetItem(name)
             item.setData(QtCore.Qt.UserRole, identifier)
             
             if "PubNode" in name: categories["Output (Publishers)"].append(item)
             elif "SubNode" in name: categories["Input (Subscribers)"].append(item)
-            elif "Monitor" in name or "Group" in name: categories["Tools & Utility"].append(item)
-            elif "Coursework" in identifier or "LevelBuilder" in name: categories["Coursework"].append(item)
+            elif "Monitor" in name or "Group" in name or "Note" in name: categories["Tools & Utility"].append(item)
+            
             else: categories["Logic & Processing"].append(item)
 
         for cat_name, items in categories.items():

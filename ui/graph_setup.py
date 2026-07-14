@@ -1,35 +1,33 @@
-from PySide6 import QtCore
+from PySide6 import QtCore, QtGui
 from NodeGraphQt import NodeGraph
 
-# === ИМПОРТЫ ВСЕХ НОД ===
-from nodes.library.py_basic import PyStringPubNode, PyStringSubNode
-from nodes.library.cpp_basic import CppStringPubNode, CppStringSubNode, CppCustomNode
-from nodes.library.py_logic import PyTimerNode, PyPrintNode
-
-from nodes.library.cpp_logic import CppTimerNode, CppPrintNode 
-
-from nodes.group_logic import RosGroupNode, SubGraphInputNode, SubGraphOutputNode
-from nodes.monitor_node import MonitorNode
-
+from nodes import ALL_NODE_CLASSES
 TYPE_COLORS = {
     "std_msgs/String": (255, 235, 59),
     "geometry_msgs/Twist": (255, 152, 0),
     "DEFAULT": (100, 100, 100)
 }
 
-ALL_NODE_CLASSES = [
-    PyStringPubNode, PyStringSubNode, PyTimerNode, PyPrintNode, 
-    CppStringPubNode, CppStringSubNode, CppTimerNode, CppPrintNode, CppCustomNode,
-    MonitorNode, RosGroupNode, SubGraphInputNode, SubGraphOutputNode
-]
+
+def _node_from_item(graph, item):
+    """Находит BaseNode по QGraphicsItem (поднимаясь по родителям)."""
+    while item is not None:
+        for n in graph.all_nodes():
+            if n.view is item:
+                return n
+        item = item.parentItem()
+    return None
+
+
 class GraphDropFilter(QtCore.QObject):
-    """Фильтр для перетаскивания нод из палитры на граф"""
+    """Drop из палитры на граф + Alt+drag ноды с графа в палитру."""
     def __init__(self, graph, node_map_callback):
         super().__init__()
         self.graph = graph
         self.get_node_type = node_map_callback
 
     def eventFilter(self, watched, event):
+        # 1) Drop из палитры -> создать ноду
         if event.type() == QtCore.QEvent.Drop:
             code = event.mimeData().text()
             node_type = self.get_node_type(code)
@@ -39,8 +37,24 @@ class GraphDropFilter(QtCore.QObject):
                 self.graph.create_node(node_type, pos=[scene_pos.x(), scene_pos.y()])
                 event.acceptProposedAction()
                 return True
-        return super().eventFilter(watched, event)
 
+        # 2) Alt+клик по ноде -> начать drag в палитру
+        if (event.type() == QtCore.QEvent.MouseButtonPress
+                and event.modifiers() & QtCore.Qt.AltModifier):
+            viewer = self.graph.viewer()
+            pos = event.position().toPoint()
+            item = viewer.itemAt(pos)
+            node = _node_from_item(self.graph, item)
+            if node is not None:
+                drag = QtGui.QDrag(viewer)
+                mime = QtCore.QMimeData()
+                mime.setData("application/x-bp-node-id", node.id.encode())
+                drag.setMimeData(mime)
+                drag.exec(QtCore.Qt.CopyAction)
+                return True  # съедаем событие, чтобы нода не поехала по холсту
+
+        return super().eventFilter(watched, event)
+    
 def setup_graphs(ui_tabs, callback_node_resolver, delete_handler=None):
     """Создает и настраивает два графа (Python и C++)"""
     graph_py = NodeGraph()

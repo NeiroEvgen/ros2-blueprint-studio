@@ -19,8 +19,7 @@ class PyStringSubNode(RosNodeBase):
         self._init_template('py_string_sub')
 
 class PyCustomNode(RosNodeBase):
-    __identifier__ = 'ros.nodes.py'
-    NODE_NAME = 'CustomNode'
+    __identifier__='ros.py'; NODE_NAME= 'CustomNode'
 
     def __init__(self):
         super(PyCustomNode, self).__init__()

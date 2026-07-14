@@ -1,0 +1,57 @@
+name: HandUdpReceiverNode
+type: ros.cpp.CppCustomNode
+properties:
+  parent_group_id: ''
+  group_uid: ''
+  container_group: main
+  is_imported: false
+  source_file: HandUdpReceiverNode.cpp
+  code_content: "#include \"rclcpp/rclcpp.hpp\"\n#include \"std_msgs/msg/float64_multi_array.hpp\"\
+    \n#include <sys/socket.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include\
+    \ <fcntl.h>\n#include <cstring>\n#include <chrono>\n\nusing namespace std::chrono_literals;\n\
+    \n// \u041F\u0440\u0438\u0451\u043C \u043F\u043E\u0437\u044B \u0440\u0443\u043A\
+    \u0438 \u0441 \u0445\u043E\u0441\u0442\u0430 \u043F\u043E UDP (\u043F\u043E\u0440\
+    \u0442 9877) -> /hand/pose\n// \u041F\u0430\u043A\u0435\u0442: 4 x double little-endian:\
+    \ [x 0..1, y 0..1, tilt \u0440\u0430\u0434, grip 0..1]\nclass HandUdpReceiverNode\
+    \ : public rclcpp::Node {\npublic:\n    HandUdpReceiverNode() : Node(\"hand_udp_receiver\"\
+    ) {\n        sock_ = socket(AF_INET, SOCK_DGRAM, 0);\n        if (sock_ < 0) {\n\
+    \            RCLCPP_FATAL(get_logger(), \"socket() failed\");\n            return;\n\
+    \        }\n        int reuse = 1;\n        setsockopt(sock_, SOL_SOCKET, SO_REUSEADDR,\
+    \ &reuse, sizeof(reuse));\n\n        sockaddr_in addr{};\n        addr.sin_family\
+    \ = AF_INET;\n        addr.sin_addr.s_addr = INADDR_ANY;\n        addr.sin_port\
+    \ = htons(9877);\n        if (bind(sock_, (sockaddr*)&addr, sizeof(addr)) < 0)\
+    \ {\n            RCLCPP_FATAL(get_logger(), \"bind(9877) failed \u2014 \u043F\u043E\
+    \u0440\u0442 \u0437\u0430\u043D\u044F\u0442?\");\n            return;\n      \
+    \  }\n        fcntl(sock_, F_SETFL, O_NONBLOCK);   // \u043D\u0435 \u0431\u043B\
+    \u043E\u043A\u0438\u0440\u0443\u0435\u043C executor\n\n        pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(\"\
+    /hand/pose\", 10);\n        timer_ = create_wall_timer(10ms, std::bind(&HandUdpReceiverNode::poll,\
+    \ this));\n        RCLCPP_INFO(get_logger(), \" HandUdpReceiver: udp:9877 -> /hand/pose\"\
+    );\n    }\n\n    ~HandUdpReceiverNode() override {\n        if (sock_ >= 0) close(sock_);\n\
+    \    }\n\nprivate:\n    void poll() {\n        double buf[4];\n        // \u0432\
+    \u044B\u0433\u0440\u0435\u0431\u0430\u0435\u043C \u0432\u0441\u0451 \u043D\u0430\
+    \u043A\u043E\u043F\u0438\u0432\u0448\u0435\u0435\u0441\u044F, \u043F\u0443\u0431\
+    \u043B\u0438\u043A\u0443\u0435\u043C \u0441\u0430\u043C\u044B\u0439 \u0441\u0432\
+    \u0435\u0436\u0438\u0439 \u043F\u0430\u043A\u0435\u0442\n        bool got = false;\n\
+    \        while (true) {\n            ssize_t n = recv(sock_, buf, sizeof(buf),\
+    \ 0);\n            if (n == (ssize_t)sizeof(buf)) { got = true; continue; }\n\
+    \            break;\n        }\n        if (!got) return;\n\n        std_msgs::msg::Float64MultiArray\
+    \ msg;\n        msg.data.assign(buf, buf + 4);\n        pub_->publish(msg);\n\
+    \    }\n\n    int sock_ = -1;\n    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr\
+    \ pub_;\n    rclcpp::TimerBase::SharedPtr timer_;\n};\n\nint main(int argc, char\
+    \ * argv[]) {\n    rclcpp::init(argc, argv);\n    rclcpp::spin(std::make_shared<HandUdpReceiverNode>());\n\
+    \    rclcpp::shutdown();\n    return 0;\n}"
+  saved_ports_config:
+  - type: out
+    name: pose
+    color:
+    - 255
+    - 255
+    - 255
+    multi: true
+  node_name: my_custom_node
+  class_name: MyCustomClass
+  topic_name: /data
+  template_key: cpp_custom
+ports:
+- name: pose
+  type: out

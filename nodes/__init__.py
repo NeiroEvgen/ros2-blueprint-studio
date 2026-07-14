@@ -3,14 +3,22 @@ from .templates import TEMPLATES
 from .base import MSG_COLORS
 
 # Импортируем классы нод
-from .library.py_logic import PyTimerNode, PyPrintNode
-from .library.py_basic import PyStringPubNode, PyStringSubNode
-from .library.cpp_basic import CppStringPubNode, CppStringSubNode
-from .library.cpp_logic import CppTimerNode, CppPrintNode
+from nodes.library.py_basic import PyStringPubNode, PyStringSubNode
+from nodes.library.cpp_basic import CppStringPubNode, CppStringSubNode, CppCustomNode
+from nodes.library.py_logic import PyTimerNode, PyPrintNode
 
-# Собираем все ноды в один список для регистрации в NodeGraph
-REGISTERED_NODES = [
-    PyStringPubNode, PyStringSubNode,
-    CppStringPubNode, CppStringSubNode,
-    PyTimerNode, CppTimerNode, PyPrintNode, CppPrintNode
+from nodes.library.cpp_logic import CppTimerNode, CppPrintNode 
+
+from nodes.group_logic import RosGroupNode, SubGraphInputNode, SubGraphOutputNode
+from nodes.monitor_node import MonitorNode
+from .library.meta import NoteNode  
+
+
+
+REGISTERED_NODES= [
+    PyStringPubNode, PyStringSubNode, PyTimerNode, PyPrintNode, 
+    CppStringPubNode, CppStringSubNode, CppTimerNode, CppPrintNode, CppCustomNode,
+    MonitorNode, RosGroupNode, SubGraphInputNode, SubGraphOutputNode, NoteNode
 ]
+
+ALL_NODE_CLASSES = REGISTERED_NODES
