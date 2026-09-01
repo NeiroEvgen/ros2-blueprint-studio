@@ -29,6 +29,7 @@ KEY_MAPPING = {
     "trigger": "Subscriber", "action": "ActionClient", "client": "ActionClient", "service": "Service"
 }
 
+    
 class ProjectManager:
     def __init__(self, graph_py, graph_cpp):
         self.graph_py = graph_py
@@ -40,14 +41,12 @@ class ProjectManager:
     def save_project(self, project_path):
         print("[SAVE DEBUG] save_project ВЫЗВАН, path=", project_path)
         try:
-            # === ШАГ 0: ГЕНЕРАЦИЯ ДИНАМИЧЕСКОГО ИМЕНИ ПАКЕТА ===
             raw_name = os.path.basename(project_path)
             pkg_name = re.sub(r'[^a-z0-9_]', '_', raw_name.lower())
             
             blueprint_dir = os.path.join(project_path, ".blueprint")
             src_dir = os.path.join(project_path, "src")
             
-            # 1. ЖЕСТКОЕ РАЗДЕЛЕНИЕ ПАПОК
             project_type = WorkspaceManager.get_project_type(project_path)
             
             if project_type == "cpp":
@@ -62,7 +61,6 @@ class ProjectManager:
 
             logging.info(f"Saving project {pkg_name} ({project_type}) into {code_dir}")
 
-            # 2. Сохраняем графы
             self._backup_dynamic_ports(self.graph_py)
             self._backup_dynamic_ports(self.graph_cpp)
             
@@ -71,12 +69,28 @@ class ProjectManager:
             print(f"[SAVE DEBUG] project_type={project_type}")
             print(f"[SAVE DEBUG] cpp_data nodes={len(cpp_data.get('nodes', {}))}, py_data nodes={len(py_data.get('nodes', {}))}")
             print(f"[SAVE DEBUG] cpp_data keys={list(cpp_data.keys())}")
-            # 3. ГЕНЕРАЦИЯ КОДА (только активный граф; возвращает файлы с группами)
+
             if project_type == "cpp":
                 created_files = self._process_and_save_files(cpp_data, code_dir, project_type)
             else:
                 created_files = self._process_and_save_files(py_data, code_dir, project_type)
             created_files = created_files or []
+
+            from core.generators.dependency_resolver import DependencyResolver
+            from core.dockerfile_manager import DockerfileManager
+
+            session_data = cpp_data if project_type == "cpp" else py_data
+            flat_for_deps = self._flatten_nodes(session_data)
+            resolver = DependencyResolver()
+            dep_set = resolver.collect_from_nodes(flat_for_deps, project_type)
+
+            dockerfile_mgr = DockerfileManager(project_path)
+            dockerfile_mgr.ensure_exists()
+            dockerfile_changed = dockerfile_mgr.write_auto_block(dep_set)
+            if dockerfile_changed:
+                logging.info(f"Dockerfile updated. apt: {sorted(dep_set.apt)}")
+            if dep_set.unknown:
+                logging.warning(f"Unresolved includes (not in registry): {sorted(dep_set.unknown)}")
 
             print(f"[SAVE DEBUG] created_files = {created_files}")
 
@@ -84,7 +98,8 @@ class ProjectManager:
             with open(os.path.join(blueprint_dir, "state.yaml"), 'w', encoding='utf-8') as f:
                 yaml.dump(state, f, sort_keys=False)
             
-            # 3.1 ОЧИСТКА ФАЙЛОВ-ПРИЗРАКОВ (удалённые ноды, терминалы)
+            # 3.1 ОЧИСТКА ФАЙЛОВ-ПРИЗРАКОВ (по ПОЛНОМУ списку — до фильтрации по executable,
+            # иначе .cpp-хелперы без main() будут ошибочно сочтены "устаревшими" и удалены)
             valid_files = {cf['filename'] for cf in created_files}
             ext = ".cpp" if project_type == "cpp" else ".py"
             try:
@@ -98,28 +113,42 @@ class ProjectManager:
             pycache_dir = os.path.join(launch_dir, "__pycache__")
             if os.path.isdir(pycache_dir):
                 shutil.rmtree(pycache_dir, ignore_errors=True)
-                
-            # 4. ГЕНЕРАЦИЯ LAUNCH ФАЙЛОВ
+
+            # 3.5 CMAKE & PACKAGE.XML — ДО генерации launch, чтобы отфильтровать
+            # created_files по реальным executable раньше, чем они попадут в launch
+            cmake_path = os.path.join(src_dir, "CMakeLists.txt")
+            cpp_apt_deps = set()
+            if project_type == "python":
+                if os.path.exists(cmake_path):
+                    os.remove(cmake_path)
+            else:
+                cpp_apt_deps, executable_names = self._generate_cpp_build_files(src_dir, created_files)
+                # Хелперы без main() (заинклюженные в другие ноды через #include)
+                # не должны появляться в launch как отдельные запускаемые процессы
+                before = {cf['filename'] for cf in created_files}
+                created_files = [cf for cf in created_files
+                                 if os.path.splitext(cf['filename'])[0] in executable_names]
+                skipped = before - {cf['filename'] for cf in created_files}
+                if skipped:
+                    logging.info(f"Excluded from launch (no main(), library helpers): {sorted(skipped)}")
+
+            # 4. ГЕНЕРАЦИЯ LAUNCH ФАЙЛОВ (created_files уже отфильтрован для C++)
             from ui.launch_compiler import LaunchCompiler
 
-            # 4.1 Главный launch — ВСЕ ноды (Run запускает весь проект разом)
             main_compiler = LaunchCompiler(created_files, package_name=pkg_name)
             with open(os.path.join(launch_dir, "project_launch.py"), 'w', encoding='utf-8') as f:
                 f.write(main_compiler.compile())
 
-            # 4.2 Группировка по 'group' (приходит из _process_and_save_files)
             groups = {}
             for cf in created_files:
                 groups.setdefault(cf.get('group', 'main'), []).append(cf)
             print(f"[SAVE DEBUG] groups = { {k: len(v) for k, v in groups.items()} }")
 
-            # 4.3 Per-group launch
             for gname, gfiles in groups.items():
                 gc = LaunchCompiler(gfiles, package_name=pkg_name)
                 with open(os.path.join(launch_dir, f"{gname}_launch.py"), 'w', encoding='utf-8') as f:
                     f.write(gc.compile())
 
-            # 4.4 docker-compose из групп
             try:
                 from core.compose_generator import ComposeGenerator
                 from core.container_config import ContainerConfigStore
@@ -128,15 +157,7 @@ class ProjectManager:
             except Exception as ce:
                 logging.warning(f"Compose skipped: {ce}")
 
-            # 5. CMAKE & PACKAGE.XML
-            cmake_path = os.path.join(src_dir, "CMakeLists.txt")
-            if project_type == "python":
-                if os.path.exists(cmake_path): os.remove(cmake_path)
-            else:
-                # Метод сам вычислит имя пакета внутри, если ты обновил его как мы обсуждали
-                self._generate_cpp_build_files(src_dir, created_files)
-
-            return True
+            return True, (cpp_apt_deps if project_type == "cpp" else set())
 
         except Exception as e:
             logging.error(f"Save Error: {e}")
@@ -358,6 +379,12 @@ class ProjectManager:
         pattern_msg = re.compile(r'#include\s+["<]([^/]+)/(msg|srv|action)/[^">]+[">]')
         pattern_libs = re.compile(r'#include\s+["<](tf2_ros|tf2|tf2_geometry_msgs|image_transport|cv_bridge|opencv2|rclcpp_lifecycle|rclcpp_components|lifecycle_msgs)/[^">]+[">]')
 
+        
+        from core.generators.dependency_resolver import DependencyResolver
+        resolver = DependencyResolver()
+        apt_packages = set()
+        unresolved_includes = set()
+
         if os.path.exists(cpp_dir):
             for file in os.listdir(cpp_dir):
                 if file.endswith(('.cpp', '.hpp', '.h')):
@@ -370,6 +397,23 @@ class ProjectManager:
                                 deps.add("opencv")
                             else:
                                 deps.add(match)
+
+                        # Резолвим apt-пакеты И cmake_find-имена по всем инклюдам файла.
+                        # cmake_find нужен, потому что apt-имя пакета (напр. ros-humble-moveit)
+                        # часто НЕ совпадает с именем для find_package (moveit_ros_planning_interface) —
+                        # старый regex-сканер выше этого не знает, а реестр — знает.
+                        for inc in resolver.scan_includes(content, "cpp"):
+                            entry = resolver.resolve_include(inc)
+                            if entry:
+                                apt_packages.update(entry.get("apt", []))
+                                deps.update(entry.get("cmake_find", []))
+                            else:
+                                unresolved_includes.add(inc)
+
+        if unresolved_includes:
+            logging.warning(f"CMake deps found but not in apt registry (add to "
+                            f"core/generators/dependency_registry.json): "
+                            f"{sorted(unresolved_includes)}")
 
         # 3. ГЕНЕРАЦИЯ CMakeLists.txt
         # ВНИМАНИЕ: Здесь используем обычные строки, чтобы не путаться с f-строками и скобками
@@ -385,20 +429,30 @@ class ProjectManager:
             cmake_name = "OpenCV" if dep == "opencv" else dep
             cmake_content += f"find_package({cmake_name} REQUIRED)\n"
 
-        cmake_content += "\ninclude_directories(include)\n"
-        cmake_content += "file(GLOB_RECURSE CPP_SOURCES \"cpp/*.cpp\")\n\n"
-        
-        # Исправленный цикл foreach (убраны двойные скобки)
-        cmake_content += "foreach(source_file ${CPP_SOURCES})\n"
-        cmake_content += "  get_filename_component(exec_name ${source_file} NAME_WE)\n"
-        cmake_content += "  add_executable(${exec_name} ${source_file})\n"
+        cmake_content += "\ninclude_directories(include)\n\n"
+
+        # Executable делаем только из файлов с int main() — остальные .cpp
+        # это библиотечные хелперы (классы вызываемые из других нод), они
+        # не должны собираться в отдельный бинарник.
+        executable_files = []
+        if os.path.exists(cpp_dir):
+            for file in sorted(os.listdir(cpp_dir)):
+                if file.endswith('.cpp'):
+                    with open(os.path.join(cpp_dir, file), 'r', encoding='utf-8') as f:
+                        if re.search(r'\bint\s+main\s*\(', f.read()):
+                            executable_files.append(file)
 
         cmake_deps_list = [("OpenCV" if d == "opencv" else d) for d in sorted(deps)]
         deps_str = " ".join(cmake_deps_list)
-        
-        cmake_content += f"  ament_target_dependencies(${{exec_name}} {deps_str})\n"
-        cmake_content += f"  install(TARGETS ${{exec_name}} DESTINATION lib/${{PROJECT_NAME}})\n"
-        cmake_content += "endforeach()\n\n"
+
+        for file in executable_files:
+            exec_name = os.path.splitext(file)[0]
+            cmake_content += f"add_executable({exec_name} cpp/{file})\n"
+            cmake_content += f"ament_target_dependencies({exec_name} {deps_str})\n"
+            cmake_content += f"install(TARGETS {exec_name} DESTINATION lib/${{PROJECT_NAME}})\n\n"
+
+        if not executable_files:
+            logging.warning("No .cpp file with int main() found — nothing to build as executable.")
 
         cmake_content += "install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})\n"
         cmake_content += "ament_package()\n"
@@ -453,6 +507,10 @@ class ProjectManager:
             logging.info("package.xml сгенерирован/обновлен")
         else:
             logging.info("⏭ package.xml пропущен (нет изменений)")
+
+
+        executable_names = {os.path.splitext(f)[0] for f in executable_files}
+        return apt_packages, executable_names
 
     # ==========================================
     #               ЗАГРУЗКА (RESTORED)

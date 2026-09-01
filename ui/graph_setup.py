@@ -51,7 +51,7 @@ class GraphDropFilter(QtCore.QObject):
                 mime.setData("application/x-bp-node-id", node.id.encode())
                 drag.setMimeData(mime)
                 drag.exec(QtCore.Qt.CopyAction)
-                return True  # съедаем событие, чтобы нода не поехала по холсту
+                return True
 
         return super().eventFilter(watched, event)
     
@@ -98,5 +98,5 @@ def setup_graphs(ui_tabs, callback_node_resolver, delete_handler=None):
             # держим ссылки, чтобы не собрал GC
             g._sc_del = sc_del
             g._sc_del_all = sc_del_all
-
+    
     return graph_py, graph_cpp, filter_py, filter_cpp

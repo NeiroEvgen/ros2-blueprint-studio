@@ -39,14 +39,35 @@ class RosContainerManager:
             if status_callback: status_callback(f"Загрузка образа...")
             self.client.images.pull(self.image_name)
 
-    def start_session(self, project_path, status_callback=None):
-        """
-        Запускает контейнер с монтированием папки проекта.
-        """
+    def start_session(self, project_path, status_callback=None, force_recreate=False):
+        def log(m):
+            if status_callback: status_callback(m)
+
+        project_image = f"blueprint-{os.path.basename(project_path).lower()}:latest"
         try:
-            old = self.client.containers.get(self.container_name)
-            old.stop(); old.remove()
-        except: pass
+            self.client.images.get(project_image)
+            self.image_name = project_image
+        except docker.errors.ImageNotFound:
+            pass
+
+        # Идемпотентность: если контейнер уже жив и создан из того же образа —
+        # переиспользуем его, не сносим. Это защищает от потери apt-пакетов,
+        # запущенных вручную bringup-сессий и т.д. при повторном Run.
+        try:
+            existing = self.client.containers.get(self.container_name)
+            existing.reload()
+            same_image = existing.attrs.get('Config', {}).get('Image') in (
+                self.image_name, project_image)
+            if existing.status == "running" and same_image and not force_recreate:
+                self.container = existing
+                log(f"♻️  Reusing existing live session (container already running).")
+                return
+            else:
+                existing.remove(force=True)
+        except docker.errors.NotFound:
+            pass
+        except Exception as e:
+            log(f"WARN: couldn't inspect/remove old container: {e}")
 
         abs_src = os.path.abspath(os.path.join(project_path, "src"))
         target_dir = "/root/ros2_ws/src/user_project"
@@ -88,61 +109,69 @@ class RosContainerManager:
         
         
         self.container.exec_run(
-            "bash -c \"apt-get update && apt-get install -y "
-            "ros-humble-turtlesim ros-humble-foxglove-bridge "
-            "> /tmp/session_setup.log 2>&1\"",
+            "bash -c \"("
+            "apt-get update && apt-get install -y "
+            "ros-humble-turtlesim ros-humble-foxglove-bridge"
+            "; touch /tmp/session_setup_done"
+            ") > /tmp/session_setup.log 2>&1\"",
             detach=True)
         if status_callback: status_callback("Session Started (Logs Unbuffered).")
 
-    def run_project_launch(self, sys_callback, ros_callback):
-        """
-        sys_callback: для сообщений о сборке и статусе.
-        ros_callback: ТОЛЬКО для вывода запущенных нод.
-        """
-        
-        # 1. ПРОВЕРКА C++
+    def run_project_launch(self, sys_callback, ros_callback, extra_apt_packages=None):
         check_cmake = self.container.exec_run("test -f /root/ros2_ws/src/user_project/CMakeLists.txt")
         is_cpp = (check_cmake.exit_code == 0)
 
         if is_cpp:
-            # === НОВЫЙ БЛОК: УСТАНОВКА ЗАВИСИМОСТЕЙ ===
             sys_callback("📦 Checking and installing system dependencies (rosdep)...")
-            
-            # Обновляем списки и ставим зависимости, которые прописаны в package.xml
+
+            extra_install = ""
+            if extra_apt_packages:
+                pkgs = " ".join(sorted(extra_apt_packages))
+                extra_install = (
+                    "for i in $(seq 1 30); do "
+                    f"  if apt-get install -y {pkgs}; then break; fi; "
+                    "  echo \"[deps] extra install busy, retry $i...\"; sleep 2; "
+                    "done; "
+                )
+                sys_callback(f"📦 Also installing (from dependency registry): {pkgs}")
+
             dep_cmd = (
                 "bash -c '"
-                "while fuser /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend >/dev/null 2>&1; "
-                "do echo \"[deps] waiting for apt lock...\"; sleep 2; done; "
-                "apt-get update && "
-                "rosdep install -y --from-paths /root/ros2_ws/src --ignore-src --rosdistro humble'"
+                "for i in $(seq 1 30); do "
+                "  if apt-get update 2>/tmp/apt_err.log; then break; fi; "
+                "  echo \"[deps] apt busy, retry $i...\"; sleep 2; "
+                "done; "
+                "cat /tmp/apt_err.log; "
+                f"{extra_install}"
+                "for i in $(seq 1 15); do "
+                "  rosdep install -y --from-paths /root/ros2_ws/src --ignore-src --rosdistro humble "
+                "    > /tmp/rosdep_out.log 2>&1 && break; "
+                "  echo \"[deps] rosdep failed (lock busy?), retry $i...\"; sleep 3; "
+                "done; "
+                "cat /tmp/rosdep_out.log'"
             )
-            
-            # Запускаем установку и транслируем логи в системное окно
+
             dep_stream = self.container.exec_run(dep_cmd, stream=True)
             for line in dep_stream.output:
                 sys_callback(line.decode('utf-8', errors='replace').strip())
-            # =========================================
 
             sys_callback("🔨 Building C++ project...")
-            
+
             build_cmd = (
                 "bash -c 'source /opt/ros/humble/setup.bash && "
                 "cd /root/ros2_ws && "
                 "colcon build --symlink-install --event-handlers console_direct+'"
             )
-            # Логи сборки отправляем в SYSTEM LOG
             build_stream = self.container.exec_run(build_cmd, stream=True)
             for line in build_stream.output:
                 sys_callback(line.decode('utf-8', errors='replace').strip())
-            
+
             sys_callback("✅ Build phase finished.")
         else:
             sys_callback("🐍 Python project detected. Skipping build.")
 
-        # 2. ЗАПУСК ROS
+        # 2. ЗАПУСК ROS — этот блок у тебя уже есть ниже, НЕ трогай его
         sys_callback(" Launching ROS 2... (Switch to ROS Output tab)")
-        
-        # Определяем команду запуска в зависимости от наличия setup.bash в install
         launch_cmd = (
             "bash -c 'source /opt/ros/humble/setup.bash && "
             "if [ -d /root/ros2_ws/install ]; then source /root/ros2_ws/install/setup.bash; fi && "
@@ -150,8 +179,6 @@ class RosContainerManager:
             "export RCUTILS_COLORIZED_OUTPUT=1 && "
             "ros2 launch /root/ros2_ws/src/user_project/launch/project_launch.py'"
         )
-        
-        # Логи работы отправляем в ROS LOG
         launch_cmd_full = launch_cmd[:-1] + " 2>&1'"
         launch_stream = self.container.exec_run(launch_cmd_full, stream=True, tty=True)
 
@@ -266,3 +293,18 @@ class RosContainerManager:
                 output_callback(line.decode('utf-8', errors='replace').strip())
         
         return True
+    
+    def rebuild_project_image(self, project_path, status_callback=None):
+        """Собирает Docker-образ проекта из его Dockerfile."""
+        def log(m):
+            if status_callback: status_callback(m)
+        dockerfile_path = os.path.join(project_path, "Dockerfile")
+        if not os.path.exists(dockerfile_path):
+            raise RuntimeError("No Dockerfile found for this project.")
+        project_name = os.path.basename(project_path).lower()
+        image_tag = f"blueprint-{project_name}:latest"
+        log(f"🔨 Building project image {image_tag}...")
+        self.client.images.build(path=project_path, dockerfile="Dockerfile",
+                                 tag=image_tag, rm=True)
+        log(f"✅ Image ready: {image_tag}")
+        return image_tag

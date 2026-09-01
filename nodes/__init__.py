@@ -12,12 +12,12 @@ from nodes.library.cpp_logic import CppTimerNode, CppPrintNode
 from nodes.group_logic import RosGroupNode, SubGraphInputNode, SubGraphOutputNode
 from nodes.monitor_node import MonitorNode
 from .library.meta import NoteNode  
-
+from .library.cpp_basic import CppLifecycleCustomNode
 
 
 REGISTERED_NODES= [
     PyStringPubNode, PyStringSubNode, PyTimerNode, PyPrintNode, 
-    CppStringPubNode, CppStringSubNode, CppTimerNode, CppPrintNode, CppCustomNode,
+    CppStringPubNode, CppStringSubNode, CppTimerNode, CppPrintNode, CppCustomNode,CppLifecycleCustomNode,
     MonitorNode, RosGroupNode, SubGraphInputNode, SubGraphOutputNode, NoteNode
 ]
 

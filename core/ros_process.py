@@ -25,31 +25,27 @@ class LogMonitorWorker(QtCore.QThread):
         self.is_running = False
 
 class DeployWorker(QtCore.QThread):
-    sys_signal = QtCore.Signal(str)    # Для System Log
-    ros_signal = QtCore.Signal(str)    # Для Dashboard
+    sys_signal = QtCore.Signal(str)
+    ros_signal = QtCore.Signal(str)
     finished_signal = QtCore.Signal()
-    
-    def __init__(self, manager, project_path):
+
+    def __init__(self, manager, project_path, extra_apt_packages=None):
         super().__init__()
         self.manager = manager
         self.project_path = project_path
+        self.extra_apt_packages = extra_apt_packages or set()
         self.is_running = True
 
     def run(self):
         self.sys_signal.emit("--- DEPLOY START ---")
         try:
-            # 1. Проверка образа
             self.manager.ensure_image(lambda m: self.sys_signal.emit(m))
-            
-            # 2. Старт контейнера
             self.manager.start_session(self.project_path, lambda m: self.sys_signal.emit(m))
-            
-            # 3. Запуск ROS launch
             self.manager.run_project_launch(
                 sys_callback=lambda m: self.sys_signal.emit(m),
-                ros_callback=lambda m: self.ros_signal.emit(m)
+                ros_callback=lambda m: self.ros_signal.emit(m),
+                extra_apt_packages=self.extra_apt_packages
             )
-            
         except Exception as e:
             err_str = str(e)
             if "Container is not running" in err_str or "Read timed out" in err_str:

@@ -16,6 +16,8 @@ from core.ros_process import DeployWorker, LogMonitorWorker
 from core.container_config import ContainerConfigStore, safe_group_name, resolved_env
 from core.project_importer import import_ros2_package
 from ui.container_settings import ContainerSettingsPanel
+from core.process_manager import ProcessManager
+
 
 from compilers.graph_compiler import GraphCompiler
 
@@ -48,14 +50,16 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.ui.node_palette.installEventFilter(self._palette_drop)
         self._palette_drop.node_dropped.connect(self._on_node_dropped_to_palette)
         self.dashboard = ConsoleDashboard()
-        
+    
+
         # 4. Docker Connect
+        
         self.container_manager = None
         try:
             self.container_manager = RosContainerManager()
         except Exception: 
             self.system_log("WARNING: Docker not found or not running.")
-
+        self.process_manager = ProcessManager(self.container_manager)
         self.docker_panel = DockerPanel(self.container_manager) if self.container_manager else QtWidgets.QLabel("Docker not available")
         self.library_manager = LibraryManager(self.container_manager) if self.container_manager else QtWidgets.QLabel("Docker not available")
         
@@ -332,7 +336,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
         # 1. Сначала компилируем/сохраняем граф в файлы проекта
         self.system_log("Saving & generating project files...")
-        ok = self.project_manager.save_project(self.current_project_path)
+        ok, apt_packages = self.project_manager.save_project(self.current_project_path)
         if not ok:
             self.system_log("Error: Failed to generate project files. Aborting run.")
             return
@@ -350,7 +354,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self.system_log(f"WARN: env config skipped: {e}")
 
         # 2. Запускаем деплой в отдельном потоке
-        self.deploy_worker = DeployWorker(self.container_manager, self.current_project_path)
+        self.deploy_worker = DeployWorker(self.container_manager, self.current_project_path, extra_apt_packages=apt_packages)
         self.deploy_worker.sys_signal.connect(self.system_log)
         self.deploy_worker.ros_signal.connect(self.ros_log)
         self.deploy_worker.finished_signal.connect(self.on_deploy_finished)
@@ -494,7 +498,23 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self.system_log(f"Successfully imported user node: {new_name}")
         except Exception as e:
             self.system_log(f"Error importing user node: {e}")
-            
+
+    def on_restart_selected(self, graph, *args, **kwargs):
+        for node in graph.selected_nodes():
+            is_cpp = "cpp" in node.type_.lower()
+            self.process_manager.restart_node(node.name(), self.system_log, rebuild_cpp=is_cpp)
+
+    def on_freeze_selected(self, graph, target_state, *args, **kwargs):
+        for node in graph.selected_nodes():
+            if self._is_lifecycle_node(node):
+                self.process_manager.set_lifecycle_state(node.name(), target_state, self.system_log)
+            else:
+                self.system_log(f"'{node.name()}' is not a lifecycle node, skipping.")
+
+    def _is_lifecycle_node(self, node):
+        return 'lifecycle' in getattr(node, 'NODE_NAME', '').lower() or \
+               'lifecycle' in node.type_.lower()
+    
     def on_save_node_to_palette(self, node):
         palette_name, ok = QtWidgets.QInputDialog.getText(self, "Save to Palette", "Enter Palette Name:")
         if not (ok and palette_name): return
@@ -714,6 +734,9 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
         # v0.6.0: деплой-группы
         root_menu.add_command(" Assign to container...", partial(self.on_assign_container, graph))
+        root_menu.add_command(" Restart Node", partial(self.on_restart_selected, graph))
+        root_menu.add_command(" Freeze (deactivate)", partial(self.on_freeze_selected, graph, 'deactivate'))
+        root_menu.add_command(" Unfreeze (activate)", partial(self.on_freeze_selected, graph, 'activate'))
         root_menu.add_separator()
 
         # Manual Rescan Action

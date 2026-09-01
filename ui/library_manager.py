@@ -97,14 +97,16 @@ class LibraryManager(QWidget):
         pkg_name = self.pkg_input.text().strip()
         if not pkg_name:
             return
-
         pkg_type = "apt" if self.type_combo.currentIndex() == 0 else "pip"
 
-        self.install_btn.setEnabled(False)
-        self.log_output.clear()
+        from core.dockerfile_manager import DockerfileManager
+        dm = DockerfileManager(self.project_path)   # project_path нужно прокинуть в конструктор панели
+        dm.add_manual_library(pkg_type, pkg_name)
+        self.append_log(f"Added {pkg_name} ({pkg_type}) to Dockerfile. Rebuilding image...")
 
-        self._worker = _InstallWorker(self.docker_manager, pkg_name, pkg_type)
-        self._worker.log_line.connect(self.append_log)
+        self.install_btn.setEnabled(False)
+        self._worker = _RebuildWorker(self.docker_manager, self.project_path)
+        self._worker.log.connect(self.append_log)
         self._worker.done.connect(self._on_install_done)
         self._worker.start()
 

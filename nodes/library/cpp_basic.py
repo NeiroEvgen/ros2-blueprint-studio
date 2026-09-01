@@ -33,3 +33,14 @@ class CppCustomNode(RosNodeBase):
         
         self._init_template('cpp_custom')
         self.set_color(40, 40, 80)
+
+class CppLifecycleCustomNode(RosNodeBase):
+    __identifier__ = 'ros.cpp'
+    NODE_NAME = 'Lifecycle Node'
+
+    def __init__(self):
+        super().__init__()
+        self.add_text_input('node_name', 'Node Name', text='my_lifecycle_node')
+        self.add_text_input('class_name', 'Class Name', text='MyLifecycleClass')
+        self._init_template('Lifecycle')
+        self.set_color(80, 40, 100)

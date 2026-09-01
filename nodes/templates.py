@@ -1,4 +1,3 @@
-
 # === PYTHON TEMPLATES ===
 PYTHON_TEMPLATES = {
     "Default": """import rclpy
@@ -313,4 +312,7 @@ int main(int argc, char ** argv) {
 }
 TEMPLATES = {}
 TEMPLATES.update(PYTHON_TEMPLATES)
+TEMPLATES.update(CPP_TEMPLATES)
+
+CPP_TEMPLATES["Lifecycle"] = '#include "rclcpp/rclcpp.hpp"\n#include "rclcpp_lifecycle/lifecycle_node.hpp"\n\nusing CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;\n\nclass {class_name} : public rclcpp_lifecycle::LifecycleNode {\npublic:\n    {class_name}() : rclcpp_lifecycle::LifecycleNode("{node_name}") {\n        RCLCPP_INFO(this->get_logger(), "{node_name} constructed (unconfigured)");\n    }\n\n    CallbackReturn on_configure(const rclcpp_lifecycle::State &) override {\n        // [AUTO-GEN-EXEC-IN-INIT]\n        {EXEC_IN_INIT}\n        // [AUTO-GEN-EXEC-OUT-INIT]\n        {EXEC_OUT_INIT}\n        RCLCPP_INFO(this->get_logger(), "Configuring...");\n        return CallbackReturn::SUCCESS;\n    }\n\n    CallbackReturn on_activate(const rclcpp_lifecycle::State &) override {\n        RCLCPP_INFO(this->get_logger(), "Activating...");\n        // [AUTO-GEN-FIRE]\n        {EXEC_FIRE}\n        return CallbackReturn::SUCCESS;\n    }\n\n    CallbackReturn on_deactivate(const rclcpp_lifecycle::State &) override {\n        RCLCPP_INFO(this->get_logger(), "Deactivating (frozen)...");\n        return CallbackReturn::SUCCESS;\n    }\n\n    CallbackReturn on_cleanup(const rclcpp_lifecycle::State &) override {\n        RCLCPP_INFO(this->get_logger(), "Cleaning up...");\n        return CallbackReturn::SUCCESS;\n    }\n\n    CallbackReturn on_shutdown(const rclcpp_lifecycle::State &) override {\n        RCLCPP_INFO(this->get_logger(), "Shutting down...");\n        return CallbackReturn::SUCCESS;\n    }\n\nprivate:\n    // [AUTO-GEN-EXEC-VARS]\n    {EXEC_VARS}\n};\n\nint main(int argc, char * argv[]) {\n    rclcpp::init(argc, argv);\n    auto node = std::make_shared<{class_name}>();\n    rclcpp::spin(node->get_node_base_interface());\n    rclcpp::shutdown();\n    return 0;\n}\n'
 TEMPLATES.update(CPP_TEMPLATES)

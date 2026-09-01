@@ -1,0 +1,251 @@
+{
+  "_comment": "Maps #include / import prefixes to ROS 2 dependencies. 'local': true marks in-workspace packages (future custom .msg support).",
+  "rclcpp": {
+    "apt": [
+      "ros-humble-rclcpp"
+    ],
+    "cmake_find": [
+      "rclcpp"
+    ],
+    "cmake_link": [
+      "rclcpp"
+    ],
+    "xml_depend": [
+      "rclcpp"
+    ]
+  },
+  "rclcpp_lifecycle": {
+    "apt": [
+      "ros-humble-rclcpp-lifecycle"
+    ],
+    "cmake_find": [
+      "rclcpp_lifecycle"
+    ],
+    "cmake_link": [
+      "rclcpp_lifecycle"
+    ],
+    "xml_depend": [
+      "rclcpp_lifecycle"
+    ]
+  },
+  "lifecycle_msgs": {
+    "apt": [
+      "ros-humble-lifecycle-msgs"
+    ],
+    "cmake_find": [
+      "lifecycle_msgs"
+    ],
+    "cmake_link": [
+      "lifecycle_msgs"
+    ],
+    "xml_depend": [
+      "lifecycle_msgs"
+    ]
+  },
+  "rclpy": {
+    "apt": [
+      "ros-humble-rclpy"
+    ],
+    "cmake_find": [],
+    "cmake_link": [],
+    "xml_depend": [
+      "rclpy"
+    ]
+  },
+  "std_msgs": {
+    "apt": [
+      "ros-humble-std-msgs"
+    ],
+    "cmake_find": [
+      "std_msgs"
+    ],
+    "cmake_link": [
+      "std_msgs"
+    ],
+    "xml_depend": [
+      "std_msgs"
+    ]
+  },
+  "geometry_msgs": {
+    "apt": [
+      "ros-humble-geometry-msgs"
+    ],
+    "cmake_find": [
+      "geometry_msgs"
+    ],
+    "cmake_link": [
+      "geometry_msgs"
+    ],
+    "xml_depend": [
+      "geometry_msgs"
+    ]
+  },
+  "sensor_msgs": {
+    "apt": [
+      "ros-humble-sensor-msgs"
+    ],
+    "cmake_find": [
+      "sensor_msgs"
+    ],
+    "cmake_link": [
+      "sensor_msgs"
+    ],
+    "xml_depend": [
+      "sensor_msgs"
+    ]
+  },
+  "visualization_msgs": {
+    "apt": [
+      "ros-humble-visualization-msgs"
+    ],
+    "cmake_find": [
+      "visualization_msgs"
+    ],
+    "cmake_link": [
+      "visualization_msgs"
+    ],
+    "xml_depend": [
+      "visualization_msgs"
+    ]
+  },
+  "nav_msgs": {
+    "apt": [
+      "ros-humble-nav-msgs"
+    ],
+    "cmake_find": [
+      "nav_msgs"
+    ],
+    "cmake_link": [
+      "nav_msgs"
+    ],
+    "xml_depend": [
+      "nav_msgs"
+    ]
+  },
+  "std_srvs": {
+    "apt": [
+      "ros-humble-std-srvs"
+    ],
+    "cmake_find": [
+      "std_srvs"
+    ],
+    "cmake_link": [
+      "std_srvs"
+    ],
+    "xml_depend": [
+      "std_srvs"
+    ]
+  },
+  "tf2": {
+    "apt": [
+      "ros-humble-tf2"
+    ],
+    "cmake_find": [
+      "tf2"
+    ],
+    "cmake_link": [
+      "tf2"
+    ],
+    "xml_depend": [
+      "tf2"
+    ]
+  },
+  "tf2_ros": {
+    "apt": [
+      "ros-humble-tf2-ros"
+    ],
+    "cmake_find": [
+      "tf2_ros"
+    ],
+    "cmake_link": [
+      "tf2_ros"
+    ],
+    "xml_depend": [
+      "tf2_ros"
+    ]
+  },
+  "tf2_geometry_msgs": {
+    "apt": [
+      "ros-humble-tf2-geometry-msgs"
+    ],
+    "cmake_find": [
+      "tf2_geometry_msgs"
+    ],
+    "cmake_link": [
+      "tf2_geometry_msgs"
+    ],
+    "xml_depend": [
+      "tf2_geometry_msgs"
+    ]
+  },
+  "opencv2": {
+    "apt": [
+      "libopencv-dev"
+    ],
+    "cmake_find": [
+      "OpenCV"
+    ],
+    "cmake_link": [
+      "${OpenCV_LIBS}"
+    ],
+    "xml_depend": [
+      "libopencv-dev"
+    ]
+  },
+  "cv_bridge": {
+    "apt": [
+      "ros-humble-cv-bridge"
+    ],
+    "cmake_find": [
+      "cv_bridge"
+    ],
+    "cmake_link": [
+      "cv_bridge"
+    ],
+    "xml_depend": [
+      "cv_bridge"
+    ]
+  },
+  "moveit": {
+    "apt": [
+      "ros-humble-moveit"
+    ],
+    "cmake_find": [
+      "moveit_ros_planning_interface"
+    ],
+    "cmake_link": [
+      "moveit_ros_planning_interface"
+    ],
+    "xml_depend": [
+      "moveit_ros_planning_interface"
+    ]
+  },
+  "Eigen": {
+    "apt": [
+      "libeigen3-dev"
+    ],
+    "cmake_find": [
+      "Eigen3"
+    ],
+    "cmake_link": [
+      "Eigen3::Eigen"
+    ],
+    "xml_depend": [
+      "eigen"
+    ]
+  },
+  "moveit_msgs": {
+    "apt": [
+      "ros-humble-moveit-msgs"
+    ],
+    "cmake_find": [
+      "moveit_msgs"
+    ],
+    "cmake_link": [
+      "moveit_msgs"
+    ],
+    "xml_depend": [
+      "moveit_msgs"
+    ]
+  }
+}
