@@ -6,4 +6,5 @@ BlueprintStudioProjects/
 /build
 /dist
 ROS2Studio.spec
-docker
+# только файл docker в корне, не каталог docker_image/
+/docker

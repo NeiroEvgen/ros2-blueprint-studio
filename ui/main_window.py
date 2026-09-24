@@ -8,6 +8,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 # === CORE MODULES ===
 from core.docker_manager import RosContainerManager
+from core.execution_context import resolve_context, ExecutionContext
 from core.project_manager import ProjectManager
 from core.file_watcher import FileWatcher
 from core.export_manager import ExportManager 
@@ -50,6 +51,9 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.ui.node_palette.installEventFilter(self._palette_drop)
         self._palette_drop.node_dropped.connect(self._on_node_dropped_to_palette)
         self.dashboard = ConsoleDashboard()
+        self._exec_ctx = ExecutionContext()
+        self._remote = (False, "", "")   # connected, user@host, container
+        self._real_robot = False
     
 
         # 4. Docker Connect
@@ -80,6 +84,15 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                     self.container_settings = ContainerSettingsPanel(
                         get_docker_manager=lambda: self.container_manager)
                     tab_widget.addTab(self.container_settings, "Containers")
+                    from ui.remote_panel import RemotePanel
+                    from ui.file_browser import FileBrowser
+                    self.remote_panel = RemotePanel()
+                    self.remote_panel.log.connect(self.system_log)
+                    self.remote_panel.connection_changed.connect(self._on_remote_changed)
+                    tab_widget.addTab(self.remote_panel, "Remote")
+                    self.file_browser = FileBrowser()
+                    self.file_browser.log.connect(self.system_log)
+                    tab_widget.addTab(self.file_browser, "Files")
         # 2. Graph Setup (delegated to ui/graph_setup.py)
         self.graph_py, self.graph_cpp, self.f_py, self.f_cpp = setup_graphs(
             self.ui.tabs, self.resolve_node_type, self.on_graph_delete
@@ -97,7 +110,9 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.watcher.file_changed.connect(self.on_file_changed_externally)
 
         # 5. Connect Actions
-        self.connect_actions()       # Навигация
+        self.connect_actions()
+        self.ui.actions['real_robot'].toggled.connect(self.on_real_robot_toggled)
+        self._refresh_context()       # Навигация
         self.current_subgraph = None
         self.navigation_stack = [{"name": "Root", "node": None}]
 
@@ -359,12 +374,14 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.deploy_worker.ros_signal.connect(self.ros_log)
         self.deploy_worker.finished_signal.connect(self.on_deploy_finished)
         self.deploy_worker.start()
+        QtCore.QTimer.singleShot(1500, self._refresh_context)
 
     def on_deploy_finished(self):
         """Вызывается, когда DeployWorker завершил работу."""
         self.ui.actions['run'].setEnabled(True)
         self.ui.actions['stop'].setEnabled(False)
         self.system_log("--- DEPLOY FINISHED ---")
+        self._refresh_context()
 
     def on_stop_project(self):
         # Останавливаем worker и контейнер, если они запущены
@@ -373,6 +390,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.ui.actions['run'].setEnabled(True)
         self.ui.actions['stop'].setEnabled(False)
         self.system_log("Project stopped.")
+        self._refresh_context()
 
     def on_export_docker(self):
         if not self.current_project_path:
@@ -405,11 +423,74 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.watcher.start_watching(os.path.join(path, "src"))
         if hasattr(self, 'container_settings'):
             self.container_settings.set_project(path)
+        if hasattr(self, "remote_panel"):
+            self.remote_panel.set_project(path)
+        if hasattr(self, "file_browser"):
+            self.file_browser.set_sources(os.path.join(path, "src"), None)
             self._refresh_container_counts()
+        self._load_real_robot_flag()
+        self._refresh_context()
         self.system_log(f"Project loaded: {path} ({p_type.upper()})")
 
     def system_log(self, text):
-        self.ui.console_sys.append(text)
+        ctx = getattr(self, "_exec_ctx", None)
+        prefix = ctx.short() + " " if ctx else ""
+        self.ui.console_sys.append(f"{prefix}{text}")
+
+    # ---------- контекст исполнения (где выполняются команды) ----------
+
+    def _project_target(self):
+        if not self.current_project_path:
+            return None
+        try:
+            return ContainerConfigStore(self.current_project_path).get("main").get("target")
+        except Exception:
+            return None
+
+    def _refresh_context(self):
+        connected, rhost, rcontainer = getattr(self, "_remote", (False, "", ""))
+        if connected:
+            # Подключены к удалённой цели: она важнее локального контейнера —
+            # именно туда уходят Sync / Build.
+            self._exec_ctx = resolve_context({"type": "ssh", "host": rhost},
+                                             bool(rcontainer), rcontainer, self._real_robot)
+        else:
+            cm = self.container_manager
+            active = bool(cm and getattr(cm, "container", None) is not None)
+            name = getattr(cm, "container_name", "") if cm else ""
+            self._exec_ctx = resolve_context(self._project_target(), active, name,
+                                             self._real_robot)
+        if hasattr(self.ui, "context_badge"):
+            self.ui.context_badge.set_context(self._exec_ctx)
+        proj = os.path.basename(self.current_project_path) if self.current_project_path else "no project"
+        self.setWindowTitle(f"ROS2 Blueprint Studio — {proj}  ·  [{self._exec_ctx.label()}]")
+
+    def _load_real_robot_flag(self):
+        target = self._project_target() or {}
+        self._real_robot = bool(target.get("real_robot", False))
+        btn = self.ui.actions.get("real_robot")
+        if btn:
+            btn.blockSignals(True); btn.setChecked(self._real_robot); btn.blockSignals(False)
+
+    def _on_remote_changed(self, connected, host, container):
+        self._remote = (connected, host, container)
+        self._refresh_context()
+        if hasattr(self, "file_browser") and self.current_project_path:
+            session = self.remote_panel.session if connected else None
+            self.file_browser.set_sources(os.path.join(self.current_project_path, "src"), session)
+
+    def on_real_robot_toggled(self, checked):
+        self._real_robot = bool(checked)
+        if self.current_project_path:
+            try:
+                store = ContainerConfigStore(self.current_project_path)
+                cfg = store.get("main")
+                cfg.setdefault("target", {})["real_robot"] = self._real_robot
+                store.save(cfg)
+            except Exception as e:
+                self.ui.console_sys.append(f"WARN: real_robot flag not saved: {e}")
+        self._refresh_context()
+        self.system_log("⚠ Цель — РЕАЛЬНЫЙ РОБОТ" if self._real_robot else "Цель — симуляция")
 
     def ros_log(self, text):
         self.dashboard.process_log(text)

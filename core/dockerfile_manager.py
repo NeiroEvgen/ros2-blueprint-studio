@@ -7,7 +7,8 @@ packages into a live container that evaporates on every restart.
 
 Structure of a managed Dockerfile:
 
-    FROM <base_image>
+    ARG BASE_IMAGE=<base_image>
+    FROM ${BASE_IMAGE}
 
     # === AUTO: dependencies from graph nodes (regenerated on save) ===
     RUN apt-get update && apt-get install -y \
@@ -113,7 +114,9 @@ class DockerfileManager:
     # ---- writing --------------------------------------------------------
 
     def _compose(self, auto_apt, auto_pip, manual_lines):
-        parts = [f"FROM {self.base_image}", ""]
+        # ARG позволяет docker_manager подставить студийный образ при сборке,
+        # а без него файл остаётся валидным (дефолт — публичный osrf).
+        parts = [f"ARG BASE_IMAGE={self.base_image}", "FROM ${BASE_IMAGE}", ""]
         parts.append(_AUTO_START)
         auto_body = (_apt_block(auto_apt) + _pip_block(auto_pip)).rstrip("\n")
         if auto_body:

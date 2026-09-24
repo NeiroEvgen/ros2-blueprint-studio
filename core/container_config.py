@@ -39,7 +39,7 @@ DEFAULT_CONFIG = {
     "network_mode": "host",         # host | bridge
     "resources": {"cpus": "", "memory": ""},   # пусто = без лимита
     # Таргет деплоя (раздел 4): local или ssh://user@host
-    "target": {"type": "local", "host": ""},
+    "target": {"type": "local", "host": "", "real_robot": False},
 }
 
 RMW_BY_VENDOR = {

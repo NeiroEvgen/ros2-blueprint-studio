@@ -120,6 +120,20 @@ class UiManager:
         top_layout.addWidget(self.actions['viz_mode'])
         self.actions['visualize'] = add_btn(" Visualize", "#1565c0")
 
+        from ui.context_badge import ContextBadge
+        self.context_badge = ContextBadge()
+        top_layout.addWidget(self.context_badge)
+        self.actions['real_robot'] = QtWidgets.QPushButton("🤖 Real robot")
+        self.actions['real_robot'].setCheckable(True)
+        self.actions['real_robot'].setToolTip(
+            "Отметь, если цель — реальное железо. Сохраняется в проекте.\n"
+            "Бейдж станет красным, в каждой строке лога появится ⚠ROBOT.")
+        self.actions['real_robot'].setStyleSheet(
+            "QPushButton { background-color: #555; color: white; border: none;"
+            " padding: 5px 12px; border-radius: 3px; }"
+            "QPushButton:checked { background-color: #b71c1c; font-weight: bold; }")
+        top_layout.addWidget(self.actions['real_robot'])
+
         top_layout.addStretch()
         self.actions['export_palette'] = add_btn(" Palette ⬆")
         self.actions['import_palette'] = add_btn(" Palette ⬇")

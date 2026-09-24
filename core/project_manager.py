@@ -29,6 +29,22 @@ KEY_MAPPING = {
     "trigger": "Subscriber", "action": "ActionClient", "client": "ActionClient", "service": "Service"
 }
 
+
+# ==========================================
+#   CMakeLists.txt: зоны владения
+# ==========================================
+CMAKE_AUTO_BEGIN = "# === BLUEPRINT AUTO BEGIN — regenerated on every Save, do not edit ==="
+CMAKE_AUTO_END   = "# === BLUEPRINT AUTO END ==="
+CMAKE_USER_BEGIN = "# === BLUEPRINT USER BEGIN — never touched by the generator ==="
+CMAKE_USER_END   = "# === BLUEPRINT USER END ==="
+
+CMAKE_USER_TEMPLATE = (
+    "# Сюда пиши всё, что генератор не знает сам. Примеры:\n"
+    "#   target_sources(MyNode PRIVATE cpp/kinematics_lib/trajectory_solver.cpp)\n"
+    "#   find_package(yaml-cpp REQUIRED)\n"
+    "#   target_link_libraries(MyNode yaml-cpp)\n"
+)
+
     
 class ProjectManager:
     def __init__(self, graph_py, graph_cpp):
@@ -363,6 +379,65 @@ class ProjectManager:
 
         return flat_list
 
+
+    def _resolve_cmake_user_block(self, cmake_path, new_auto):
+        """
+        Возвращает тело USER-блока для записи.
+
+        - Файла нет                → шаблон с примерами.
+        - Есть USER-блок           → его содержимое как есть, дословно.
+        - Старый файл без маркеров → одноразовая миграция: строки, которых
+          нет в новом AUTO (т.е. дописанные человеком), переносятся в
+          USER-блок ЗАКОММЕНТИРОВАННЫМИ, а оригинал сохраняется в .bak.
+          Закомментированными — потому что среди них могут оказаться
+          устаревшие add_executable на удалённые файлы, которые молча
+          сломали бы сборку. Человек раскомментирует нужное сам.
+        """
+        if not os.path.exists(cmake_path):
+            return CMAKE_USER_TEMPLATE
+        try:
+            with open(cmake_path, 'r', encoding='utf-8') as f:
+                old = f.read()
+        except Exception:
+            return CMAKE_USER_TEMPLATE
+
+        m = re.search(re.escape(CMAKE_USER_BEGIN) + r"\n(.*?)" + re.escape(CMAKE_USER_END),
+                      old, re.S)
+        if m:
+            return m.group(1)
+
+        auto_lines = {l.strip() for l in new_auto.splitlines() if l.strip()}
+        extra = []
+        for line in old.splitlines():
+            st = line.strip()
+            if not st or st.startswith("#") or st == "ament_package()":
+                continue
+            if st not in auto_lines:
+                extra.append(line)
+
+        if not extra:
+            return CMAKE_USER_TEMPLATE
+
+        bak = cmake_path + ".bak"
+        n = 1
+        while os.path.exists(bak):
+            bak = f"{cmake_path}.bak{n}"
+            n += 1
+        try:
+            shutil.copy2(cmake_path, bak)
+        except Exception as e:
+            logging.warning(f"CMake migration: backup failed: {e}")
+
+        logging.warning(
+            f"CMakeLists.txt: найдены ручные правки без USER-блока "
+            f"({len(extra)} строк). Перенесены в USER-блок закомментированными, "
+            f"оригинал: {os.path.basename(bak)}. Раскомментируй нужное.")
+
+        body = CMAKE_USER_TEMPLATE
+        body += "#\n# --- перенесено из старого CMakeLists.txt, проверь и раскомментируй ---\n"
+        body += "".join(f"# {l}\n" for l in extra)
+        return body
+
     def _generate_cpp_build_files(self, src_dir, created_files):
         # 1. ДИНАМИЧЕСКОЕ ИМЯ ПРОЕКТА (берем из папки, где лежит src)
         project_root = os.path.dirname(src_dir)
@@ -416,20 +491,23 @@ class ProjectManager:
                             f"{sorted(unresolved_includes)}")
 
         # 3. ГЕНЕРАЦИЯ CMakeLists.txt
-        # ВНИМАНИЕ: Здесь используем обычные строки, чтобы не путаться с f-строками и скобками
-        cmake_content = "cmake_minimum_required(VERSION 3.8)\n"
-        cmake_content += f"project({pkg_name})\n\n"
-        
-        cmake_content += "if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES \"Clang\")\n"
-        cmake_content += "  add_compile_options(-Wall -Wextra -Wpedantic)\nendif()\n\n"
-        
-        cmake_content += "find_package(ament_cmake REQUIRED)\n"
+        # Файл делится на две зоны:
+        #   AUTO  — принадлежит генератору, перезаписывается при каждом Save
+        #   USER  — принадлежит человеку, генератор его НИКОГДА не трогает
+        # ament_package() стоит после USER-блока: он обязан быть последним.
+        auto = "cmake_minimum_required(VERSION 3.8)\n"
+        auto += f"project({pkg_name})\n\n"
+
+        auto += "if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES \"Clang\")\n"
+        auto += "  add_compile_options(-Wall -Wextra -Wpedantic)\nendif()\n\n"
+
+        auto += "find_package(ament_cmake REQUIRED)\n"
 
         for dep in sorted(deps):
             cmake_name = "OpenCV" if dep == "opencv" else dep
-            cmake_content += f"find_package({cmake_name} REQUIRED)\n"
+            auto += f"find_package({cmake_name} REQUIRED)\n"
 
-        cmake_content += "\ninclude_directories(include)\n\n"
+        auto += "\ninclude_directories(include)\n\n"
 
         # Executable делаем только из файлов с int main() — остальные .cpp
         # это библиотечные хелперы (классы вызываемые из других нод), они
@@ -447,18 +525,25 @@ class ProjectManager:
 
         for file in executable_files:
             exec_name = os.path.splitext(file)[0]
-            cmake_content += f"add_executable({exec_name} cpp/{file})\n"
-            cmake_content += f"ament_target_dependencies({exec_name} {deps_str})\n"
-            cmake_content += f"install(TARGETS {exec_name} DESTINATION lib/${{PROJECT_NAME}})\n\n"
+            auto += f"add_executable({exec_name} cpp/{file})\n"
+            auto += f"ament_target_dependencies({exec_name} {deps_str})\n"
+            auto += f"install(TARGETS {exec_name} DESTINATION lib/${{PROJECT_NAME}})\n\n"
 
         if not executable_files:
             logging.warning("No .cpp file with int main() found — nothing to build as executable.")
 
-        cmake_content += "install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})\n"
-        cmake_content += "ament_package()\n"
+        auto += "install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})\n"
+
+        cmake_path = os.path.join(src_dir, "CMakeLists.txt")
+        user_body = self._resolve_cmake_user_block(cmake_path, auto)
+
+        cmake_content = (
+            f"{CMAKE_AUTO_BEGIN}\n{auto}{CMAKE_AUTO_END}\n\n"
+            f"{CMAKE_USER_BEGIN}\n{user_body}{CMAKE_USER_END}\n\n"
+            "ament_package()\n"
+        )
 
         # === SMART WRITE ДЛЯ CMakeLists.txt ===
-        cmake_path = os.path.join(src_dir, "CMakeLists.txt")
         write_cmake = True
         if os.path.exists(cmake_path):
             try:
