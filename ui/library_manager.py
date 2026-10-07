@@ -25,11 +25,41 @@ class _InstallWorker(QThread):
             self.log_line.emit(f"Error: {e}")
             self.done.emit(False)
 
+class _RebuildWorker(QThread):
+    """Пересобирает образ проекта (после правки Dockerfile) в фоне."""
+    log = Signal(str)
+    done = Signal(bool)
+
+    def __init__(self, docker_manager, project_path):
+        super().__init__()
+        self.docker_manager = docker_manager
+        self.project_path = project_path
+
+    def run(self):
+        try:
+            self.docker_manager.rebuild_project_image(
+                self.project_path, status_callback=self.log.emit)
+            self.done.emit(True)
+        except Exception as e:
+            self.log.emit(f"Error: {e}")
+            self.done.emit(False)
+
+
 class LibraryManager(QWidget):
     def __init__(self, docker_manager):
         super().__init__()
         self.docker_manager = docker_manager
+        self.project_path = None      # задаётся из главного окна при открытии проекта
+        self.remote_connected = False
+        self._worker = None
         self.init_ui()
+
+    def set_project(self, path):
+        self.project_path = path
+
+    def set_remote_connected(self, connected):
+        """При подключении к удалённой цели установка всё равно идёт ЛОКАЛЬНО."""
+        self.remote_connected = bool(connected)
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -99,9 +129,24 @@ class LibraryManager(QWidget):
             return
         pkg_type = "apt" if self.type_combo.currentIndex() == 0 else "pip"
 
+        if not self.project_path:
+            self.append_log("Сначала открой проект: библиотека добавляется в его Dockerfile.")
+            return
+        if self._worker is not None and self._worker.isRunning():
+            self.append_log("Сборка образа уже идёт — дождись её окончания.")
+            return
+        if self.remote_connected:
+            self.append_log("⚠ Подключена удалённая цель, но эта вкладка ставит библиотеку "
+                            "в ЛОКАЛЬНЫЙ образ проекта (Docker на этом компьютере), а не на робота. "
+                            "На роботе без интернета пакет надо ставить из офлайн-образа.")
+
         from core.dockerfile_manager import DockerfileManager
-        dm = DockerfileManager(self.project_path)   # project_path нужно прокинуть в конструктор панели
-        dm.add_manual_library(pkg_type, pkg_name)
+        try:
+            dm = DockerfileManager(self.project_path)
+            dm.add_manual_library(pkg_type, pkg_name)
+        except Exception as e:
+            self.append_log(f"Не удалось обновить Dockerfile: {e}")
+            return
         self.append_log(f"Added {pkg_name} ({pkg_type}) to Dockerfile. Rebuilding image...")
 
         self.install_btn.setEnabled(False)

@@ -307,6 +307,47 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.ui.actions['visualize'].clicked.connect(self.on_visualize)
         self.ui.actions['export_palette'].clicked.connect(self.on_export_palette)
         self.ui.actions['import_palette'].clicked.connect(self.on_import_palette)
+        # раньше эти две кнопки верхней панели не были подключены и ничего не делали
+        self.ui.actions['save'].clicked.connect(self.on_save_project)
+        self.ui.actions['open'].clicked.connect(self.on_open_project)
+
+    @staticmethod
+    def _save_result(res):
+        """
+        save_project возвращает (True, apt_deps) при успехе и False при неудаче.
+        Приводим к (ok, apt_deps), чтобы вызывающий код не падал на распаковке.
+        """
+        if isinstance(res, tuple):
+            return bool(res[0]), (res[1] if len(res) > 1 else set())
+        return bool(res), set()
+
+    def on_save_project(self):
+        if not self.current_project_path:
+            self.system_log("Error: No project loaded.")
+            return
+        ok, _ = self._save_result(self.project_manager.save_project(self.current_project_path))
+        self.system_log("💾 Project saved" if ok else "Error: failed to save project files.")
+
+    def on_open_project(self):
+        """Открыть другой проект с диска (как «Open from Disk…» в стартовом окне)."""
+        if self.current_project_path:
+            ans = QtWidgets.QMessageBox.question(
+                self, "Open project",
+                "Сохранить текущий проект перед открытием другого?",
+                QtWidgets.QMessageBox.Save | QtWidgets.QMessageBox.Discard
+                | QtWidgets.QMessageBox.Cancel)
+            if ans == QtWidgets.QMessageBox.Cancel:
+                return
+            if ans == QtWidgets.QMessageBox.Save:
+                ok, _ = self._save_result(
+                    self.project_manager.save_project(self.current_project_path))
+                if not ok:
+                    self.system_log("Error: failed to save current project; open cancelled.")
+                    return
+        root = WorkspaceManager.get_workspace_root()
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Open Project Folder", root)
+        if path:
+            self.on_load_project_init(path)
 
 
 
@@ -351,7 +392,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
         # 1. Сначала компилируем/сохраняем граф в файлы проекта
         self.system_log("Saving & generating project files...")
-        ok, apt_packages = self.project_manager.save_project(self.current_project_path)
+        ok, apt_packages = self._save_result(
+            self.project_manager.save_project(self.current_project_path))
         if not ok:
             self.system_log("Error: Failed to generate project files. Aborting run.")
             return
@@ -425,6 +467,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self.container_settings.set_project(path)
         if hasattr(self, "remote_panel"):
             self.remote_panel.set_project(path)
+        if hasattr(self.library_manager, "set_project"):
+            self.library_manager.set_project(path)
         if hasattr(self, "file_browser"):
             self.file_browser.set_sources(os.path.join(path, "src"), None)
             self._refresh_container_counts()
@@ -474,6 +518,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
     def _on_remote_changed(self, connected, host, container):
         self._remote = (connected, host, container)
+        if hasattr(self.library_manager, "set_remote_connected"):
+            self.library_manager.set_remote_connected(connected)
         self._refresh_context()
         if hasattr(self, "file_browser") and self.current_project_path:
             session = self.remote_panel.session if connected else None
@@ -616,7 +662,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         
         import yaml
         with open(os.path.join(base_dir, "node.yaml"), 'w', encoding='utf-8') as f:
-            yaml.dump(meta, f, sort_keys=False)
+            yaml.dump(meta, f, sort_keys=False, allow_unicode=True)
 
         # 2. Сохраняем код в его родном расширении (Закон удобства)
         code = node.get_property("code_content")

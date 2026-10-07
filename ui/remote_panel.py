@@ -8,6 +8,7 @@ from PySide6 import QtWidgets, QtCore
 
 from core.remote.profile import RemoteProfile, ProfileStore, HostKeyChanged
 from core.remote.session import RemoteSession
+from core.remote.terminal import TerminalError, open_terminal, validate_target
 from ui.qt_worker import TaskHost
 
 _BTN = ("QPushButton { background-color: #555; color: white; border: none;"
@@ -60,6 +61,7 @@ class RemotePanel(QtWidgets.QWidget):
         form.addRow("Workspace в контейнере", self.ed_cws)
         form.addRow("ROS setup", self.ed_ros)
         outer.addLayout(form)
+        self._form_fields = [self.ed_host, self.ed_user, self.ed_key, self.ed_container]
 
         row = QtWidgets.QHBoxLayout()
         self.btn_save = self._btn("💾 Сохранить профиль", row, self.on_save)
@@ -68,8 +70,15 @@ class RemotePanel(QtWidgets.QWidget):
         self.cb_dry = QtWidgets.QCheckBox("dry-run"); row.addWidget(self.cb_dry)
         self.btn_build = self._btn("🔨 Build", row, self.on_build)
         self.btn_cancel = self._btn("⏹ Cancel", row, self.on_cancel)
+        self.btn_terminal = self._btn("🖥 Терминал", row, self.on_terminal)
+        self.btn_terminal.setToolTip("Открыть консоль на роботе (ssh в отдельном окне; "
+                                     "с контейнером — сразу внутрь него)")
         row.addStretch()
         outer.addLayout(row)
+
+        for w in self._form_fields:
+            w.textChanged.connect(lambda *_: self._update_buttons())
+        self.sp_port.valueChanged.connect(lambda *_: self._update_buttons())
 
         self.lbl_state = QtWidgets.QLabel("Не подключено")
         self.lbl_state.setStyleSheet("color: #aaa; padding: 4px;")
@@ -125,6 +134,8 @@ class RemotePanel(QtWidgets.QWidget):
         self.btn_sync.setEnabled(self.connected and not busy)
         self.btn_build.setEnabled(self.connected and not busy)
         self.btn_cancel.setEnabled(self._building)
+        # консоли не нужно ни подключение Studio, ни проект — достаточно хоста и пользователя
+        self.btn_terminal.setEnabled(not validate_target(self.profile_from_form()))
 
     def _state(self, text):
         self.lbl_state.setText(text)
@@ -219,6 +230,17 @@ class RemotePanel(QtWidgets.QWidget):
         self._tasks.start(lambda emit: s.build(emit), done, self._fail,
                           on_line=self.log.emit, parent=self)
         self._update_buttons()
+
+    def on_terminal(self):
+        prof = self.profile_from_form()
+        try:
+            shown = open_terminal(prof)
+        except TerminalError as e:
+            self._fail(f"Терминал не открыт: {e}")
+            return
+        where = prof.display() + (f" / {prof.container}" if prof.container else "")
+        self.log.emit(f"🖥 Открыт терминал: {where}   ({shown})")
+        self.log.emit("   пароль вводится в окне терминала; Studio его не видит")
 
     def on_cancel(self):
         s = self.session

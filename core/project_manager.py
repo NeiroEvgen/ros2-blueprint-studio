@@ -112,7 +112,7 @@ class ProjectManager:
 
             state = {"meta": {"version": "3.6"}, "graphs": {"python": py_data, "cpp": cpp_data}}
             with open(os.path.join(blueprint_dir, "state.yaml"), 'w', encoding='utf-8') as f:
-                yaml.dump(state, f, sort_keys=False)
+                yaml.dump(state, f, sort_keys=False, allow_unicode=True)
             
             # 3.1 ОЧИСТКА ФАЙЛОВ-ПРИЗРАКОВ (по ПОЛНОМУ списку — до фильтрации по executable,
             # иначе .cpp-хелперы без main() будут ошибочно сочтены "устаревшими" и удалены)
