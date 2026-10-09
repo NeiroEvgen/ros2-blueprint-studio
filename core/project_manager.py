@@ -34,18 +34,21 @@ from core.generators.build_generator import (  # noqa: F401
 from core.generators import build_generator
 from core import node_sources
 from core import graph_ir
+from core import cmake_lint
 from core.layout import ProjectLayout
 
 class ProjectManager:
     def __init__(self, graph_py, graph_cpp):
         self.graph_py = graph_py
         self.graph_cpp = graph_cpp
+        self.last_warnings = []     # предупреждения последнего Save (уже на языке интерфейса)
 
     # ==========================================
     #               СОХРАНЕНИЕ
     # ==========================================
     def save_project(self, project_path):
         print("[SAVE DEBUG] save_project ВЫЗВАН, path=", project_path)
+        self.last_warnings = []
         try:
             raw_name = os.path.basename(project_path)
             pkg_name = re.sub(r'[^a-z0-9_]', '_', raw_name.lower())
@@ -125,6 +128,7 @@ class ProjectManager:
                     os.remove(cmake_path)
             else:
                 cpp_apt_deps, executable_names = self._generate_cpp_build_files(src_dir, created_files)
+                self._lint_cmake(cmake_path)
                 # Хелперы без main() (заинклюженные в другие ноды через #include)
                 # не должны появляться в launch как отдельные запускаемые процессы.
                 # Python-ноды фильтру не подлежат.
@@ -176,6 +180,17 @@ class ProjectManager:
 
     def _flatten_nodes(self, session_data, current_ns="", inherited_group="main"):
         return node_sources.flatten_nodes(session_data, current_ns, inherited_group)
+
+    def _lint_cmake(self, cmake_path):
+        """Находит типовые поломки CMake (в т.ч. в USER-зоне) до colcon и запоминает предупреждения."""
+        try:
+            with open(cmake_path, 'r', encoding='utf-8') as f:
+                issues = cmake_lint.lint(f.read())
+        except OSError:
+            return
+        for issue in issues:
+            self.last_warnings.append(issue.message)
+            logging.warning(issue.message)
 
     def _resolve_cmake_user_block(self, cmake_path, new_auto):
         return build_generator.resolve_user_block(cmake_path, new_auto)

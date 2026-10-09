@@ -23,5 +23,10 @@
   "plural.packages.one": "{n} пакет",
   "plural.packages.few": "{n} пакета",
   "plural.packages.many": "{n} пакетов",
-  "plural.packages.other": "{n} пакета"
+  "plural.packages.other": "{n} пакета",
+  "lint.mixed_link_signature": "CMakeLists.txt, строка {line}: у цели '{target}' ament_target_dependencies смешан с target_link_libraries(PUBLIC/PRIVATE/INTERFACE) — colcon упадёт. Уберите ключевое слово.",
+  "save.warning": "⚠ {text}",
+  "layout.legacy_title": "Project layout",
+  "layout.legacy_question": "В этом проекте файлы ROS 2 лежат вне src/ ({count} шт.).\n\nПеренести их в src/? Оригиналы будут сохранены в .blueprint/legacy_backup/.",
+  "layout.migration_done": "{summary}"
 }

@@ -135,3 +135,9 @@ def _english_ui():
     i18n.set_language("en")
     yield
     i18n.set_language("en")
+
+
+@pytest.fixture(autouse=True)
+def _isolated_settings(tmp_path, monkeypatch):
+    """Тесты не читают и не пишут настоящий ~/.ros_blueprint_studio."""
+    monkeypatch.setenv("STUDIO_SETTINGS_DIR", str(tmp_path / "_settings"))

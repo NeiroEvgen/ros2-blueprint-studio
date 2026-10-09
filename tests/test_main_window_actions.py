@@ -106,3 +106,40 @@ class TestYamlKeepsCyrillic:
         import inspect
         from core import project_manager
         assert "allow_unicode=True" in inspect.getsource(project_manager.ProjectManager.save_project)
+
+
+class TestLayoutMigrationOnOpen:
+    def _legacy(self, win):
+        p = win.current_project_path
+        for rel, text in (("package.xml", "px"), ("launch/a.launch.py", "L")):
+            fp = os.path.join(p, rel)
+            os.makedirs(os.path.dirname(fp), exist_ok=True)
+            open(fp, "w").write(text)
+        return p
+
+    def test_accept_migrates_and_logs(self, win, monkeypatch):
+        p = self._legacy(win)
+        monkeypatch.setattr(QtWidgets.QMessageBox, "question", lambda *a, **k: QtWidgets.QMessageBox.Yes)
+        assert win._offer_layout_migration(p) is True
+        assert os.path.isfile(os.path.join(p, "src", "package.xml"))
+        assert not os.path.exists(os.path.join(p, "package.xml"))
+        assert any("moved 2" in m for m in win._logs)
+
+    def test_decline_changes_nothing(self, win, monkeypatch):
+        p = self._legacy(win)
+        monkeypatch.setattr(QtWidgets.QMessageBox, "question", lambda *a, **k: QtWidgets.QMessageBox.No)
+        assert win._offer_layout_migration(p) is False
+        assert os.path.isfile(os.path.join(p, "package.xml"))
+
+    def test_clean_project_no_question_asked(self, win, monkeypatch):
+        asked = []
+        monkeypatch.setattr(QtWidgets.QMessageBox, "question", lambda *a, **k: asked.append(1))
+        os.makedirs(os.path.join(win.current_project_path, "src"), exist_ok=True)
+        assert win._offer_layout_migration(win.current_project_path) is False and not asked
+
+
+class TestSaveWarnings:
+    def test_warnings_logged_after_save(self, win):
+        win.project_manager.save_project = lambda p: setattr(win.project_manager, "last_warnings", ["W1"]) or (True, set())
+        win.ui.actions["save"].click()
+        assert any("W1" in m for m in win._logs)

@@ -21,5 +21,10 @@
   "launch.starting": "Launching ROS 2... (Switch to ROS Output tab)",
   "launch.no_output": "ros2 launch exited immediately with no output.",
   "plural.packages.one": "{n} package",
-  "plural.packages.other": "{n} packages"
+  "plural.packages.other": "{n} packages",
+  "lint.mixed_link_signature": "CMakeLists.txt line {line}: target '{target}' mixes ament_target_dependencies with target_link_libraries(PUBLIC/PRIVATE/INTERFACE) — colcon will fail. Remove the keyword.",
+  "save.warning": "⚠ {text}",
+  "layout.legacy_title": "Project layout",
+  "layout.legacy_question": "This project keeps ROS 2 files outside src/ ({count} files).\n\nMove them into src/? Originals are backed up to .blueprint/legacy_backup/.",
+  "layout.migration_done": "{summary}"
 }

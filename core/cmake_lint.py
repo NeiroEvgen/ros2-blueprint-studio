@@ -10,7 +10,12 @@ _KW = {"PUBLIC", "PRIVATE", "INTERFACE"}
 class LintIssue:
     line: int
     target: str
-    message: str
+    code: str            # ключ локализации: lint.<code>
+
+    @property
+    def message(self) -> str:
+        from core.i18n import t
+        return t(f"lint.{self.code}", target=self.target, line=self.line)
 
 
 def _calls(text: str, name: str):
@@ -25,8 +30,5 @@ def lint(cmake_text: str) -> List[LintIssue]:
     ament = {a[0] for _, a in _calls(cmake_text, "ament_target_dependencies") if a}
     for ln, args in _calls(cmake_text, "target_link_libraries"):
         if args and args[0] in ament and any(a in _KW for a in args[1:]):
-            issues.append(LintIssue(ln, args[0],
-                "target_link_libraries с PUBLIC/PRIVATE/INTERFACE на цели, где есть "
-                "ament_target_dependencies (plain signature) — colcon упадёт. "
-                "Уберите ключевое слово."))
+            issues.append(LintIssue(ln, args[0], "mixed_link_signature"))
     return issues

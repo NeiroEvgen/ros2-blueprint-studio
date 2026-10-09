@@ -13,6 +13,8 @@ from core.project_manager import ProjectManager
 from core.file_watcher import FileWatcher
 from core.export_manager import ExportManager 
 from core.workspace_manager import WorkspaceManager
+from core.i18n import t
+from core import layout as project_layout
 from core.ros_process import DeployWorker, LogMonitorWorker
 from core.container_config import ContainerConfigStore, safe_group_name, resolved_env
 from core.project_importer import import_ros2_package
@@ -327,6 +329,27 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             return
         ok, _ = self._save_result(self.project_manager.save_project(self.current_project_path))
         self.system_log("💾 Project saved" if ok else "Error: failed to save project files.")
+        self._log_save_warnings()
+
+    def _log_save_warnings(self):
+        """Предупреждения генератора/линтера CMake после Save — в системный лог."""
+        for text in getattr(self.project_manager, "last_warnings", []) or []:
+            self.system_log(t("save.warning", text=text))
+
+    def _offer_layout_migration(self, path):
+        """Старый проект с ROS-файлами вне src/ — предложить перенести (с резервной копией)."""
+        lay = project_layout.ProjectLayout(path)
+        legacy = lay.legacy_items()
+        if not legacy:
+            return False
+        ans = QtWidgets.QMessageBox.question(
+            self, t("layout.legacy_title"), t("layout.legacy_question", count=len(legacy)),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+        if ans != QtWidgets.QMessageBox.Yes:
+            return False
+        report = project_layout.migrate(path)
+        self.system_log(t("layout.migration_done", summary=report.summary()))
+        return True
 
     def on_open_project(self):
         """Открыть другой проект с диска (как «Open from Disk…» в стартовом окне)."""
@@ -458,6 +481,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
     def on_load_project_init(self, path):
         """Логика загрузки проекта с адаптацией интерфейса"""
         self.current_project_path = path
+        self._offer_layout_migration(path)
         p_type = WorkspaceManager.get_project_type(path)
         self.ui.set_visible_graph(p_type)
         self.ui.rebuild_palette(ALL_NODE_CLASSES, p_type)

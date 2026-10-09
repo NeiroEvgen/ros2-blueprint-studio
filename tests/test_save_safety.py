@@ -135,3 +135,32 @@ def test_library_helper_without_main_not_in_launch(project):
     launch = (project / "src/launch/project_launch.py").read_text(encoding="utf-8")
     assert "executable='a'" in launch and "helper" not in launch
     assert (project / "src/cpp/helper.cpp").exists()   # файл остаётся, это библиотека
+
+
+def test_lint_warning_reported_for_mixed_link_signature_in_user_block(project):
+    save(project, nodes=[cpp_node("a", MAIN)])
+    cm = project / "src" / "CMakeLists.txt"
+    from core.generators.build_generator import CMAKE_USER_END
+    bad = "target_link_libraries(a PUBLIC yaml-cpp)\n"
+    cm.write_text(cm.read_text(encoding="utf-8").replace(CMAKE_USER_END, bad + CMAKE_USER_END), encoding="utf-8")
+    pm = ProjectManager(FakeGraph(), FakeGraph({"nodes": [cpp_node("a", MAIN)], "connections": []}))
+    pm.save_project(str(project))
+    assert len(pm.last_warnings) == 1 and "'a'" in pm.last_warnings[0]
+
+
+def test_no_lint_warnings_on_clean_project(project):
+    pm = ProjectManager(FakeGraph(), FakeGraph({"nodes": [cpp_node("a", MAIN)], "connections": []}))
+    pm.save_project(str(project))
+    assert pm.last_warnings == []
+
+
+def test_lint_warning_is_localized(project):
+    from core import i18n
+    save(project, nodes=[cpp_node("a", MAIN)])
+    cm = project / "src" / "CMakeLists.txt"
+    from core.generators.build_generator import CMAKE_USER_END
+    cm.write_text(cm.read_text(encoding="utf-8").replace(CMAKE_USER_END, "target_link_libraries(a PUBLIC x)\n" + CMAKE_USER_END), encoding="utf-8")
+    i18n.set_language("ru")
+    pm = ProjectManager(FakeGraph(), FakeGraph({"nodes": [cpp_node("a", MAIN)], "connections": []}))
+    pm.save_project(str(project))
+    assert "строка" in pm.last_warnings[0]
