@@ -46,7 +46,7 @@ class ProjectLayout:
             os.makedirs(d, exist_ok=True)
 
     def legacy_items(self) -> List[str]:
-        """Относительные пути (от корня) старых ROS-файлов вне src/."""
+        """Относительные пути (от корня, всегда через «/») старых ROS-файлов вне src/."""
         found = []
         if not os.path.isdir(self.root):
             return found
@@ -59,7 +59,7 @@ class ProjectLayout:
                 for dp, dns, fns in os.walk(p):
                     dns[:] = [d for d in dns if d != "__pycache__"]
                     for fn in fns:
-                        found.append(os.path.relpath(os.path.join(dp, fn), self.root))
+                        found.append(os.path.relpath(os.path.join(dp, fn), self.root).replace(os.sep, "/"))
         return found
 
     def is_legacy(self) -> bool:
