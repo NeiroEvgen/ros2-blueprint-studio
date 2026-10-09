@@ -247,5 +247,20 @@
     "xml_depend": [
       "moveit_msgs"
     ]
+  },
+  "yaml-cpp": {
+    "apt": [
+      "libyaml-cpp-dev"
+    ],
+    "cmake_find": [
+      "yaml-cpp"
+    ],
+    "cmake_link": [
+      "yaml-cpp"
+    ],
+    "xml_depend": [
+      "libyaml-cpp-dev"
+    ],
+    "link_only": true
   }
 }

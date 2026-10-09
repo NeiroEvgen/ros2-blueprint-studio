@@ -153,8 +153,7 @@ class TestInputRobustness:
         ast.parse(_compile([cpp("нода")]))
 
     def test_filename_with_quote_does_not_break_syntax(self):
-        # ФИКСИРУЕМ ДЫРУ: апостроф в имени ломает синтаксис сгенерированного файла.
-        # Сейчас это xfail; после правки генератора станет обычным тестом.
+        # Апостроф в имени не должен ломать синтаксис сгенерированного файла.
         ast.parse(_compile([cpp("a'b")]))
         ast.parse(_compile([py("a'b.py")]))
 

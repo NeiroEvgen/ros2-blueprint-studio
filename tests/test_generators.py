@@ -5,9 +5,9 @@
 проходить на текущем коде без его правок. Если тест падает на работающем
 коде — неверен тест, а не код.
 
-Известные дыры (поведение, которого ещё нет) оформлены как xfail(strict=True):
-они документируют пробел и автоматически «покраснеют», когда фича появится —
-это сигнал снять пометку xfail.
+Известные дыры (поведения, которого ещё нет) оформляются как xfail(strict=True):
+они документируют пробел и «покраснеют», когда фича появится — сигнал снять пометку.
+Сейчас дыр нет: yaml-cpp и multi-file executable реализованы.
 """
 import re
 import pytest
@@ -148,8 +148,6 @@ class TestDependencyResolver:
 
     # ---- известные дыры: поведения ещё нет ----
 
-    @pytest.mark.xfail(strict=True, reason="yaml-cpp отсутствует в dependency_registry.json "
-                                          "— ручная правка CMakeLists стирается при регенерации")
     def test_yaml_cpp_gives_find_package_and_link(self, pm, cpp_project):
         src, add = cpp_project
         add("Node.cpp", '#include <yaml-cpp/yaml.h>\n' + MAIN_CPP)
@@ -160,8 +158,6 @@ class TestDependencyResolver:
         assert "find_package(yaml-cpp REQUIRED)" in text
         assert re.search(r"target_link_libraries\(Node[^)]*yaml-cpp", text)
 
-    @pytest.mark.xfail(strict=True, reason="соседний .cpp локального заголовка не добавляется "
-                                          "в add_executable (multi-file executable)")
     def test_local_header_pulls_companion_cpp(self, pm, cpp_project):
         src, add = cpp_project
         add("Node.cpp", '#include "solver.hpp"\n' + MAIN_CPP)
