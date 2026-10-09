@@ -75,9 +75,10 @@ class ProjectManager:
 
             # язык → сессия его вкладки (в «mixed» генерируются обе)
             sessions = {graph_ir.CPP: cpp_data, graph_ir.PYTHON: py_data}
+            flat_by_lang = self._flat_by_language(languages, sessions)
             created_files = []
             for lang in languages:
-                created_files += self._process_and_save_files(sessions[lang], code_dirs[lang], lang) or []
+                created_files += node_sources.process_flat_nodes(flat_by_lang[lang], code_dirs[lang], lang) or []
 
             from core.generators.dependency_resolver import DependencyResolver, DepSet
             from core.dockerfile_manager import DockerfileManager
@@ -85,7 +86,7 @@ class ProjectManager:
             resolver = DependencyResolver()
             dep_set = DepSet()
             for lang in languages:
-                dep_set.update(resolver.collect_from_nodes(self._flatten_nodes(sessions[lang]), lang))
+                dep_set.update(resolver.collect_from_nodes(flat_by_lang[lang], lang))
 
             dockerfile_mgr = DockerfileManager(project_path)
             dockerfile_mgr.ensure_exists()
@@ -153,6 +154,22 @@ class ProjectManager:
             logging.error(f"Save Error: {e}")
             traceback.print_exc()
             return False
+
+    def _flat_by_language(self, languages, sessions):
+        """
+        {язык: плоский список нод для генерации}. В одноязычном проекте — все ноды его вкладки.
+        В mixed — обе вкладки, но нода с явным языком (ros.py.* на C++-вкладке) всё равно
+        уходит в свой язык, а не в язык вкладки.
+        """
+        flats = {lang: self._flatten_nodes(sessions[lang]) for lang in languages}
+        if len(languages) == 1:
+            return flats
+        out = {lang: [] for lang in languages}
+        for tab_lang, flat in flats.items():
+            for entry in flat:
+                lang = graph_ir.language_of(entry["node"]) or tab_lang
+                out[lang if lang in out else tab_lang].append(entry)
+        return out
 
     def _process_and_save_files(self, session_data, target_dir, project_type):
         return node_sources.process_and_save_files(session_data, target_dir, project_type)

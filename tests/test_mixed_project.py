@@ -113,3 +113,25 @@ class TestWorkspaceMixed:
         assert [os.path.basename(d) for d in L.code_dirs("cpp")] == ["cpp"]
         L.ensure("mixed")
         assert os.path.isdir(L.code_dir("cpp")) and os.path.isdir(L.code_dir("python"))
+
+
+def test_python_node_on_cpp_tab_still_generated_as_python(mixed):
+    """Нода ros.py.* случайно оказалась в C++-вкладке — она всё равно Python."""
+    save(mixed, [cpp_node("drv", MAIN), py_node("oops", PY_CODE)], [])
+    assert (mixed / "src/python/oops.py").is_file() and not (mixed / "src/cpp/oops.cpp").exists()
+    assert "oops.py" in launch(mixed)
+
+
+def test_cpp_node_on_python_tab_still_generated_as_cpp(mixed):
+    save(mixed, [], [py_node("p", PY_CODE), cpp_node("drv", MAIN)])
+    assert (mixed / "src/cpp/drv.cpp").is_file() and not (mixed / "src/python/drv.py").exists()
+
+
+def test_pure_cpp_project_unchanged_by_language_routing(tmp_path):
+    """В одноязычном проекте никакого перераспределения: все ноды вкладки — язык проекта."""
+    root = tmp_path / "c"
+    for d in ("src", ".blueprint"):
+        (root / d).mkdir(parents=True)
+    (root / "project_config.json").write_text(json.dumps({"type": "cpp"}))
+    save(root, [cpp_node("a", MAIN)], [py_node("ignored", PY_CODE)])
+    assert (root / "src/cpp/a.cpp").is_file() and not (root / "src/python").exists()

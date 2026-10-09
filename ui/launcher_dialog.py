@@ -33,7 +33,7 @@ class LauncherDialog(QtWidgets.QDialog):
         # === ВЫБОР ЯЗЫКА ===
         right_layout.addWidget(QtWidgets.QLabel("Project Language:"))
         self.type_combo = QtWidgets.QComboBox()
-        self.type_combo.addItems(["Python (Scripts only)", "C++ (Compilation required)"])
+        self.type_combo.addItems(["Python (Scripts only)", "C++ (Compilation required)", "Mixed (C++ + Python)"])
         right_layout.addWidget(self.type_combo)
         # ===================
 
@@ -167,7 +167,7 @@ class LauncherDialog(QtWidgets.QDialog):
             return
         
         idx = self.type_combo.currentIndex()
-        p_type = "python" if idx == 0 else "cpp"
+        p_type = ("python", "cpp", "mixed")[idx]
         
         try:
             path = WorkspaceManager.create_project(name, p_type)

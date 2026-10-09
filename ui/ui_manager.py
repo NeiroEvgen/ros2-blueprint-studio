@@ -223,7 +223,9 @@ class UiManager:
         main_splitter.setStretchFactor(1, 5)
 
     def set_visible_graph(self, mode="python"):
-        if mode == "python":
+        if mode == "mixed":
+            self.tabs.setTabVisible(0, True); self.tabs.setTabVisible(1, True); self.tabs.setCurrentIndex(0)
+        elif mode == "python":
             self.tabs.setTabVisible(0, True); self.tabs.setTabVisible(1, False); self.tabs.setCurrentIndex(0)
         else:
             self.tabs.setTabVisible(0, False); self.tabs.setTabVisible(1, True); self.tabs.setCurrentIndex(1)
@@ -236,6 +238,7 @@ class UiManager:
         }
         for node_cls in node_classes:
             identifier = node_cls.type_; name = node_cls.NODE_NAME
+            # mixed: показываем всё; в одноязычных проектах — только свой язык
             if project_type == "python" and "ros.cpp" in identifier: continue
             if project_type == "cpp" and (".py" in identifier): continue
             if "internal" in identifier: continue

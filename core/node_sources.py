@@ -88,23 +88,25 @@ def flatten_nodes(session_data, current_ns="", inherited_group="main"):
 
 
 def process_and_save_files(session_data, target_dir, project_type):
-    logging.debug("[PROC DEBUG] _process_and_save_files ВЫЗВАН!!!")
-    is_cpp_mode = (project_type == "cpp")
-    forced_extension = ".cpp" if is_cpp_mode else ".py"
-    
-    # Инициализируем генератор
-    project_name = os.path.basename(os.path.dirname(target_dir))
-    generator = CppGenerator(project_name) if is_cpp_mode else PythonGenerator(project_name)
-
-    # Собираем все ноды в плоский список, учитывая неймспейсы сабграфов
+    """Сессия графа → файлы в target_dir (раскрывает группы и вызывает process_flat_nodes)."""
     try:
         flat_nodes = flatten_nodes(session_data)
         logging.debug(f"[PROC DEBUG] flat_nodes получено: {len(flat_nodes)}")
     except Exception as e:
-        import traceback
-        logging.debug(f"[PROC DEBUG] _flatten_nodes УПАЛ: {e}")
+        logging.debug(f"[PROC DEBUG] flatten_nodes УПАЛ: {e}")
         traceback.print_exc()
         flat_nodes = []
+    return process_flat_nodes(flat_nodes, target_dir, project_type)
+
+
+def process_flat_nodes(flat_nodes, target_dir, project_type):
+    """Плоский список нод ([{'node','namespace',...}]) → файлы <target_dir>/<node>.(cpp|py)."""
+    is_cpp_mode = (project_type == "cpp")
+    forced_extension = ".cpp" if is_cpp_mode else ".py"
+
+    # Инициализируем генератор
+    project_name = os.path.basename(os.path.dirname(target_dir))
+    generator = CppGenerator(project_name) if is_cpp_mode else PythonGenerator(project_name)
 
     created = []
     used_names = set()
