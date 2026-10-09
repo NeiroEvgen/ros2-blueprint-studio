@@ -55,6 +55,12 @@ class SourceScan:
     executables: List[str] = field(default_factory=list)   # имена файлов .cpp с main(), отсортированы
 
 
+def _canon(dep: str) -> str:
+    """Каноническое имя зависимости: реестр отдаёт 'OpenCV' (cmake), regex — 'opencv'.
+    Храним одно ('opencv'), а в CMake рендерим как OpenCV — иначе дубли."""
+    return "opencv" if dep == "OpenCV" else dep
+
+
 def scan_sources(cpp_dir: str) -> SourceScan:
     from core.generators.dependency_resolver import DependencyResolver
     resolver = DependencyResolver()
@@ -76,7 +82,7 @@ def scan_sources(cpp_dir: str) -> SourceScan:
                 entry = resolver.resolve_include(inc)
                 if entry:
                     scan.apt.update(entry.get("apt", []))
-                    scan.deps.update(entry.get("cmake_find", []))
+                    scan.deps.update(_canon(d) for d in entry.get("cmake_find", []))
                 else:
                     scan.unresolved.add(inc)
 

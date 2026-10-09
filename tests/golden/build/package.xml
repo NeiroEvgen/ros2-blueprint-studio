@@ -8,7 +8,6 @@
   <license>TODO</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>OpenCV</depend>
   <depend>cv_bridge</depend>
   <depend>example_interfaces</depend>
   <depend>geometry_msgs</depend>

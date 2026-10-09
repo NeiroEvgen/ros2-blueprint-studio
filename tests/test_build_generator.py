@@ -87,3 +87,24 @@ class TestScan:
         (root / "src" / "cpp" / "lib.cpp").write_text("void f(){}")
         apt, ex = bg.generate_cpp_build_files(str(root / "src"))
         assert ex == set() and (root / "src" / "CMakeLists.txt").is_file()
+
+
+class TestNoDuplicateDeps:
+    def test_opencv_once_everywhere(self, tmp_path):
+        src = make_project(tmp_path)
+        bg.generate_cpp_build_files(src)
+        cm = _read(os.path.join(src, "CMakeLists.txt"))
+        px = _read(os.path.join(src, "package.xml"))
+        assert cm.count("find_package(OpenCV REQUIRED)") == 1
+        for line in cm.splitlines():
+            if line.startswith("ament_target_dependencies(talker"):
+                args = line[line.index(" ") + 1:-1].split()[1:]
+                assert len(args) == len(set(args))
+        assert px.count("<depend>opencv</depend>") == 1 and "<depend>OpenCV</depend>" not in px
+
+    def test_find_package_lines_unique(self, tmp_path):
+        src = make_project(tmp_path)
+        bg.generate_cpp_build_files(src)
+        lines = [l for l in _read(os.path.join(src, "CMakeLists.txt")).splitlines()
+                 if l.startswith("find_package(")]
+        assert len(lines) == len(set(lines))
