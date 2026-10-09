@@ -14,6 +14,8 @@ import io
 import tarfile
 import time
 import os
+import re
+from core import colcon
 
 from core.apt_safe import (
     apt_cmd, apt_snippet, missing_check_snippet, validate_packages,
@@ -221,14 +223,23 @@ class RosContainerManager:
 
             sys_callback("🔨 Building C++ project...")
 
-            build_cmd = (
-                "bash -c 'source /opt/ros/humble/setup.bash && "
-                "cd /root/ros2_ws && "
-                "colcon build --symlink-install --event-handlers console_direct+'"
-            )
+            build_cmd = ["bash", "-c", colcon.build_command() + "; echo __COLCON_EXIT=$?"]
             build_stream = self.container.exec_run(build_cmd, stream=True)
+            build_lines, exit_code = [], None
             for line in build_stream.output:
-                sys_callback(line.decode('utf-8', errors='replace').strip())
+                text = line.decode('utf-8', errors='replace').strip()
+                m = re.match(r"__COLCON_EXIT=(\d+)", text)
+                if m:
+                    exit_code = int(m.group(1))
+                    continue
+                build_lines.append(text)
+                sys_callback(text)
+
+            result = colcon.parse_output(build_lines)
+            if exit_code not in (0, None) or not result.ok:
+                sys_callback("❌ " + result.summary())
+                sys_callback("⛔ Build failed — launch aborted.")
+                return False
 
             sys_callback("✅ Build phase finished.")
         else:
