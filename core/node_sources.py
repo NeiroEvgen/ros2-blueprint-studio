@@ -14,14 +14,8 @@ from core.generators.cpp_generator import CppGenerator
 from core.generators.python_generator import PythonGenerator
 
 
-def flatten_nodes(session_data, current_ns="", inherited_group="main"):
-    """
-    Рекурсивно собирает все ноды из сессии, учитывая вложенность групп.
-    Возвращает список: [{'node':..., 'namespace':..., 'container_group':...}]
-    """
-    flat_list = []
+def _normalize_nodes(session_data):
     nodes = session_data.get('nodes', [])
-
     if isinstance(nodes, dict):
         # ключ словаря — ID ноды; вписываем его внутрь
         tmp = []
@@ -30,49 +24,67 @@ def flatten_nodes(session_data, current_ns="", inherited_group="main"):
                 node_val = dict(node_val)
                 node_val.setdefault('id', node_id)
                 tmp.append(node_val)
-        nodes = tmp
-    else:
-        nodes = [n for n in nodes if isinstance(n, dict) and 'id' in n]
+        return tmp
+    return [n for n in nodes if isinstance(n, dict) and 'id' in n]
 
-    nodes_dict = {n['id']: n for n in nodes}
-    
+
+_GROUP_TYPES = ('ros.nodes.RosGroup', 'ros.nodes.RosGroupNode')
+_SKIP_TYPES = ('ros.nodes.internal.SubGraphInputNode', 'ros.nodes.internal.SubGraphOutputNode')
+
+
+def _node_type(node):
+    return node.get('type_') or node.get('type') or ''
+
+
+def _walk(nodes, nodes_dict, current_ns, inherited_group, seen):
+    flat = []
     for node in nodes:
-        _pgid = node.get('custom', {}).get('parent_group_id')
-        logging.debug(f"[FLAT DEBUG] нода type={node.get('type')}, parent_group_id={_pgid!r}")
-        if current_ns == "" and _pgid:
-            logging.debug(f"[FLAT DEBUG]   -> ПРОПУЩЕНА (parent_group_id={_pgid})")
+        nid = node.get('id')
+        pgid = node.get('custom', {}).get('parent_group_id')
+        if current_ns == "" and pgid:
+            continue                      # ребёнок группы: его выведет сама группа
+        node_type = _node_type(node)
+        if node_type in _SKIP_TYPES or 'meta' in node_type:
             continue
+        if nid in seen:
+            continue                      # нода уже выведена (глубочайшей группой)
+        seen.add(nid)
 
-        node_type = node.get('type_') or node.get('type') or ''
-        if node_type in ('ros.nodes.internal.SubGraphInputNode',
-                         'ros.nodes.internal.SubGraphOutputNode'):
-            continue
-        
-        if 'meta' in node_type:
-            continue
-        is_group = node_type in ['ros.nodes.RosGroup', 'ros.nodes.RosGroupNode']
-
-        if is_group:
-            group_name = node.get('custom', {}).get('node_name', node.get('name', 'group'))
+        if node_type in _GROUP_TYPES:
+            custom = node.get('custom', {})
+            group_name = custom.get('node_name', node.get('name', 'group'))
             safe_group_name = re.sub(r'[^a-zA-Z0-9_]', '_', group_name)
             new_ns = f"{current_ns}/{safe_group_name}".replace("//", "/")
 
-            internal_ids = node.get('custom', {}).get('internal_nodes', [])
-            internal_nodes_data = [nodes_dict[nid] for nid in internal_ids if nid in nodes_dict]
-            logging.debug(f"[FLATTEN DEBUG] группа '{group_name}': internal_ids={len(internal_ids)}, найдено нод={len(internal_nodes_data)}, new_ns='{new_ns}'")
+            internal_ids = [i for i in custom.get('internal_nodes', []) if i in nodes_dict]
+            # Если группа перечисляет и вложенную группу, и её детей — ребёнок
+            # принадлежит самой глубокой группе, а не выводится дважды.
+            nested = set()
+            for i in internal_ids:
+                inner = nodes_dict[i]
+                if _node_type(inner) in _GROUP_TYPES:
+                    nested.update(inner.get('custom', {}).get('internal_nodes', []))
+            children = [nodes_dict[i] for i in internal_ids if i not in nested]
+            logging.debug(f"[FLATTEN] группа '{group_name}': детей={len(children)}, ns='{new_ns}'")
 
             # имя группы становится деплой-группой для её детей
-            group_container = node.get('custom', {}).get('container_group') or safe_group_name.lower()
-            flat_list.extend(flatten_nodes(
-                {'nodes': internal_nodes_data}, new_ns, group_container))
+            group_container = custom.get('container_group') or safe_group_name.lower()
+            flat.extend(_walk(children, nodes_dict, new_ns, group_container, seen))
         else:
             own_group = node.get('custom', {}).get('container_group') or inherited_group
-            flat_list.append({'node': node, 'namespace': current_ns,
-                              'container_group': own_group})
-
-    return flat_list
+            flat.append({'node': node, 'namespace': current_ns, 'container_group': own_group})
+    return flat
 
 
+def flatten_nodes(session_data, current_ns="", inherited_group="main"):
+    """
+    Собирает все ноды сессии, раскрывая группы (в том числе вложенные).
+    Возвращает список: [{'node':..., 'namespace':..., 'container_group':...}]
+    Каждая нода выводится ровно один раз — в самой глубокой своей группе.
+    """
+    nodes = _normalize_nodes(session_data)
+    nodes_dict = {n['id']: n for n in nodes}
+    return _walk(nodes, nodes_dict, current_ns, inherited_group, set())
 
 
 def process_and_save_files(session_data, target_dir, project_type):
@@ -95,6 +107,7 @@ def process_and_save_files(session_data, target_dir, project_type):
         flat_nodes = []
 
     created = []
+    used_names = set()
     for node_entry in flat_nodes:
         node = node_entry['node']
         namespace = node_entry['namespace']
@@ -112,6 +125,14 @@ def process_and_save_files(session_data, target_dir, project_type):
         if not base_name or base_name.startswith('.'):
             base_name = re.sub(r'[^a-zA-Z0-9_]', '_', visual_name)
         filename = base_name + forced_extension
+        if filename in used_names:
+            n = 2
+            while f"{base_name}_{n}{forced_extension}" in used_names:
+                n += 1
+            logging.warning(f"Имя файла '{filename}' уже занято другой нодой — '{visual_name}' "
+                            f"получит '{base_name}_{n}{forced_extension}'")
+            filename = f"{base_name}_{n}{forced_extension}"
+        used_names.add(filename)
         file_path = os.path.join(target_dir, filename)
 
         # Сбор данных для Jinja2 шаблона

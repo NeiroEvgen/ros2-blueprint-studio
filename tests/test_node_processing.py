@@ -67,8 +67,6 @@ class TestGroups:
         created = run(pm, [g, a], d)
         assert [(c["filename"], c["group"]) for c in created] == [("a.cpp", "robot")]
 
-    @pytest.mark.xfail(strict=True, reason="БАГ: вложенная группа теряет детей — рекурсия получает только прямых "
-                                           "потомков внешней группы, а nodes_dict строится из них же")
     def test_nested_group_children_are_generated(self, pm, d):
         outer = group("o", "Outer", ["i"])
         inner = group("i", "Inner", ["a"])
@@ -77,8 +75,6 @@ class TestGroups:
         created = run(pm, [outer, inner, a], d)
         assert [(c["filename"], c["group"]) for c in created] == [("a.cpp", "outer")]
 
-    @pytest.mark.xfail(strict=True, reason="БАГ: если внешняя группа перечисляет всех потомков, нода обходится дважды "
-                                           "(/Outer/Inner и /Outer) → два одинаковых файла в created → дубль в launch")
     def test_nested_group_no_duplicate_when_outer_lists_all_descendants(self, pm, d):
         outer = group("o", "Outer", ["i", "a"])
         inner = group("i", "Inner", ["a"])
@@ -127,8 +123,6 @@ class TestEdgeCases:
         run(pm, [node("a")], d)
         assert (d / "a.cpp").stat().st_mtime_ns == m1
 
-    @pytest.mark.xfail(reason="два узла с именами 'a b' и 'a_b' дают один файл: второй молча затирает первого; "
-                              "в created_files два одинаковых filename → дубль в launch", strict=True)
     def test_filename_collision_is_detected(self, pm, d):
         created = run(pm, [node("1", name="a b"), node("2", name="a_b")], d)
         names = [c["filename"] for c in created]
@@ -145,3 +139,41 @@ class TestModuleLayer:
         from core import node_sources
         data = {"nodes": [node("a")]}
         assert pm._flatten_nodes(data) == node_sources.flatten_nodes(data)
+
+
+class TestFixedBugs:
+    def test_collision_gets_suffix_and_is_stable(self, pm, d):
+        nodes = [node("1", name="a b"), node("2", name="a_b"), node("3", name="a-b")]
+        created = run(pm, nodes, d)
+        names = [c["filename"] for c in created]
+        assert names == ["a_b.cpp", "a_b_2.cpp", "a_b_3.cpp"]
+        assert sorted(p.name for p in d.glob("*.cpp")) == sorted(names)
+        # node.custom.source_file обновлён → второй Save даёт те же имена
+        assert [c["filename"] for c in run(pm, nodes, d)] == names
+
+    def test_explicit_distinct_source_files_untouched(self, pm, d):
+        created = run(pm, [node("1", source="x.cpp"), node("2", source="y.cpp")], d)
+        assert [c["filename"] for c in created] == ["x.cpp", "y.cpp"]
+
+    def test_three_level_nesting(self, pm, d):
+        g1 = group("g1", "L1", ["g2", "g3", "a"])
+        g2 = group("g2", "L2", ["g3", "b"]); g2["custom"]["parent_group_id"] = "g1"
+        g3 = group("g3", "L3", ["c"]); g3["custom"]["parent_group_id"] = "g2"
+        a = node("a", pgid="g1"); b = node("b", pgid="g2"); c = node("c", pgid="g3")
+        flat = pm._flatten_nodes({"nodes": [g1, g2, g3, a, b, c]})
+        got = {e["node"]["id"]: e["namespace"] for e in flat}
+        assert got == {"a": "/L1", "b": "/L1/L2", "c": "/L1/L2/L3"} and len(flat) == 3
+
+    def test_sibling_nested_groups(self, pm, d):
+        o = group("o", "O", ["i1", "i2"])
+        i1 = group("i1", "I1", ["a"]); i1["custom"]["parent_group_id"] = "o"
+        i2 = group("i2", "I2", ["b"]); i2["custom"]["parent_group_id"] = "o"
+        flat = pm._flatten_nodes({"nodes": [o, i1, i2, node("a", pgid="i1"), node("b", pgid="i2")]})
+        assert {e["node"]["id"]: e["namespace"] for e in flat} == {"a": "/O/I1", "b": "/O/I2"}
+
+    def test_deploy_group_for_children_is_inner_group_by_flatten_but_first_segment_in_files(self, pm, d):
+        o = group("o", "Out", ["i"]); i = group("i", "In", ["a"]); i["custom"]["parent_group_id"] = "o"
+        flat = pm._flatten_nodes({"nodes": [o, i, node("a", pgid="i")]})
+        assert flat[0]["container_group"] == "in"           # flatten: ближайшая группа
+        created = run(pm, [o, i, node("a", pgid="i")], d)
+        assert created[0]["group"] == "out"                 # файлы/launch: первый сегмент namespace
