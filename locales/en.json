@@ -1,0 +1,25 @@
+{
+  "_meta": {
+    "name": "English"
+  },
+  "colcon.build_ok": "Build OK: {packages}",
+  "colcon.nothing": "nothing to build",
+  "colcon.build_failed": "Build FAILED: {packages}",
+  "colcon.unknown_package": "unknown package",
+  "colcon.more_errors": "... and {count} more",
+  "layout.up_to_date": "Layout: already up to date",
+  "layout.migrated": "Layout migrated: moved {moved}, duplicates removed {dups}, conflicts {conflicts}",
+  "layout.backup": "backup: {path}",
+  "build.check_deps": "📦 Checking and installing system dependencies (rosdep)...",
+  "build.extra_deps": "📦 Also installing (from dependency registry): {packages}",
+  "build.invalid_pkg": "⚠ Skipping invalid package names from registry: {error}",
+  "build.building": "🔨 Building C++ project...",
+  "build.failed_prefix": "❌ {summary}",
+  "build.aborted": "⛔ Build failed — launch aborted.",
+  "build.finished": "✅ Build phase finished.",
+  "build.python_skip": "🐍 Python project detected. Skipping build.",
+  "launch.starting": "Launching ROS 2... (Switch to ROS Output tab)",
+  "launch.no_output": "ros2 launch exited immediately with no output.",
+  "plural.packages.one": "{n} package",
+  "plural.packages.other": "{n} packages"
+}

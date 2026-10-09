@@ -126,3 +126,12 @@ def sshd(tmp_path_factory):
         proc.wait(timeout=5)
     except Exception:
         proc.kill()
+
+
+@pytest.fixture(autouse=True)
+def _english_ui():
+    """Тесты проверяют английские тексты; системная локаль разработчика не должна влиять."""
+    from core import i18n
+    i18n.set_language("en")
+    yield
+    i18n.set_language("en")

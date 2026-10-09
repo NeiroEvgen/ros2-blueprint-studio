@@ -16,6 +16,7 @@ import time
 import os
 import re
 from core import colcon
+from core.i18n import t
 
 from core.apt_safe import (
     apt_cmd, apt_snippet, missing_check_snippet, validate_packages,
@@ -198,15 +199,15 @@ class RosContainerManager:
         is_cpp = (check_cmake.exit_code == 0)
 
         if is_cpp:
-            sys_callback("📦 Checking and installing system dependencies (rosdep)...")
+            sys_callback(t("build.check_deps"))
 
             extra = []
             if extra_apt_packages:
                 try:
                     extra = validate_packages(extra_apt_packages)
-                    sys_callback(f"📦 Also installing (from dependency registry): {' '.join(extra)}")
+                    sys_callback(t("build.extra_deps", packages=' '.join(extra)))
                 except InvalidPackageName as e:
-                    sys_callback(f"⚠ Skipping invalid package names from registry: {e}")
+                    sys_callback(t("build.invalid_pkg", error=e))
 
             dep_cmd = ["bash", "-c",
                 apt_snippet(extra, update=True) + "; "
@@ -221,7 +222,7 @@ class RosContainerManager:
             for line in dep_stream.output:
                 sys_callback(line.decode('utf-8', errors='replace').strip())
 
-            sys_callback("🔨 Building C++ project...")
+            sys_callback(t("build.building"))
 
             build_cmd = ["bash", "-c", colcon.build_command() + "; echo __COLCON_EXIT=$?"]
             build_stream = self.container.exec_run(build_cmd, stream=True)
@@ -237,16 +238,16 @@ class RosContainerManager:
 
             result = colcon.parse_output(build_lines)
             if exit_code not in (0, None) or not result.ok:
-                sys_callback("❌ " + result.summary())
-                sys_callback("⛔ Build failed — launch aborted.")
+                sys_callback(t("build.failed_prefix", summary=result.summary()))
+                sys_callback(t("build.aborted"))
                 return False
 
-            sys_callback("✅ Build phase finished.")
+            sys_callback(t("build.finished"))
         else:
-            sys_callback("🐍 Python project detected. Skipping build.")
+            sys_callback(t("build.python_skip"))
 
         # 2. ЗАПУСК ROS — этот блок у тебя уже есть ниже, НЕ трогай его
-        sys_callback(" Launching ROS 2... (Switch to ROS Output tab)")
+        sys_callback(t("launch.starting"))
         launch_cmd = (
             "bash -c 'source /opt/ros/humble/setup.bash && "
             "if [ -d /root/ros2_ws/install ]; then source /root/ros2_ws/install/setup.bash; fi && "
@@ -265,7 +266,7 @@ class RosContainerManager:
                 ros_callback(text)
 
         if not got_output:
-            ros_callback(" ros2 launch завершился мгновенно без вывода.")
+            ros_callback(t("launch.no_output"))
         
 
     def start_foxglove_bridge(self, status_callback=None):

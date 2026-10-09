@@ -17,6 +17,8 @@ import time
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from core.i18n import t
+
 # Что считается «ROS-мусором в корне» у старых проектов.
 LEGACY_ROOT_FILES = ("CMakeLists.txt", "package.xml")
 LEGACY_ROOT_DIRS = ("launch", "cpp", "python", "include", "scripts", "test",
@@ -86,11 +88,11 @@ class MigrationReport:
 
     def summary(self) -> str:
         if not self.changed:
-            return "Layout: already up to date"
-        s = (f"Layout migrated: moved {len(self.moved)}, duplicates removed "
-             f"{len(self.identical)}, conflicts {len(self.conflicts)}")
+            return t("layout.up_to_date")
+        s = t("layout.migrated", moved=len(self.moved), dups=len(self.identical),
+              conflicts=len(self.conflicts))
         if self.backup_dir:
-            s += f"; backup: {self.backup_dir}"
+            s += "; " + t("layout.backup", path=self.backup_dir)
         return s
 
 

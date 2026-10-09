@@ -1,0 +1,27 @@
+{
+  "_meta": {
+    "name": "Русский"
+  },
+  "colcon.build_ok": "Сборка успешна: {packages}",
+  "colcon.nothing": "нечего собирать",
+  "colcon.build_failed": "Сборка ПРОВАЛЕНА: {packages}",
+  "colcon.unknown_package": "неизвестный пакет",
+  "colcon.more_errors": "... и ещё {count}",
+  "layout.up_to_date": "Структура проекта уже актуальна",
+  "layout.migrated": "Структура проекта обновлена: перенесено {moved}, дублей удалено {dups}, конфликтов {conflicts}",
+  "layout.backup": "резервная копия: {path}",
+  "build.check_deps": "📦 Проверка и установка системных зависимостей (rosdep)...",
+  "build.extra_deps": "📦 Дополнительно устанавливаются (из реестра зависимостей): {packages}",
+  "build.invalid_pkg": "⚠ Пропущены некорректные имена пакетов из реестра: {error}",
+  "build.building": "🔨 Сборка C++ проекта...",
+  "build.failed_prefix": "❌ {summary}",
+  "build.aborted": "⛔ Сборка не удалась — запуск отменён.",
+  "build.finished": "✅ Сборка завершена.",
+  "build.python_skip": "🐍 Python-проект. Сборка не требуется.",
+  "launch.starting": "Запуск ROS 2... (смотрите вкладку ROS Output)",
+  "launch.no_output": "ros2 launch завершился мгновенно без вывода.",
+  "plural.packages.one": "{n} пакет",
+  "plural.packages.few": "{n} пакета",
+  "plural.packages.many": "{n} пакетов",
+  "plural.packages.other": "{n} пакета"
+}

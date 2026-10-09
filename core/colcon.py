@@ -3,6 +3,8 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from core.i18n import t
+
 WS = "/root/ros2_ws"
 
 
@@ -29,13 +31,13 @@ class BuildResult:
 
     def summary(self, limit: int = 5) -> str:
         if self.ok:
-            return "Build OK: " + (", ".join(self.built) or "nothing to build")
-        out = ["Build FAILED: " + (", ".join(self.failed) or "unknown package")]
+            return t("colcon.build_ok", packages=", ".join(self.built) or t("colcon.nothing"))
+        out = [t("colcon.build_failed", packages=", ".join(self.failed) or t("colcon.unknown_package"))]
         for e in self.errors[:limit]:
             where = f"{e.file}:{e.line}: " if e.file and e.line else (f"{e.file}: " if e.file else "")
             out.append(f"  [{e.kind}] {where}{e.message}")
         if len(self.errors) > limit:
-            out.append(f"  ... and {len(self.errors) - limit} more")
+            out.append("  " + t("colcon.more_errors", count=len(self.errors) - limit))
         return "\n".join(out)
 
 
