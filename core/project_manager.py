@@ -33,6 +33,8 @@ from core.generators.build_generator import (  # noqa: F401
 )
 from core.generators import build_generator
 from core import node_sources
+from core import graph_ir
+from core.layout import ProjectLayout
 
 class ProjectManager:
     def __init__(self, graph_py, graph_cpp):
@@ -52,18 +54,15 @@ class ProjectManager:
             src_dir = os.path.join(project_path, "src")
             
             project_type = WorkspaceManager.get_project_type(project_path)
-            
-            if project_type == "cpp":
-                code_dir = os.path.join(src_dir, "cpp")
-            else:
-                code_dir = os.path.join(src_dir, "python")
-            
-            launch_dir = os.path.join(src_dir, "launch")
+            languages = graph_ir.project_languages(project_type)   # ('cpp',) | ('python',) | ('cpp','python')
+            layout = ProjectLayout(project_path)
+            code_dirs = {lang: layout.code_dir(lang) for lang in languages}
+            launch_dir = layout.launch
 
-            for d in [blueprint_dir, src_dir, code_dir, launch_dir]:
+            for d in [blueprint_dir, src_dir, launch_dir, *code_dirs.values()]:
                 if not os.path.exists(d): os.makedirs(d)
 
-            logging.info(f"Saving project {pkg_name} ({project_type}) into {code_dir}")
+            logging.info(f"Saving project {pkg_name} ({project_type}) into {sorted(code_dirs.values())}")
 
             self._backup_dynamic_ports(self.graph_py)
             self._backup_dynamic_ports(self.graph_cpp)
@@ -74,19 +73,19 @@ class ProjectManager:
             print(f"[SAVE DEBUG] cpp_data nodes={len(cpp_data.get('nodes', {}))}, py_data nodes={len(py_data.get('nodes', {}))}")
             print(f"[SAVE DEBUG] cpp_data keys={list(cpp_data.keys())}")
 
-            if project_type == "cpp":
-                created_files = self._process_and_save_files(cpp_data, code_dir, project_type)
-            else:
-                created_files = self._process_and_save_files(py_data, code_dir, project_type)
-            created_files = created_files or []
+            # язык → сессия его вкладки (в «mixed» генерируются обе)
+            sessions = {graph_ir.CPP: cpp_data, graph_ir.PYTHON: py_data}
+            created_files = []
+            for lang in languages:
+                created_files += self._process_and_save_files(sessions[lang], code_dirs[lang], lang) or []
 
-            from core.generators.dependency_resolver import DependencyResolver
+            from core.generators.dependency_resolver import DependencyResolver, DepSet
             from core.dockerfile_manager import DockerfileManager
 
-            session_data = cpp_data if project_type == "cpp" else py_data
-            flat_for_deps = self._flatten_nodes(session_data)
             resolver = DependencyResolver()
-            dep_set = resolver.collect_from_nodes(flat_for_deps, project_type)
+            dep_set = DepSet()
+            for lang in languages:
+                dep_set.update(resolver.collect_from_nodes(self._flatten_nodes(sessions[lang]), lang))
 
             dockerfile_mgr = DockerfileManager(project_path)
             dockerfile_mgr.ensure_exists()
@@ -103,34 +102,38 @@ class ProjectManager:
                 yaml.dump(state, f, sort_keys=False, allow_unicode=True)
             
             # 3.1 ОЧИСТКА ФАЙЛОВ-ПРИЗРАКОВ (по ПОЛНОМУ списку — до фильтрации по executable,
-            # иначе .cpp-хелперы без main() будут ошибочно сочтены "устаревшими" и удалены)
-            valid_files = {cf['filename'] for cf in created_files}
-            ext = ".cpp" if project_type == "cpp" else ".py"
-            try:
-                for f in os.listdir(code_dir):
-                    if f.endswith(ext) and f not in valid_files:
-                        os.remove(os.path.join(code_dir, f))
-                        logging.info(f"🗑 Удалён устаревший файл: {f}")
-            except Exception as e:
-                logging.warning(f"Cleanup skipped: {e}")
+            # иначе .cpp-хелперы без main() будут ошибочно сочтены "устаревшими" и удалены).
+            # Чистим только код-папку своего языка и только файлы его расширения.
+            for lang in languages:
+                valid_files = {cf['filename'] for cf in created_files if cf['language'] == lang}
+                ext = ".cpp" if lang == graph_ir.CPP else ".py"
+                try:
+                    for f in os.listdir(code_dirs[lang]):
+                        if f.endswith(ext) and f not in valid_files:
+                            os.remove(os.path.join(code_dirs[lang], f))
+                            logging.info(f"🗑 Удалён устаревший файл: {f}")
+                except Exception as e:
+                    logging.warning(f"Cleanup skipped: {e}")
 
             # 3.5 CMAKE & PACKAGE.XML — ДО генерации launch, чтобы отфильтровать
             # created_files по реальным executable раньше, чем они попадут в launch
-            cmake_path = os.path.join(src_dir, "CMakeLists.txt")
+            cmake_path = layout.cmake
             cpp_apt_deps = set()
-            if project_type == "python":
+            if graph_ir.CPP not in languages:
                 if os.path.exists(cmake_path):
                     os.remove(cmake_path)
             else:
                 cpp_apt_deps, executable_names = self._generate_cpp_build_files(src_dir, created_files)
                 # Хелперы без main() (заинклюженные в другие ноды через #include)
-                # не должны появляться в launch как отдельные запускаемые процессы
-                before = {cf['filename'] for cf in created_files}
+                # не должны появляться в launch как отдельные запускаемые процессы.
+                # Python-ноды фильтру не подлежат.
+                before = {cf['filename'] for cf in created_files if cf['language'] == graph_ir.CPP}
                 created_files = [cf for cf in created_files
-                                 if os.path.splitext(cf['filename'])[0] in executable_names]
-                skipped = before - {cf['filename'] for cf in created_files}
-                if skipped:
-                    logging.info(f"Excluded from launch (no main(), library helpers): {sorted(skipped)}")
+                                 if cf['language'] != graph_ir.CPP
+                                 or os.path.splitext(cf['filename'])[0] in executable_names]
+                kept = {cf['filename'] for cf in created_files if cf['language'] == graph_ir.CPP}
+                if before - kept:
+                    logging.info(f"Excluded from launch (no main(), library helpers): {sorted(before - kept)}")
 
             # 4. ГЕНЕРАЦИЯ LAUNCH ФАЙЛОВ (created_files уже отфильтрован для C++)
             groups = write_launch_files(launch_dir, created_files, pkg_name)
@@ -144,7 +147,7 @@ class ProjectManager:
             except Exception as ce:
                 logging.warning(f"Compose skipped: {ce}")
 
-            return True, (cpp_apt_deps if project_type == "cpp" else set())
+            return True, cpp_apt_deps
 
         except Exception as e:
             logging.error(f"Save Error: {e}")

@@ -54,6 +54,12 @@ class DepSet:
             for name in entry.get("xml_depend", []):
                 self.local.add(name)
 
+    def update(self, other):
+        """Объединяет другой DepSet в этот (для проектов на нескольких языках)."""
+        for f in ("apt", "pip", "cmake_find", "cmake_link", "xml_depend", "local", "unknown"):
+            getattr(self, f).update(getattr(other, f))
+        return self
+
     def as_dict(self):
         return {
             "apt": sorted(self.apt),

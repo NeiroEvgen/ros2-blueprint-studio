@@ -38,11 +38,17 @@ class ProjectLayout:
     config_file = property(lambda s: os.path.join(s.root, "project_config.json"))
     backup_root = property(lambda s: os.path.join(s.blueprint, "legacy_backup"))
 
-    def code_dir(self, project_type: str) -> str:
-        return os.path.join(self.src, "cpp" if project_type == "cpp" else "python")
+    def code_dir(self, language: str) -> str:
+        """Папка исходников языка: 'cpp' → src/cpp, остальное → src/python."""
+        return os.path.join(self.src, "cpp" if language == "cpp" else "python")
+
+    def code_dirs(self, project_type: str):
+        """Папки кода проекта: 'mixed' → обе."""
+        langs = ("cpp", "python") if project_type == "mixed" else (("cpp",) if project_type == "cpp" else ("python",))
+        return [self.code_dir(l) for l in langs]
 
     def ensure(self, project_type: str) -> None:
-        for d in (self.blueprint, self.src, self.code_dir(project_type), self.launch):
+        for d in (self.blueprint, self.src, self.launch, *self.code_dirs(project_type)):
             os.makedirs(d, exist_ok=True)
 
     def legacy_items(self) -> List[str]:
