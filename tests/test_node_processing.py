@@ -133,3 +133,15 @@ class TestEdgeCases:
         created = run(pm, [node("1", name="a b"), node("2", name="a_b")], d)
         names = [c["filename"] for c in created]
         assert len(names) == len(set(names))
+
+
+class TestModuleLayer:
+    def test_core_module_has_no_ui_or_qt(self):
+        import core.node_sources as m
+        src = open(m.__file__, encoding="utf-8").read()
+        assert "ui." not in src and "PyQt" not in src and "PySide" not in src
+
+    def test_manager_delegates_to_module(self, pm, d):
+        from core import node_sources
+        data = {"nodes": [node("a")]}
+        assert pm._flatten_nodes(data) == node_sources.flatten_nodes(data)
