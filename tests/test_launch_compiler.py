@@ -13,7 +13,7 @@ import pytest
 
 
 def _compile(files, pkg="my_pkg"):
-    from ui.launch_compiler import LaunchCompiler
+    from core.generators.launch_generator import LaunchCompiler
     return LaunchCompiler(files, package_name=pkg).compile()
 
 
@@ -155,7 +155,17 @@ class TestInputRobustness:
     def test_filename_with_quote_does_not_break_syntax(self):
         # ФИКСИРУЕМ ДЫРУ: апостроф в имени ломает синтаксис сгенерированного файла.
         # Сейчас это xfail; после правки генератора станет обычным тестом.
-        try:
-            ast.parse(_compile([cpp("a'b")]))
-        except SyntaxError:
-            pytest.xfail("launch-генератор не экранирует кавычки в именах")
+        ast.parse(_compile([cpp("a'b")]))
+        ast.parse(_compile([py("a'b.py")]))
+
+
+class TestLayering:
+    def test_core_generator_does_not_import_ui(self):
+        import core.generators.launch_generator as m
+        src = open(m.__file__, encoding="utf8").read()
+        assert "ui." not in src and "PyQt" not in src and "PySide" not in src
+
+    def test_ui_shim_reexports_same_class(self):
+        from ui.launch_compiler import LaunchCompiler as A
+        from core.generators.launch_generator import LaunchCompiler as B
+        assert A is B

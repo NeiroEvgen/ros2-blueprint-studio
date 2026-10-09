@@ -7,7 +7,7 @@ import shutil
 from core.workspace_manager import WorkspaceManager
 from core.generators.cpp_generator import CppGenerator
 from core.generators.python_generator import PythonGenerator
-from ui.launch_compiler import LaunchCompiler
+from core.generators.launch_generator import LaunchCompiler
 
 # YAML настройки для корректного сохранения кортежей (цветов и позиций)
 def tuple_representer(dumper, data):
@@ -149,7 +149,7 @@ class ProjectManager:
                     logging.info(f"Excluded from launch (no main(), library helpers): {sorted(skipped)}")
 
             # 4. ГЕНЕРАЦИЯ LAUNCH ФАЙЛОВ (created_files уже отфильтрован для C++)
-            from ui.launch_compiler import LaunchCompiler
+            from core.generators.launch_generator import LaunchCompiler
 
             main_compiler = LaunchCompiler(created_files, package_name=pkg_name)
             with open(os.path.join(launch_dir, "project_launch.py"), 'w', encoding='utf-8') as f:
