@@ -1,0 +1,1 @@
+(['libopencv-dev', 'ros-humble-cv-bridge', 'ros-humble-rclcpp', 'ros-humble-std-msgs', 'ros-humble-tf2-ros'], ['listener', 'talker'])
