@@ -4,11 +4,12 @@ import subprocess
 import os
 from PySide6 import QtWidgets, QtCore, QtGui
 from core.workspace_manager import WorkspaceManager
+from core import i18n, settings
+from core.i18n import t
 
 class LauncherDialog(QtWidgets.QDialog):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("ROS2 Studio Launcher")
         self.resize(600, 450)
         self.selected_project_path = None
         
@@ -16,7 +17,8 @@ class LauncherDialog(QtWidgets.QDialog):
         
         # Слева: Список проектов
         left_layout = QtWidgets.QVBoxLayout()
-        left_layout.addWidget(QtWidgets.QLabel("Recent Projects:"))
+        self.lbl_recent = QtWidgets.QLabel()
+        left_layout.addWidget(self.lbl_recent)
         self.project_list = QtWidgets.QListWidget()
         self.project_list.itemDoubleClicked.connect(self.accept_selection)
         left_layout.addWidget(self.project_list)
@@ -24,16 +26,17 @@ class LauncherDialog(QtWidgets.QDialog):
         
         # Справа: Создание
         right_layout = QtWidgets.QVBoxLayout()
-        right_layout.addWidget(QtWidgets.QLabel("Create New Project:"))
+        self.lbl_create = QtWidgets.QLabel()
+        right_layout.addWidget(self.lbl_create)
         
         self.name_input = QtWidgets.QLineEdit()
-        self.name_input.setPlaceholderText("Project Name...")
         right_layout.addWidget(self.name_input)
         
         # === ВЫБОР ЯЗЫКА ===
-        right_layout.addWidget(QtWidgets.QLabel("Project Language:"))
+        self.lbl_project_lang = QtWidgets.QLabel()
+        right_layout.addWidget(self.lbl_project_lang)
         self.type_combo = QtWidgets.QComboBox()
-        self.type_combo.addItems(["Python (Scripts only)", "C++ (Compilation required)", "Mixed (C++ + Python)"])
+        self.type_combo.addItems(["", "", ""])      # тексты — в _retranslate()
         right_layout.addWidget(self.type_combo)
         # ===================
 
@@ -46,28 +49,38 @@ class LauncherDialog(QtWidgets.QDialog):
 
         # Кнопки под списком (дублируют меню для наглядности)
         btns_row = QtWidgets.QHBoxLayout()
-        btn_show = QtWidgets.QPushButton(" Show in Explorer")
+        self.btn_show = btn_show = QtWidgets.QPushButton()
         btn_show.clicked.connect(self.show_selected_in_explorer)
-        btn_del = QtWidgets.QPushButton(" Delete")
+        self.btn_del = btn_del = QtWidgets.QPushButton()
         btn_del.setStyleSheet("background-color: #7a2020; color: white;")
         btn_del.clicked.connect(self.delete_selected_project)
         btns_row.addWidget(btn_show)
         btns_row.addWidget(btn_del)
         left_layout.addLayout(btns_row)
 
-        btn_create = QtWidgets.QPushButton("Create and Open")
+        self.btn_create = btn_create = QtWidgets.QPushButton()
         btn_create.setStyleSheet("background-color: #2e7d32; color: white; padding: 8px;")
         btn_create.clicked.connect(self.create_project)
         right_layout.addWidget(btn_create)
         
         right_layout.addSpacing(20)
-        btn_open_folder = QtWidgets.QPushButton("Open from Disk...")
+        self.btn_open_folder = btn_open_folder = QtWidgets.QPushButton()
         btn_open_folder.clicked.connect(self.browse_project)
         right_layout.addWidget(btn_open_folder)
         
         right_layout.addStretch()
+        self.lbl_ui_lang = QtWidgets.QLabel()
+        right_layout.addWidget(self.lbl_ui_lang)
+        self.lang_combo = QtWidgets.QComboBox()
+        for lang in i18n.available_languages():
+            self.lang_combo.addItem(lang["name"], lang["code"])
+        idx = self.lang_combo.findData(i18n.get_language())
+        self.lang_combo.setCurrentIndex(max(idx, 0))
+        self.lang_combo.currentIndexChanged.connect(self._on_language_changed)
+        right_layout.addWidget(self.lang_combo)
         layout.addLayout(right_layout, stretch=1)
         
+        self._retranslate()
         self.refresh_list()
         self.setStyleSheet("""
             QDialog { background-color: #333; color: white; }
@@ -75,6 +88,27 @@ class LauncherDialog(QtWidgets.QDialog):
             QLineEdit, QComboBox { padding: 5px; background: #555; color: white; border: 1px solid #666; }
             QPushButton { padding: 5px; font-weight: bold; }
         """)
+
+    def _on_language_changed(self, _index):
+        code = self.lang_combo.currentData()
+        if code and i18n.set_language(code):
+            settings.set("language", code)
+            self._retranslate()
+
+    def _retranslate(self):
+        """Все тексты окна из словаря; вызывается при создании и при смене языка."""
+        self.setWindowTitle(t("launcher.title"))
+        self.lbl_recent.setText(t("launcher.recent"))
+        self.lbl_create.setText(t("launcher.create_new"))
+        self.name_input.setPlaceholderText(t("launcher.name_placeholder"))
+        self.lbl_project_lang.setText(t("launcher.project_language"))
+        for i, key in enumerate(("type_python", "type_cpp", "type_mixed")):
+            self.type_combo.setItemText(i, t(f"launcher.{key}"))
+        self.btn_show.setText(t("launcher.show_explorer"))
+        self.btn_del.setText(t("launcher.delete"))
+        self.btn_create.setText(t("launcher.create_open"))
+        self.btn_open_folder.setText(t("launcher.open_disk"))
+        self.lbl_ui_lang.setText(t("launcher.interface_language"))
 
     def refresh_list(self):
         self.project_list.clear()
@@ -97,10 +131,10 @@ class LauncherDialog(QtWidgets.QDialog):
             return
         self.project_list.setCurrentItem(item)
         menu = QtWidgets.QMenu(self)
-        act_open = menu.addAction(" Open")
-        act_show = menu.addAction(" Show in Explorer")
+        act_open = menu.addAction(t("launcher.menu_open"))
+        act_show = menu.addAction(t("launcher.show_explorer"))
         menu.addSeparator()
-        act_del = menu.addAction(" Delete project...")
+        act_del = menu.addAction(t("launcher.menu_delete"))
         chosen = menu.exec(self.project_list.mapToGlobal(pos))
         if chosen == act_open:
             self.accept_selection()
@@ -131,14 +165,12 @@ class LauncherDialog(QtWidgets.QDialog):
         target = os.path.abspath(path)
         if not target.startswith(root + os.sep):
             QtWidgets.QMessageBox.warning(
-                self, "Refused",
-                "This project is outside the workspace folder — delete it manually.")
+                self, t("launcher.refused_title"), t("launcher.refused_text"))
             return
 
         ans = QtWidgets.QMessageBox.warning(
-            self, "Delete project",
-            f"Permanently delete project '{name}'?\n\n{path}\n\n"
-            "This removes the whole folder from disk and cannot be undone.",
+            self, t("launcher.delete_title"),
+            t("launcher.delete_text", name=name, path=path),
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
             QtWidgets.QMessageBox.No)
         if ans != QtWidgets.QMessageBox.Yes:
@@ -148,9 +180,8 @@ class LauncherDialog(QtWidgets.QDialog):
             self.refresh_list()
         except Exception as e:
             QtWidgets.QMessageBox.critical(
-                self, "Delete failed",
-                f"Could not delete project:\n{e}\n\n"
-                "The folder may be in use (editor/terminal open inside it).")
+                self, t("launcher.delete_failed_title"),
+                t("launcher.delete_failed_text", error=e))
             
     def create_project(self):
         name = self.name_input.text()
@@ -159,11 +190,7 @@ class LauncherDialog(QtWidgets.QDialog):
         import re
         if not re.match(r'^[a-z][a-z0-9_]*$', name):
             QtWidgets.QMessageBox.warning(
-                self, "Invalid name",
-                "Project name must start with a lowercase letter and contain\n"
-                "only lowercase latin letters, digits and underscores\n"
-                "(it becomes a ROS 2 package name).\n\n"
-                "Examples: arm_demo, my_robot2")
+                self, t("launcher.invalid_name_title"), t("launcher.invalid_name_text"))
             return
         
         idx = self.type_combo.currentIndex()
@@ -174,11 +201,11 @@ class LauncherDialog(QtWidgets.QDialog):
             self.selected_project_path = path
             self.accept()
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Error", str(e))
+            QtWidgets.QMessageBox.critical(self, t("launcher.error_title"), str(e))
 
     def browse_project(self):
         root = WorkspaceManager.get_workspace_root()
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Open Project Folder", root)
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, t("launcher.open_folder_title"), root)
         if path:
             self.selected_project_path = path
             self.accept()
