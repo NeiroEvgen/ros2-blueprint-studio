@@ -53,10 +53,14 @@ class WorkspaceManager:
             
         # 1. Создаем структуру папок
         os.makedirs(path)
-        os.makedirs(os.path.join(path, "src"))
-        os.makedirs(os.path.join(path, "launch"))
-        os.makedirs(os.path.join(path, "docker"))
-        os.makedirs(os.path.join(path, ".blueprint")) # Для метаданных редактора
+        # Раскладка: всё ROS 2 живёт в src/ (CMakeLists/package.xml/launch создаёт
+        # ProjectManager.save_project), рядом только docker/ и .blueprint/.
+        from core.layout import ProjectLayout
+        lay = ProjectLayout(path)
+        os.makedirs(lay.src)
+        os.makedirs(lay.launch)
+        os.makedirs(lay.docker)
+        os.makedirs(lay.blueprint)  # метаданные редактора
 
         # 2. Сохраняем конфиг Blueprint
         config = {
@@ -68,9 +72,7 @@ class WorkspaceManager:
         with open(os.path.join(path, "project_config.json"), 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=4)
 
-        # 3. Генерируем ROS-файлы (package.xml, CMakeLists.txt)
-        WorkspaceManager._create_package_xml(path, project_name)
-        WorkspaceManager._create_cmakelists(path, project_name)
+        # 3. Только docker-шаблон; корневые CMakeLists/package.xml больше не создаём.
         WorkspaceManager._create_docker_template(path, project_name)
 
         return path

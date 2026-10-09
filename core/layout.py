@@ -144,3 +144,16 @@ def migrate(root: str, dry_run: bool = False) -> MigrationReport:
             os.remove(old)
         _prune_empty(os.path.dirname(old), lay.root)
     return rep
+
+
+if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="Миграция проекта Studio на раскладку src/")
+    ap.add_argument("project")
+    ap.add_argument("--dry-run", action="store_true", help="только показать, что будет сделано")
+    a = ap.parse_args()
+    rep = migrate(a.project, dry_run=a.dry_run)
+    for tag, lst in (("move", rep.moved), ("dup-removed", rep.identical), ("conflict(src kept)", rep.conflicts)):
+        for rel in lst:
+            print(f"{tag:20s} {rel}")
+    print(("[dry-run] " if a.dry_run else "") + rep.summary())

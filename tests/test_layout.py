@@ -149,3 +149,18 @@ class TestMigrate:
         assert len(rep.identical) == 7 and rep.moved == ["cpp/unitree_arm_driver.cpp"]
         assert not ProjectLayout(root).is_legacy()
         assert r(root, ".blueprint/state.yaml") == "s"
+
+
+def test_cli_dry_run_then_real(tmp_path):
+    import subprocess, sys
+    root = str(tmp_path)
+    w(root, "package.xml", "px")
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env = dict(os.environ, PYTHONPATH=repo, PYTHONIOENCODING="utf-8")
+    out = subprocess.run([sys.executable, "-m", "core.layout", root, "--dry-run"],
+                         capture_output=True, text=True, env=env, encoding="utf-8")
+    assert out.returncode == 0 and "move" in out.stdout
+    assert os.path.exists(os.path.join(root, "package.xml"))
+    subprocess.run([sys.executable, "-m", "core.layout", root], check=True, env=env,
+                   capture_output=True)
+    assert r(root, "src/package.xml") == "px"
