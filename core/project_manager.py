@@ -7,7 +7,7 @@ import shutil
 from core.workspace_manager import WorkspaceManager
 from core.generators.cpp_generator import CppGenerator
 from core.generators.python_generator import PythonGenerator
-from core.generators.launch_generator import LaunchCompiler
+from core.generators.launch_generator import LaunchCompiler, write_launch_files
 
 # YAML настройки для корректного сохранения кортежей (цветов и позиций)
 def tuple_representer(dumper, data):
@@ -126,10 +126,6 @@ class ProjectManager:
             except Exception as e:
                 logging.warning(f"Cleanup skipped: {e}")
 
-            pycache_dir = os.path.join(launch_dir, "__pycache__")
-            if os.path.isdir(pycache_dir):
-                shutil.rmtree(pycache_dir, ignore_errors=True)
-
             # 3.5 CMAKE & PACKAGE.XML — ДО генерации launch, чтобы отфильтровать
             # created_files по реальным executable раньше, чем они попадут в launch
             cmake_path = os.path.join(src_dir, "CMakeLists.txt")
@@ -149,21 +145,8 @@ class ProjectManager:
                     logging.info(f"Excluded from launch (no main(), library helpers): {sorted(skipped)}")
 
             # 4. ГЕНЕРАЦИЯ LAUNCH ФАЙЛОВ (created_files уже отфильтрован для C++)
-            from core.generators.launch_generator import LaunchCompiler
-
-            main_compiler = LaunchCompiler(created_files, package_name=pkg_name)
-            with open(os.path.join(launch_dir, "project_launch.py"), 'w', encoding='utf-8') as f:
-                f.write(main_compiler.compile())
-
-            groups = {}
-            for cf in created_files:
-                groups.setdefault(cf.get('group', 'main'), []).append(cf)
+            groups = write_launch_files(launch_dir, created_files, pkg_name)
             print(f"[SAVE DEBUG] groups = { {k: len(v) for k, v in groups.items()} }")
-
-            for gname, gfiles in groups.items():
-                gc = LaunchCompiler(gfiles, package_name=pkg_name)
-                with open(os.path.join(launch_dir, f"{gname}_launch.py"), 'w', encoding='utf-8') as f:
-                    f.write(gc.compile())
 
             try:
                 from core.compose_generator import ComposeGenerator

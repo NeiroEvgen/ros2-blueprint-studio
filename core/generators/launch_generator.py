@@ -46,3 +46,35 @@ class LaunchCompiler:
 
         code += "    return ld\n"
         return code
+
+
+def group_files(created_files):
+    """{группа: [файлы]} — порядок групп по первому появлению, дефолт 'main'."""
+    groups = {}
+    for cf in created_files:
+        groups.setdefault(cf.get('group', 'main'), []).append(cf)
+    return groups
+
+
+def build_launch_files(created_files, package_name):
+    """
+    Чистая функция: {имя_файла: содержимое} для всех launch-файлов проекта —
+    общий project_launch.py и по одному <группа>_launch.py на деплой-группу.
+    """
+    out = {"project_launch.py": LaunchCompiler(created_files, package_name).compile()}
+    for gname, gfiles in group_files(created_files).items():
+        out[f"{gname}_launch.py"] = LaunchCompiler(gfiles, package_name).compile()
+    return out
+
+
+def write_launch_files(launch_dir, created_files, package_name):
+    """Пишет launch-файлы в launch_dir и чистит __pycache__. Возвращает группы (для compose)."""
+    import shutil
+    os.makedirs(launch_dir, exist_ok=True)
+    pycache = os.path.join(launch_dir, "__pycache__")
+    if os.path.isdir(pycache):
+        shutil.rmtree(pycache, ignore_errors=True)
+    for name, content in build_launch_files(created_files, package_name).items():
+        with open(os.path.join(launch_dir, name), 'w', encoding='utf-8') as f:
+            f.write(content)
+    return group_files(created_files)
