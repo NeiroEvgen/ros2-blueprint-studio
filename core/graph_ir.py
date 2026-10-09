@@ -12,7 +12,6 @@ Graph IR: язык-нейтральный слой над сериализова
 Без Qt и NodeGraphQt.
 """
 import copy
-import re
 from typing import Dict, List, Optional, Tuple
 
 CPP, PYTHON = "cpp", "python"
