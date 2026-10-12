@@ -69,13 +69,24 @@ def test_retranslate_does_not_touch_foreign_tabs(ui):
 # ---------- адаптивная верхняя панель ----------
 
 def test_window_can_be_narrow_in_both_languages(app):
-    """Раньше минимальная ширина окна была ~1430 px (сумма всех кнопок) — окно не сужалось."""
+    """
+    Раньше минимальная ширина окна равнялась сумме ширин ВСЕХ кнопок панели (~1430 px) —
+    окно не сужалось. Теперь вторичная секция в минимум не входит.
+    Проверка относительная, а не «<= 900 px»: метрики шрифтов зависят от ОС (на Windows
+    Segoe UI шире, чем DejaVu в CI), абсолютное число было бы хрупким.
+    """
     from ui import main_window as mw
     for lang in ("en", "ru"):
         i18n.set_language(lang)
         w = mw.RosVisualRunner()
         try:
-            assert w.minimumSizeHint().width() <= 900, (lang, w.minimumSizeHint().width())
+            bar = w.ui.top_bar
+            full = bar.layout().minimumSize().width()          # со всеми кнопками
+            narrow = bar.minimumSizeHint().width()             # с «⋯» вместо секции
+            secondary = bar.secondary.minimumSizeHint().width()
+            assert narrow < full, (lang, narrow, full)
+            assert full - narrow >= secondary - bar.more.sizeHint().width() - 2, (lang, narrow, full)
+            assert w.minimumSizeHint().width() <= narrow + 60, (lang, w.minimumSizeHint().width(), narrow)
         finally:
             w.close(); w.deleteLater()
     i18n.set_language("en")
