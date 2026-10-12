@@ -44,6 +44,18 @@ def pick_base_image(image_exists):
         pass
     return FALLBACK_IMAGE
 
+class _NullTimer:
+    """Заглушка, когда замер не нужен."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def phase(self, name):
+        yield
+
+    def mark(self, name):
+        pass
+
+
 class RosContainerManager:
     def __init__(self, base_url=None):
         self.client = None
@@ -194,7 +206,8 @@ class RosContainerManager:
             detach=True)
         return missing
 
-    def run_project_launch(self, sys_callback, ros_callback, extra_apt_packages=None):
+    def run_project_launch(self, sys_callback, ros_callback, extra_apt_packages=None, timer=None):
+        timer = timer or _NullTimer()
         check_cmake = self.container.exec_run("test -f /root/ros2_ws/src/user_project/CMakeLists.txt")
         is_cpp = (check_cmake.exit_code == 0)
 
@@ -218,23 +231,25 @@ class RosContainerManager:
                 "done; "
                 "cat /tmp/rosdep_out.log"]
 
-            dep_stream = self.container.exec_run(dep_cmd, stream=True)
-            for line in dep_stream.output:
-                sys_callback(line.decode('utf-8', errors='replace').strip())
+            with timer.phase("deps"):
+                dep_stream = self.container.exec_run(dep_cmd, stream=True)
+                for line in dep_stream.output:
+                    sys_callback(line.decode('utf-8', errors='replace').strip())
 
             sys_callback(t("build.building"))
 
             build_cmd = ["bash", "-c", colcon.build_command() + "; echo __COLCON_EXIT=$?"]
-            build_stream = self.container.exec_run(build_cmd, stream=True)
             build_lines, exit_code = [], None
-            for line in build_stream.output:
-                text = line.decode('utf-8', errors='replace').strip()
-                m = re.match(r"__COLCON_EXIT=(\d+)", text)
-                if m:
-                    exit_code = int(m.group(1))
-                    continue
-                build_lines.append(text)
-                sys_callback(text)
+            with timer.phase("colcon"):
+                build_stream = self.container.exec_run(build_cmd, stream=True)
+                for line in build_stream.output:
+                    text = line.decode('utf-8', errors='replace').strip()
+                    m = re.match(r"__COLCON_EXIT=(\d+)", text)
+                    if m:
+                        exit_code = int(m.group(1))
+                        continue
+                    build_lines.append(text)
+                    sys_callback(text)
 
             result = colcon.parse_output(build_lines)
             if exit_code not in (0, None) or not result.ok:
@@ -260,6 +275,8 @@ class RosContainerManager:
 
         got_output = False
         for line in launch_stream.output:
+            if not got_output:
+                timer.mark("first_output")
             got_output = True
             text = line.decode('utf-8', errors='replace').strip()
             if text:

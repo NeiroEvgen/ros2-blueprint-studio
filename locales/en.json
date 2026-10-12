@@ -320,5 +320,6 @@
   "fb.unit_tb": "TB",
   "tab.canvas": "Blueprints",
   "launcher.single_canvas": "Single canvas",
-  "launcher.single_canvas_tip": "One graph for Python and C++ nodes. Takes effect on next launch. Turn off to return to separate Python and C++ tabs. Saves project in format v4 (Studio 0.5.x cannot open it; a backup of the old state is kept)."
+  "launcher.single_canvas_tip": "One graph for Python and C++ nodes. Takes effect on next launch. Turn off to return to separate Python and C++ tabs. Saves project in format v4 (Studio 0.5.x cannot open it; a backup of the old state is kept).",
+  "timing.summary": "Timings: {parts} (total {total}s)"
 }
