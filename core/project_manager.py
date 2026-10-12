@@ -34,6 +34,7 @@ from core.generators.build_generator import (  # noqa: F401
 from core.generators import build_generator
 from core import node_sources
 from core import graph_ir
+from core import state_store
 from core import cmake_lint
 from core.layout import ProjectLayout
 
@@ -212,14 +213,16 @@ class ProjectManager:
             
             if not os.path.exists(state_file): return False
             
-            with open(state_file, 'r', encoding='utf-8') as f:
-                project_state = yaml.safe_load(f)
-            
+            # Любая поддерживаемая версия state.yaml (3.6: две вкладки; 4: один общий граф,
+            # который делится на python/cpp-части по метаданным слияния) → две сессии.
+            loaded_state = state_store.read_state(project_path)
+            if loaded_state is None: return False
+
             self.graph_py.clear_session()
             self.graph_cpp.clear_session()
-            
-            py_data_raw = project_state["graphs"].get("python", {})
-            cpp_data_raw = project_state["graphs"].get("cpp", {})
+
+            py_data_raw = loaded_state.py
+            cpp_data_raw = loaded_state.cpp
             
             # --- 1. ЖЕСТКО ЗАПОМИНАЕМ СВЯЗИ (До того, как движок их зачистит) ---
             py_conns = copy.deepcopy(py_data_raw.get('connections', []))
