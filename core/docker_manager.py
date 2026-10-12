@@ -46,6 +46,7 @@ def pick_base_image(image_exists):
     return FALLBACK_IMAGE
 
 DEPS_STAMP_PREFIX = "/root/ros2_ws/.studio_deps_"
+PROJECT_LABEL = "studio.project_src"
 
 
 class _NullTimer:
@@ -120,26 +121,35 @@ class RosContainerManager:
         except docker.errors.ImageNotFound:
             pass
 
-        # Идемпотентность: если контейнер уже жив и создан из того же образа —
-        # переиспользуем его, не сносим. Это защищает от потери apt-пакетов,
-        # запущенных вручную bringup-сессий и т.д. при повторном Run.
+        abs_src = os.path.abspath(os.path.join(project_path, "src"))
+
+        # Идемпотентность: контейнер того же образа и ТОГО ЖЕ проекта переиспользуем —
+        # и живой, и остановленный (кнопка Stop). Так сохраняются apt/rosdep-пакеты,
+        # build/ и install/: повторный Run не ставит зависимости и собирает инкрементально.
+        # Проект узнаём по метке при создании (путь из Docker Mounts на Windows другой).
         try:
             existing = self.client.containers.get(self.container_name)
             existing.reload()
             same_image = existing.attrs.get('Config', {}).get('Image') in (
                 self.image_name, project_image)
-            if existing.status == "running" and same_image and not force_recreate:
+            owner = (getattr(existing, "labels", None) or {}).get(PROJECT_LABEL)
+            same_project = owner is None or owner == abs_src      # без метки — старый контейнер
+            usable = same_image and same_project and not force_recreate
+            if usable and existing.status == "running":
                 self.container = existing
-                log(f"Reusing existing live session (container already running).")
+                log("Reusing existing live session (container already running).")
                 return
-            else:
-                existing.remove(force=True)
+            if usable and owner is not None and existing.status in ("exited", "created"):
+                existing.start()
+                self.container = existing
+                log("Reusing stopped session (dependencies and build cache kept).")
+                return
+            existing.remove(force=True)
         except docker.errors.NotFound:
             pass
         except Exception as e:
             log(f"WARN: couldn't inspect/remove old container: {e}")
 
-        abs_src = os.path.abspath(os.path.join(project_path, "src"))
         target_dir = "/root/ros2_ws/src/user_project"
 
         volumes_map = {
@@ -162,7 +172,8 @@ class RosContainerManager:
             tty=True,
             environment=environment,
             volumes=volumes_map,
-            privileged=True
+            privileged=True,
+            labels={PROJECT_LABEL: abs_src},
         )
 
         if platform.system() == 'Windows':
