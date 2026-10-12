@@ -14,6 +14,7 @@ from core.file_watcher import FileWatcher
 from core.export_manager import ExportManager 
 from core.workspace_manager import WorkspaceManager
 from core.i18n import t
+from core import settings
 from ui.scroll import scrollable
 from ui.graph_set import GraphSet
 from core import layout as project_layout
@@ -111,7 +112,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                     add_tab(self.file_browser, "tab.files")
         # 2. Graph Setup (delegated to ui/graph_setup.py)
         self.graph_py, self.graph_cpp, self.f_py, self.f_cpp = setup_graphs(
-            self.ui.tabs, self.resolve_node_type, self.on_graph_delete
+            self.ui.tabs, self.resolve_node_type, self.on_graph_delete,
+            single=bool(settings.get("single_canvas")),
         )
 
         # 2.1 Properties Window

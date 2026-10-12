@@ -212,6 +212,38 @@ def split_session(merged: dict, meta: dict) -> Tuple[dict, dict]:
     return py, cpp
 
 
+def single_meta(merged: dict) -> dict:
+    """
+    merge_meta для графа, который изначально ОДИН (одно-холстовый режим): по нему
+    split_session делит граф на python/cpp-части для режима двух вкладок.
+    Язык узла — по его типу; группа идёт туда же, куда все её дети (иначе при делении
+    группа и содержимое окажутся на разных вкладках). Сдвига раскладки нет.
+    """
+    items = _node_items(merged)
+    lang_of = {nid: language_of(n) for nid, n in items}
+    uid = {nid: (n.get("custom") or {}).get("group_uid") for nid, n in items if is_group(n)}
+    kids: Dict[str, List[str]] = {}
+    for nid, n in items:
+        parent = (n.get("custom") or {}).get("parent_group_id")
+        if parent:
+            kids.setdefault(parent, []).append(nid)
+    for _ in range(len(items) + 1):                        # вложенные группы: до неподвижной точки
+        changed = False
+        for nid, g_uid in uid.items():
+            if lang_of.get(nid) is not None or not g_uid:
+                continue
+            langs = {lang_of.get(k) for k in kids.get(g_uid, [])}
+            if langs == {CPP}:
+                lang_of[nid] = CPP
+                changed = True
+        if not changed:
+            break
+    return {"cpp_ids": [nid for nid, _ in items if lang_of.get(nid) == CPP],
+            "cpp_dy": 0.0, "remap": {},
+            "py_extra": {k: v for k, v in merged.items() if k not in ("nodes", "connections")},
+            "cpp_extra": {}}
+
+
 def cross_links(merged: dict, meta: dict) -> List[dict]:
     """Связи между «python-частью» и «cpp-частью» — теряются при split_session."""
     cpp_ids = set(meta.get("cpp_ids", []))

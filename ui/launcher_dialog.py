@@ -69,6 +69,10 @@ class LauncherDialog(QtWidgets.QDialog):
         right_layout.addWidget(btn_open_folder)
         
         right_layout.addStretch()
+        self.chk_single = QtWidgets.QCheckBox()
+        self.chk_single.setChecked(bool(settings.get("single_canvas")))
+        self.chk_single.toggled.connect(lambda v: settings.set("single_canvas", bool(v)))
+        right_layout.addWidget(self.chk_single)
         self.lbl_ui_lang = QtWidgets.QLabel()
         right_layout.addWidget(self.lbl_ui_lang)
         self.lang_combo = QtWidgets.QComboBox()
@@ -109,6 +113,8 @@ class LauncherDialog(QtWidgets.QDialog):
         self.btn_create.setText(t("launcher.create_open"))
         self.btn_open_folder.setText(t("launcher.open_disk"))
         self.lbl_ui_lang.setText(t("launcher.interface_language"))
+        self.chk_single.setText(t("launcher.single_canvas"))
+        self.chk_single.setToolTip(t("launcher.single_canvas_tip"))
 
     def refresh_list(self):
         self.project_list.clear()

@@ -22,7 +22,7 @@ def test_corrupt_file_gives_defaults():
 def test_unknown_keys_in_file_ignored():
     os.makedirs(settings.settings_dir(), exist_ok=True)
     open(settings.settings_path(), "w", encoding="utf-8").write('{"language":"ru","evil":1}')
-    assert settings.load() == {"language": "ru"}
+    assert settings.load() == {**settings.DEFAULTS, "language": "ru"}
 
 
 def test_set_unknown_key_rejected():

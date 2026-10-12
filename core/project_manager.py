@@ -42,6 +42,8 @@ class ProjectManager:
     def __init__(self, graph_py, graph_cpp):
         self.graph_py = graph_py
         self.graph_cpp = graph_cpp
+        # Один общий холст: оба «языковых» графа — один объект (см. ui/graph_set.py)
+        self.single = graph_py is graph_cpp
         self.last_warnings = []     # предупреждения последнего Save (уже на языке интерфейса)
 
     # ==========================================
@@ -69,17 +71,25 @@ class ProjectManager:
             logging.info(f"Saving project {pkg_name} ({project_type}) into {sorted(code_dirs.values())}")
 
             self._backup_dynamic_ports(self.graph_py)
-            self._backup_dynamic_ports(self.graph_cpp)
-            
-            py_data = self.graph_py.serialize_session()
-            cpp_data = self.graph_cpp.serialize_session()
-            print(f"[SAVE DEBUG] project_type={project_type}")
-            print(f"[SAVE DEBUG] cpp_data nodes={len(cpp_data.get('nodes', {}))}, py_data nodes={len(py_data.get('nodes', {}))}")
-            print(f"[SAVE DEBUG] cpp_data keys={list(cpp_data.keys())}")
+            if not self.single:
+                self._backup_dynamic_ports(self.graph_cpp)
 
-            # язык → сессия его вкладки (в «mixed» генерируются обе)
-            sessions = {graph_ir.CPP: cpp_data, graph_ir.PYTHON: py_data}
-            flat_by_lang = self._flat_by_language(languages, sessions)
+            merged = None
+            if self.single:
+                # один граф: делим по ЯЗЫКУ УЗЛА (а не по вкладке); сырой граф пойдёт в state v4
+                merged = self.graph_py.serialize_session()
+                py_data = cpp_data = None
+            else:
+                py_data = self.graph_py.serialize_session()
+                cpp_data = self.graph_cpp.serialize_session()
+            print(f"[SAVE DEBUG] project_type={project_type}, single_canvas={self.single}")
+
+            if self.single:
+                flat_by_lang = self._flat_single(languages, merged, project_type)
+            else:
+                # язык → сессия его вкладки (в «mixed» генерируются обе)
+                sessions = {graph_ir.CPP: cpp_data, graph_ir.PYTHON: py_data}
+                flat_by_lang = self._flat_by_language(languages, sessions)
             created_files = []
             for lang in languages:
                 created_files += node_sources.process_flat_nodes(flat_by_lang[lang], code_dirs[lang], lang) or []
@@ -102,9 +112,12 @@ class ProjectManager:
 
             print(f"[SAVE DEBUG] created_files = {created_files}")
 
-            state = {"meta": {"version": "3.6"}, "graphs": {"python": py_data, "cpp": cpp_data}}
-            with open(os.path.join(blueprint_dir, "state.yaml"), 'w', encoding='utf-8') as f:
-                yaml.dump(state, f, sort_keys=False, allow_unicode=True)
+            if self.single:
+                state_store.write_state_v4(project_path, merged, graph_ir.single_meta(merged))
+            else:
+                state = {"meta": {"version": "3.6"}, "graphs": {"python": py_data, "cpp": cpp_data}}
+                with open(os.path.join(blueprint_dir, "state.yaml"), 'w', encoding='utf-8') as f:
+                    yaml.dump(state, f, sort_keys=False, allow_unicode=True)
             
             # 3.1 ОЧИСТКА ФАЙЛОВ-ПРИЗРАКОВ (по ПОЛНОМУ списку — до фильтрации по executable,
             # иначе .cpp-хелперы без main() будут ошибочно сочтены "устаревшими" и удалены).
@@ -176,6 +189,17 @@ class ProjectManager:
                 out[lang if lang in out else tab_lang].append(entry)
         return out
 
+    def _flat_single(self, languages, merged, project_type):
+        """
+        Один общий граф → {язык: плоский список}. Язык узла — по его типу; нейтральные узлы
+        (заметки и т.п.) получают язык проекта. В одноязычном проекте весь граф идёт в его язык.
+        """
+        flat = self._flatten_nodes(merged)
+        if len(languages) == 1:
+            return {languages[0]: flat}
+        parts = graph_ir.partition_by_language(flat, graph_ir.default_language(project_type))
+        return {lang: parts[lang] for lang in languages}
+
     def _process_and_save_files(self, session_data, target_dir, project_type):
         return node_sources.process_and_save_files(session_data, target_dir, project_type)
 
@@ -218,6 +242,9 @@ class ProjectManager:
             loaded_state = state_store.read_state(project_path)
             if loaded_state is None: return False
 
+            if self.single:
+                return self._load_into_single(loaded_state, src_dir)
+
             self.graph_py.clear_session()
             self.graph_cpp.clear_session()
 
@@ -256,6 +283,22 @@ class ProjectManager:
             logging.error(f"Load Error: {e}")
             traceback.print_exc()
             return False
+
+    def _load_into_single(self, loaded_state, src_dir):
+        """Загрузка в один общий холст (state v4 как есть; v3.6 уже склеен в loaded_state.merged)."""
+        import copy
+        from nodes.group_logic import fix_group_after_load
+        graph = self.graph_py
+        graph.clear_session()
+        raw = loaded_state.merged
+        conns = copy.deepcopy(raw.get('connections', []))
+        data, files_map = self._prepare_data_for_loading(raw)
+        self._safe_deserialize(graph, data)
+        self._restore_files_and_code(graph, files_map, src_dir)
+        self._restore_dynamic_ports(graph)
+        self._restore_connections(graph, conns, raw.get('nodes', {}))
+        fix_group_after_load(graph, graph.all_nodes())
+        return True
 
     def _prepare_data_for_loading(self, session_data):
         files_map = {}

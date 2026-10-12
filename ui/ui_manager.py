@@ -332,6 +332,9 @@ class UiManager:
                 self.console_tabs.setTabText(idx, t(key))
 
     def set_visible_graph(self, mode="python"):
+        if self.tabs.count() < 2:      # режим одного холста: вкладка одна
+            self.tabs.setCurrentIndex(0)
+            return
         if mode == "mixed":
             self.tabs.setTabVisible(0, True); self.tabs.setTabVisible(1, True); self.tabs.setCurrentIndex(0)
         elif mode == "python":

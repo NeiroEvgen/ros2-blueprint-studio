@@ -319,5 +319,8 @@
   "fb.unit_kb": "КБ",
   "fb.unit_mb": "МБ",
   "fb.unit_gb": "ГБ",
-  "fb.unit_tb": "ТБ"
+  "fb.unit_tb": "ТБ",
+  "tab.canvas": "Схема",
+  "launcher.single_canvas": "Единый холст (бета)",
+  "launcher.single_canvas_tip": "Один граф для Python- и C++-нод. Действует со следующего запуска. Проект сохраняется в формате v4 (Studio 0.5.x его не откроет; копия старого состояния сохраняется)."
 }

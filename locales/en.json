@@ -317,5 +317,8 @@
   "fb.unit_kb": "KB",
   "fb.unit_mb": "MB",
   "fb.unit_gb": "GB",
-  "fb.unit_tb": "TB"
+  "fb.unit_tb": "TB",
+  "tab.canvas": "Blueprints",
+  "launcher.single_canvas": "Single canvas (beta)",
+  "launcher.single_canvas_tip": "One graph for Python and C++ nodes. Takes effect on next launch. Saves project in format v4 (Studio 0.5.x cannot open it; a backup of the old state is kept)."
 }
