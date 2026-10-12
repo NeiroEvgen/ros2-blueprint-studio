@@ -256,7 +256,8 @@ class RosContainerManager:
                     "  echo \"[deps] rosdep failed (lock busy?), retry $i...\"; sleep 3; "
                     "done; "
                     "cat /tmp/rosdep_out.log; "
-                    f"if [ $apt_rc -eq 0 ] && [ $ok -eq 1 ]; then {mark}; fi"]
+                    f"if [ $apt_rc -eq 0 ] && [ $ok -eq 1 ]; then {mark}; echo '[deps] cache stamp saved'; "
+                    "else echo \"[deps] cache stamp NOT saved (apt exit=$apt_rc, rosdep ok=$ok)\"; fi"]
 
                 with timer.phase("deps"):
                     dep_stream = self.container.exec_run(dep_cmd, stream=True)
