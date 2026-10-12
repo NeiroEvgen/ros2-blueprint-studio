@@ -30,6 +30,8 @@ It runs entirely on **Windows** (and Linux) without requiring a local ROS 2 inst
 
 🚀 **Standalone Cross-Platform GUI:** Dark-themed Material Design interface built with Qt, dockable panels, and real-time terminal monitoring. Runs on Windows and Linux.
 
+> **Heads-up:** this is alpha software. See [Known limitations](docs/KNOWN_LIMITATIONS.md) before you start.
+
 ## 🛠️ Prerequisites
 
 To run this application, you must have Docker installed and running.
