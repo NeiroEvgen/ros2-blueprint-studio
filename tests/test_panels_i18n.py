@@ -123,3 +123,31 @@ def test_no_pictographic_emoji_in_ui_strings():
         for n, line in enumerate(open(f, encoding="utf-8"), 1):
             if not line.lstrip().startswith("#"):
                 assert not emo.search(line), (f, n, line.strip())
+
+
+def test_file_browser_texts_and_sizes(app):
+    from ui.file_browser import FileBrowser, _size
+    fb = FileBrowser()
+    assert fb.lbl_file.text() == "No file open"
+    assert fb.tree.headerItem().text(0) == "Name"
+    assert _size(512) == "512 B" and _size(2048) == "2 KB" and _size(5 * 1024 ** 3) == "5 GB"
+    i18n.set_language("ru")
+    fb2 = FileBrowser()
+    assert fb2.lbl_file.text() == "Файл не открыт"
+    assert fb2.tree.headerItem().text(1) == "Размер"
+    assert fb2.btn_save.text().startswith("Сохранить")
+    assert _size(2048) == "2 КБ"
+    i18n.set_language("en")
+    fb.deleteLater(); fb2.deleteLater()
+
+
+def test_file_browser_source_labels(app, tmp_path):
+    from ui.file_browser import FileBrowser
+    fb = FileBrowser()
+    fb.set_sources(str(tmp_path), None)
+    assert fb.cmb_source.itemText(0).startswith("Project (local)")
+    i18n.set_language("ru")
+    fb.set_sources(str(tmp_path), None)
+    assert fb.cmb_source.itemText(0).startswith("Проект (локально)")
+    i18n.set_language("en")
+    fb.deleteLater()

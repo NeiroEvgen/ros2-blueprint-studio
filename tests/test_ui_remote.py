@@ -114,9 +114,9 @@ def test_full_ui_flow(window, monkeypatch):
     assert "Finished <<< demoproj" in _log(w)
     assert "rc=0" in _log(w)
 
-    # Files: источник «Хост», открыть файл, поправить, сохранить
+    # Files: источник «Host», открыть файл, поправить, сохранить
     labels = [fb.cmb_source.itemText(i) for i in range(fb.cmb_source.count())]
-    host_idx = next(i for i, t in enumerate(labels) if t.startswith("Хост"))
+    host_idx = next(i for i, t in enumerate(labels) if t.startswith("Host"))
     fb.cmb_source.setCurrentIndex(host_idx)
     remote_file = str(ws / "src" / "demoproj" / "cpp" / "Node.cpp")
     fb.open_path(remote_file)
@@ -126,7 +126,7 @@ def test_full_ui_flow(window, monkeypatch):
     fb.editor.setPlainText("int main(){ return 0; }\n")
     assert fb.lbl_file.text().startswith("● ")
     fb.btn_save.click()
-    wait_for(lambda: "Сохранено" in _log(w))
+    wait_for(lambda: "Saved:" in _log(w))
     assert open(remote_file).read() == "int main(){ return 0; }\n"
     assert not fb.lbl_file.text().startswith("● ")
 
@@ -141,17 +141,17 @@ def test_full_ui_flow(window, monkeypatch):
     assert open(remote_file).read() == "// hotfix on robot\n"
 
     # Disconnect с несохранёнными правками: без модального вопроса,
-    # текст остаётся в редакторе с явной пометкой «НЕ сохранено»
+    # текст остаётся в редакторе с явной пометкой «NOT saved»
     assert fb.editor.toPlainText() == "// my version\n"
     rp.btn_connect.click()
     wait_for(lambda: not rp.connected)
     assert fb.editor.toPlainText() == "// my version\n"
-    assert "НЕ сохранено" in fb.lbl_file.text()
+    assert "NOT saved" in fb.lbl_file.text()
     assert not fb.btn_save.isEnabled()
-    assert "правки" in _log(w) and "НЕ сохранены" in _log(w)
+    assert "changes" in _log(w) and "NOT saved" in _log(w)
     assert w.ui.context_badge.text() == "LOCAL"
     labels = [fb.cmb_source.itemText(i) for i in range(fb.cmb_source.count())]
-    assert not any(t.startswith("Хост") for t in labels)
+    assert not any(t.startswith("Host") for t in labels)
     # у каждой строки лога есть метка контекста
     assert all(l.startswith("[") for l in _log(w).splitlines() if l.strip())
 

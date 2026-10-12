@@ -14,6 +14,7 @@ from core.remote.editing import EditBuffer, FileChangedExternally, NotEditable
 from ui.code_editor import CodeEditor, CodeHighlighter, mode_for_path
 from ui.qt_worker import TaskHost
 from ui import icons
+from core.i18n import t
 
 _PLACEHOLDER = "__loading__"
 ROLE_PATH = QtCore.Qt.UserRole
@@ -45,14 +46,14 @@ class FileBrowser(QtWidgets.QWidget):
         btn_refresh = QtWidgets.QPushButton("⟳")
         btn_refresh.setFixedWidth(32)
         btn_refresh.clicked.connect(self.reload_tree)
-        top.addWidget(QtWidgets.QLabel("Источник:"))
+        top.addWidget(QtWidgets.QLabel(t("fb.source")))
         top.addWidget(self.cmb_source, 1)
         top.addWidget(btn_refresh)
         lay.addLayout(top)
 
         split = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self.tree = QtWidgets.QTreeWidget()
-        self.tree.setHeaderLabels(["Имя", "Размер"])
+        self.tree.setHeaderLabels([t("fb.col_name"), t("fb.col_size")])
         self.tree.itemExpanded.connect(self._on_expand)
         self.tree.itemDoubleClicked.connect(self._on_open)
         split.addWidget(self.tree)
@@ -61,9 +62,9 @@ class FileBrowser(QtWidgets.QWidget):
         rl = QtWidgets.QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
         bar = QtWidgets.QHBoxLayout()
-        self.lbl_file = QtWidgets.QLabel("Файл не открыт")
+        self.lbl_file = QtWidgets.QLabel(t("fb.no_file"))
         self.lbl_file.setStyleSheet("color: #ccc; padding: 2px;")
-        self.btn_save = QtWidgets.QPushButton("Save  (Ctrl+S)")
+        self.btn_save = QtWidgets.QPushButton(t("fb.save"))
         self.btn_save.setIcon(icons.icon("save"))
         self.btn_save.clicked.connect(self.save_current)
         bar.addWidget(self.lbl_file, 1)
@@ -91,14 +92,14 @@ class FileBrowser(QtWidgets.QWidget):
         old_provider = self._provider
         self._sources = []
         if local_root and os.path.isdir(local_root):
-            self._sources.append(("Проект (локально)", LocalProvider(), local_root))
+            self._sources.append((t("fb.src_project"), LocalProvider(), local_root))
         if session is not None and session.connected:
-            self._sources.append((f"Хост: {session.profile.display()}",
+            self._sources.append((t("fb.src_host", target=session.profile.display()),
                                   session.host_provider(), session.remote_src))
             cp = session.container_provider()
             if cp is not None:
                 root = f"{session.profile.build_dir.rstrip('/')}/src/{session.package}"
-                self._sources.append((f"Контейнер: {session.profile.container}", cp, root))
+                self._sources.append((t("fb.src_container", name=session.profile.container), cp, root))
 
         keep = next((i for i, src in enumerate(self._sources) if src[1] is old_provider), -1)
         self.cmb_source.blockSignals(True)
@@ -118,8 +119,7 @@ class FileBrowser(QtWidgets.QWidget):
         if self._buffer is not None and self.is_dirty():
             self._orphan_path = self._buffer.path
             self._buffer = None
-            self.log.emit(f"⚠ Связь с источником потеряна, правки в {self._orphan_path} "
-                          "НЕ сохранены — текст остался в редакторе, скопируй его.")
+            self.log.emit(t("fb.connection_lost_log", path=self._orphan_path))
         else:
             self._close_file()
         self._switch_to(0 if self._sources else -1)
@@ -167,7 +167,7 @@ class FileBrowser(QtWidgets.QWidget):
         if not (item.childCount() == 1 and item.child(0).text(0) == _PLACEHOLDER):
             return
         prov, path = self._provider, item.data(0, ROLE_PATH)
-        item.child(0).setText(0, "загрузка…")
+        item.child(0).setText(0, t("fb.loading"))
 
         def done(entries):
             item.takeChildren()
@@ -212,8 +212,8 @@ class FileBrowser(QtWidgets.QWidget):
             self._update_title()
 
         def fail(msg):
-            self.log.emit(f"Не открыть {path}: {msg}")
-            QtWidgets.QMessageBox.information(self, "Файл не открыт", msg)
+            self.log.emit(t("fb.cannot_open_log", path=path, error=msg))
+            QtWidgets.QMessageBox.information(self, t("fb.cannot_open_title"), msg)
 
         self._tasks.start(lambda emit: buf.open(), done, fail, parent=self)
 
@@ -232,10 +232,10 @@ class FileBrowser(QtWidgets.QWidget):
             return
         if not self._buffer:
             if self._orphan_path:
-                self.lbl_file.setText(f"⚠ связь потеряна — НЕ сохранено: {self._orphan_path}")
+                self.lbl_file.setText(t("fb.orphan_label", path=self._orphan_path))
                 self.lbl_file.setStyleSheet("color: #ff8a65; padding: 2px; font-weight: bold;")
             else:
-                self.lbl_file.setText("Файл не открыт")
+                self.lbl_file.setText(t("fb.no_file"))
                 self.lbl_file.setStyleSheet("color: #ccc; padding: 2px;")
             self.btn_save.setEnabled(False)
             return
@@ -246,14 +246,14 @@ class FileBrowser(QtWidgets.QWidget):
 
     def _confirm_discard(self):
         if self._orphan_path:
-            what = f"{self._orphan_path} (связь потеряна, правки не сохранены)"
+            what = t("fb.orphan_what", path=self._orphan_path)
         elif self.is_dirty():
             what = self._buffer.path
         else:
             return True
         r = QtWidgets.QMessageBox.question(
-            self, "Несохранённые изменения",
-            f"В {what} есть несохранённые изменения. Выбросить их?")
+            self, t("fb.unsaved_title"),
+            t("fb.unsaved_text", what=what))
         return r == QtWidgets.QMessageBox.Yes
 
     def save_current(self, force=False):
@@ -262,27 +262,26 @@ class FileBrowser(QtWidgets.QWidget):
         buf, text = self._buffer, self.editor.toPlainText()
 
         def done(_):
-            self.log.emit(f"Сохранено: {buf.path}")
+            self.log.emit(t("fb.saved_log", path=buf.path))
             self._update_title()
 
         def fail(msg):
             if "FileChangedExternally" in msg:
                 r = QtWidgets.QMessageBox.warning(
-                    self, "Файл изменён на той стороне",
-                    f"{buf.path}\nизменён после того, как ты его открыл "
-                    "(кто-то правил на роботе?).\n\nПерезаписать своей версией?",
+                    self, t("fb.changed_title"),
+                    t("fb.changed_text", path=buf.path),
                     QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
                 if r == QtWidgets.QMessageBox.Yes:
                     self.save_current(force=True)
                 return
-            self.log.emit(f"Не сохранено {buf.path}: {msg}")
+            self.log.emit(t("fb.not_saved_log", path=buf.path, error=msg))
 
         self._tasks.start(lambda emit: buf.save(text, force=force), done, fail, parent=self)
 
 
 def _size(n):
-    for unit in ("Б", "КБ", "МБ", "ГБ"):
+    for key in ("fb.unit_b", "fb.unit_kb", "fb.unit_mb", "fb.unit_gb"):
         if n < 1024:
-            return f"{n:.0f} {unit}"
+            return f"{n:.0f} {t(key)}"
         n /= 1024
-    return f"{n:.1f} ТБ"
+    return f"{n:.1f} {t('fb.unit_tb')}"
