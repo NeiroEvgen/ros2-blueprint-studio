@@ -151,3 +151,15 @@ def test_file_browser_source_labels(app, tmp_path):
     assert fb.cmb_source.itemText(0).startswith("Проект (локально)")
     i18n.set_language("en")
     fb.deleteLater()
+
+
+def test_terminal_log_dialog_close_button_translated(app):
+    from PySide6 import QtWidgets
+    from core import i18n
+    from ui.dashboard import TerminalLogDialog
+    for lang, word in (("en", "Close"), ("ru", "Закрыть")):
+        i18n.set_language(lang)
+        dlg = TerminalLogDialog("node", ["line"])
+        texts = [b.text() for b in dlg.findChildren(QtWidgets.QPushButton)]
+        assert word in texts and "[ CLOSE ]" not in texts
+    i18n.set_language("en")

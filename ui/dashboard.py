@@ -37,7 +37,7 @@ class TerminalLogDialog(QtWidgets.QDialog):
         layout.addWidget(self.text_view)
         
         # Кнопка закрытия в стиле терминала
-        btn = QtWidgets.QPushButton("[ CLOSE ]")
+        btn = QtWidgets.QPushButton(t("dash.close"))
         btn.setCursor(QtCore.Qt.PointingHandCursor)
         btn.setStyleSheet("""
             QPushButton {
