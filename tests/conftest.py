@@ -141,3 +141,6 @@ def _english_ui():
 def _isolated_settings(tmp_path, monkeypatch):
     """Тесты не читают и не пишут настоящий ~/.ros_blueprint_studio."""
     monkeypatch.setenv("STUDIO_SETTINGS_DIR", str(tmp_path / "_settings"))
+    # Большинство тестов описывают режим двух вкладок; единый холст включают явно.
+    from core import settings
+    settings.set("single_canvas", False)

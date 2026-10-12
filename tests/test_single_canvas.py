@@ -143,3 +143,9 @@ def test_single_round_trip_and_reopen_in_two_tabs(single_win, two_win, tmp_path)
     assert two_win.project_manager.load_project(str(root))
     assert _names(two_win.graph_py) == ["py_pub"]
     assert _names(two_win.graph_cpp) == ["cpp_node"]
+
+
+def test_single_canvas_is_default(monkeypatch, tmp_path):
+    from core import settings
+    monkeypatch.setenv("STUDIO_SETTINGS_DIR", str(tmp_path / "fresh"))
+    assert settings.get("single_canvas") is True

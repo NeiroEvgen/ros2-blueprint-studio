@@ -9,7 +9,7 @@ import json
 import os
 from typing import Any
 
-DEFAULTS = {"language": None, "single_canvas": False}   # None → определить по системе
+DEFAULTS = {"language": None, "single_canvas": True}   # None → определить по системе
 
 
 def settings_dir() -> str:
