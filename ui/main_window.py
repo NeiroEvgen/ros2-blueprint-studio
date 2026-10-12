@@ -15,6 +15,7 @@ from core.export_manager import ExportManager
 from core.workspace_manager import WorkspaceManager
 from core.i18n import t
 from ui.scroll import scrollable
+from ui.graph_set import GraphSet
 from core import layout as project_layout
 from core.ros_process import DeployWorker, LogMonitorWorker
 from core.container_config import ContainerConfigStore, safe_group_name, resolved_env
@@ -114,6 +115,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         )
 
         # 2.1 Properties Window
+        self.graphs = GraphSet(self.graph_py, self.graph_cpp)
         self.properties_win = PropertiesWindow(self.graph_py, self.graph_cpp, self)
         self.properties_win.hide()
 
@@ -229,7 +231,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         target = self.navigation_stack[-1]
         self.current_subgraph = target["node"]
         
-        graph = self.graph_py if self.ui.tabs.currentIndex() == 0 else self.graph_cpp
+        graph = self.graphs.current(self.ui.tabs.currentIndex())
         
         if self.current_subgraph is None:
             # Мы в Root: показываем только то, что НЕ вложено в группу.
@@ -255,7 +257,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
     def setup_graph_signals(self):
         """Подключает сигналы графа для открытия редактора и настроек"""
-        for graph in [self.graph_py, self.graph_cpp]:
+        for graph in self.graphs.all():
             graph.node_double_clicked.connect(self.on_node_double_clicked)
             self.setup_graph_context_menus(graph)
 
@@ -413,7 +415,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.system_log(t("log.foxglove_opened"))
 
     def on_clear_graph(self):
-        graph = self.graph_py if self.ui.tabs.currentIndex() == 0 else self.graph_cpp
+        graph = self.graphs.current(self.ui.tabs.currentIndex())
         graph.clear_session()
         self.system_log(t("log.graph_cleared"))
 
@@ -592,7 +594,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         try:
             self.project_manager.sync_node_from_file(
                 path, content, ports,
-                graphs=[self.graph_py, self.graph_cpp],
+                graphs=self.graphs.all(),
                 log_callback=self.system_log)
         except Exception as e:
             self.system_log(t("log.sync_error", error=e))
@@ -622,7 +624,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             with open(meta_path, 'r', encoding='utf-8') as f:
                 meta = yaml.safe_load(f)
 
-            graph = self.graph_py if self.ui.tabs.currentIndex() == 0 else self.graph_cpp
+            graph = self.graphs.current(self.ui.tabs.currentIndex())
 
             # === ФИКС 2: уникальное имя (Name, Name_1, Name_2...) ===
             base_name = meta['name']
@@ -723,11 +725,9 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
     def _on_node_dropped_to_palette(self, node_id):
         """Нода перетащена Alt+drag'ом на палитру — сохраняем её как кастомную."""
-        for g in (self.graph_py, self.graph_cpp):
-            for n in g.all_nodes():
-                if n.id == node_id:
-                    self.on_save_node_to_palette(n)
-                    return
+        n = self.graphs.find_node(node_id)
+        if n is not None:
+            self.on_save_node_to_palette(n)
                 
     def on_export_palette(self):
         from core.palette_share import export_palette, PALETTES_ROOT
@@ -825,7 +825,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         if not hasattr(self, 'container_settings') or not self.container_settings.store:
             return
         counts = {}
-        for graph in [self.graph_py, self.graph_cpp]:
+        for graph in self.graphs.all():
             for node in graph.all_nodes():
                 g = "main"
                 if node.has_property('container_group'):
@@ -854,7 +854,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self.system_log(t("log.import_failed", error=e))
             return
 
-        graph = self.graph_py if self.ui.tabs.currentIndex() == 0 else self.graph_cpp
+        graph = self.graphs.current(self.ui.tabs.currentIndex())
 
         # Зависимости — в лог (панель зависимостей можно навесить позже)
         if result['deps']:

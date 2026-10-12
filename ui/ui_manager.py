@@ -104,7 +104,7 @@ class UiManager:
             os.makedirs(self.user_lib_path)
 
     def on_group_clicked(self):
-        graph = self.main_window.graph_py if self.tabs.currentIndex() == 0 else self.main_window.graph_cpp
+        graph = self.main_window.graphs.current(self.tabs.currentIndex())
         from nodes.group_logic import create_group_from_selection
         group_node, msg = create_group_from_selection(graph)
         if group_node:

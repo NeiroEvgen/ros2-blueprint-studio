@@ -55,8 +55,8 @@ class PropertiesWindow(QtWidgets.QWidget):
         layout.addLayout(btn_layout)
         
         # Подписка на события обоих графов
-        self.graph_py.node_selected.connect(self.on_node_selected)
-        self.graph_cpp.node_selected.connect(self.on_node_selected)
+        for g in ([graph_py] if graph_py is graph_cpp else [graph_py, graph_cpp]):
+            g.node_selected.connect(self.on_node_selected)   # один граф — один раз
 
     def on_node_selected(self, node):
         self.current_node = node
