@@ -74,7 +74,38 @@ def write_launch_files(launch_dir, created_files, package_name):
     pycache = os.path.join(launch_dir, "__pycache__")
     if os.path.isdir(pycache):
         shutil.rmtree(pycache, ignore_errors=True)
-    for name, content in build_launch_files(created_files, package_name).items():
+    files = build_launch_files(created_files, package_name)
+    for name, content in files.items():
         with open(os.path.join(launch_dir, name), 'w', encoding='utf-8') as f:
             f.write(content)
+    remove_stale_group_launches(launch_dir, set(files))
     return group_files(created_files)
+
+
+_GENERATED_HEADER = ("import os\nfrom launch import LaunchDescription\n"
+                     "from launch_ros.actions import Node\nfrom launch.actions import ExecuteProcess\n")
+
+
+def remove_stale_group_launches(launch_dir, keep):
+    """
+    Удаляет <группа>_launch.py удалённых групп. Трогаем только файлы с заголовком,
+    который пишет сам генератор: launch-файлы, написанные вручную, остаются.
+    """
+    removed = []
+    try:
+        names = os.listdir(launch_dir)
+    except OSError:
+        return removed
+    for name in names:
+        if not name.endswith("_launch.py") or name in keep:
+            continue
+        path = os.path.join(launch_dir, name)
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                head = f.read(len(_GENERATED_HEADER))
+            if head == _GENERATED_HEADER:
+                os.remove(path)
+                removed.append(name)
+        except OSError:
+            pass
+    return removed

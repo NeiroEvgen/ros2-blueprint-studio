@@ -60,3 +60,23 @@ def test_cyrillic_package_and_group(tmp_path):
     out = build_launch_files([{"filename": "x.py", "language": "python", "group": "группа"}], "pkg")
     assert "группа_launch.py" in out
     ast.parse(out["группа_launch.py"])
+
+
+def test_stale_group_launch_removed_but_handwritten_kept(tmp_path):
+    from core.generators.launch_generator import write_launch_files
+    files = [{"filename": "a.cpp", "language": "cpp", "group": "robot"},
+             {"filename": "c.py", "language": "python", "group": "pc"}]
+    write_launch_files(str(tmp_path), files, "pkg")
+    assert (tmp_path / "pc_launch.py").exists()
+    (tmp_path / "mine_launch.py").write_text("# my own launch\nfrom launch import LaunchDescription\n")
+    write_launch_files(str(tmp_path), files[:1], "pkg")           # группа pc удалена
+    assert not (tmp_path / "pc_launch.py").exists()
+    assert (tmp_path / "robot_launch.py").exists() and (tmp_path / "project_launch.py").exists()
+    assert (tmp_path / "mine_launch.py").exists()
+
+
+def test_renamed_group_old_file_removed(tmp_path):
+    from core.generators.launch_generator import write_launch_files
+    write_launch_files(str(tmp_path), [{"filename": "a.cpp", "language": "cpp", "group": "old"}], "pkg")
+    write_launch_files(str(tmp_path), [{"filename": "a.cpp", "language": "cpp", "group": "new"}], "pkg")
+    assert not (tmp_path / "old_launch.py").exists() and (tmp_path / "new_launch.py").exists()

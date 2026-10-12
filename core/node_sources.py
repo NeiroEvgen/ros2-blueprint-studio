@@ -69,8 +69,10 @@ def _walk(nodes, nodes_dict, current_ns, inherited_group, seen):
             children = [nodes_dict[i] for i in internal_ids if i not in nested]
             logging.debug(f"[FLATTEN] группа '{group_name}': детей={len(children)}, ns='{new_ns}'")
 
-            # имя группы становится деплой-группой для её детей
-            group_container = custom.get('container_group') or safe_group_name.lower()
+            # Деплой-группа детей: явная у самой группы → иначе (вложенная) унаследованная от
+            # внешней → иначе имя группы верхнего уровня. Так же считают файлы и launch.
+            group_container = (custom.get('container_group')
+                               or (inherited_group if current_ns else safe_group_name.lower()))
             flat.extend(_walk(children, nodes_dict, new_ns, group_container, seen))
         else:
             own_group = node.get('custom', {}).get('container_group') or inherited_group
@@ -144,13 +146,11 @@ def process_flat_nodes(flat_nodes, target_dir, project_type):
     for node_entry in flat_nodes:
         node = node_entry['node']
         namespace = node_entry['namespace']
-        container_group = node_entry.get('container_group', 'main')
-        
+        container_group = node_entry.get('container_group') or 'main'
+
         custom = node.get('custom', {})
         visual_name = node.get('name', 'Unnamed')
 
-        ns_clean = (namespace or "").strip("/")
-        container_group = ns_clean.split("/")[0].lower() if ns_clean else "main"
         logging.debug(f"[GROUP DEBUG] нода '{visual_name}' namespace='{namespace}' -> group='{container_group}'")
     
         raw_filename = custom.get('source_file') or ''

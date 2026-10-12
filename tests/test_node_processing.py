@@ -171,9 +171,24 @@ class TestFixedBugs:
         flat = pm._flatten_nodes({"nodes": [o, i1, i2, node("a", pgid="i1"), node("b", pgid="i2")]})
         assert {e["node"]["id"]: e["namespace"] for e in flat} == {"a": "/O/I1", "b": "/O/I2"}
 
-    def test_deploy_group_for_children_is_inner_group_by_flatten_but_first_segment_in_files(self, pm, d):
+    def test_nested_group_deploy_group_is_outermost_in_flatten_and_files(self, pm, d):
         o = group("o", "Out", ["i"]); i = group("i", "In", ["a"]); i["custom"]["parent_group_id"] = "o"
         flat = pm._flatten_nodes({"nodes": [o, i, node("a", pgid="i")]})
-        assert flat[0]["container_group"] == "in"           # flatten: ближайшая группа
+        assert flat[0]["container_group"] == "out"
         created = run(pm, [o, i, node("a", pgid="i")], d)
-        assert created[0]["group"] == "out"                 # файлы/launch: первый сегмент namespace
+        assert created[0]["group"] == "out"
+
+    def test_explicit_node_group_is_used_for_files(self, pm, d):
+        created = run(pm, [node("a", group="robot")], d)
+        assert created[0]["group"] == "robot"
+
+    def test_explicit_node_group_beats_subgraph(self, pm, d):
+        g = group("g", "Robot", ["a"])
+        created = run(pm, [g, node("a", pgid="g", group="pc")], d)
+        assert created[0]["group"] == "pc"
+
+    def test_explicit_group_on_subgraph_is_inherited_by_nested_children(self, pm, d):
+        o = group("o", "Out", ["i"], container="rig")
+        i = group("i", "In", ["a"]); i["custom"]["parent_group_id"] = "o"
+        created = run(pm, [o, i, node("a", pgid="i")], d)
+        assert created[0]["group"] == "rig"
