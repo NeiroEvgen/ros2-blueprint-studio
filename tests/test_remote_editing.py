@@ -94,5 +94,5 @@ def test_cyrillic_content_roundtrip(prov):
     p, root = prov
     path = p.join(root, "заметка.md"); p.write_text(path, "# Робот\n")
     b = EditBuffer(p, path); b.open()
-    b.save("# Робот G1\n")
-    assert p.read_text(path) == "# Робот G1\n"
+    b.save("# Робот\n")
+    assert p.read_text(path) == "# Робот\n"

@@ -88,7 +88,7 @@ class TestUserBlock:
         assert "target_link_libraries(Node yaml-cpp)" in _user_block(text)
 
     def test_real_case_trajectory_player_with_kinlib(self, pm, cpp_project):
-        """Ровно то, что стиралось дважды на G1-проекте."""
+        """Ровно то, что стиралось дважды на реальном проекте."""
         src, add = cpp_project
         add("TrajectoryPlayerNode.cpp", MAIN_CPP)
         pm._generate_cpp_build_files(str(src), [])

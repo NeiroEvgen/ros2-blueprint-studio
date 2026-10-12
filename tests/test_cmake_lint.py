@@ -1,18 +1,18 @@
 from core.cmake_lint import lint
 
-BAD = """add_library(mission_core src/mission_core.cpp)
-ament_target_dependencies(mission_core rclcpp)
-target_link_libraries(mission_core PUBLIC kinematics_lib)
+BAD = """add_library(task_core src/task_core.cpp)
+ament_target_dependencies(task_core rclcpp)
+target_link_libraries(task_core PUBLIC kinematics_lib)
 """
-GOOD = """add_library(mission_core src/mission_core.cpp)
-ament_target_dependencies(mission_core rclcpp)
-target_link_libraries(mission_core kinematics_lib)
+GOOD = """add_library(task_core src/task_core.cpp)
+ament_target_dependencies(task_core rclcpp)
+target_link_libraries(task_core kinematics_lib)
 """
 
 
 def test_mixed_flagged():
     i = lint(BAD)
-    assert len(i) == 1 and i[0].target == "mission_core" and i[0].line == 3
+    assert len(i) == 1 and i[0].target == "task_core" and i[0].line == 3
 
 
 def test_plain_ok():

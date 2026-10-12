@@ -81,7 +81,7 @@ class ExecutionContext:
 
 
 def _short_host(host):
-    """user@192.168.123.164 → .164 ; local → local ; имя хоста — как есть."""
+    """user@192.168.1.10 → .10 ; local → local ; имя хоста — как есть."""
     if not host or host == "local":
         return "local"
     h = host.split("@", 1)[-1]

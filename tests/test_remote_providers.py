@@ -58,8 +58,8 @@ class TestContract:
     def test_text_roundtrip_with_cyrillic_content(self, prov):
         p, root = prov
         path = p.join(root, "note.txt")
-        p.write_text(path, "Привет, робот G1 — 🦾\n")
-        assert p.read_text(path) == "Привет, робот G1 — 🦾\n"
+        p.write_text(path, "Привет, робот — 🦾\n")
+        assert p.read_text(path) == "Привет, робот — 🦾\n"
 
     def test_cyrillic_and_space_in_names(self, prov):
         """Именно на таких путях ломался scp весь прошлую неделю."""
@@ -150,8 +150,8 @@ class TestContainerProvider:
 
     def test_commands_wrapped_in_docker_exec(self):
         ssh = FakeSSH()
-        SSHContainerProvider(ssh, "g1pilot_run").exists("/ros2_ws/src/x.cpp")
-        assert ssh.commands[0].startswith("docker exec -i g1pilot_run sh -c ")
+        SSHContainerProvider(ssh, "demo_run").exists("/ros2_ws/src/x.cpp")
+        assert ssh.commands[0].startswith("docker exec -i demo_run sh -c ")
 
     def test_path_with_quote_is_escaped(self):
         ssh = FakeSSH()

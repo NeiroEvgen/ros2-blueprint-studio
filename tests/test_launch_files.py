@@ -51,9 +51,9 @@ def test_write_creates_dir_cleans_pycache_returns_groups(tmp_path):
 def test_write_keeps_foreign_launch_files(tmp_path):
     ld = tmp_path / "launch"
     ld.mkdir()
-    (ld / "petri.launch.py").write_text("# user", encoding="utf-8")
+    (ld / "demo.launch.py").write_text("# user", encoding="utf-8")
     write_launch_files(str(ld), CF, "pkg")
-    assert (ld / "petri.launch.py").read_text(encoding="utf-8") == "# user"
+    assert (ld / "demo.launch.py").read_text(encoding="utf-8") == "# user"
 
 
 def test_cyrillic_package_and_group(tmp_path):

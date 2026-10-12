@@ -13,7 +13,7 @@ from core.remote.terminal import (
 
 
 def prof(**kw):
-    base = dict(host="192.168.123.164", user="unitree", port=22)
+    base = dict(host="192.168.1.10", user="robot", port=22)
     base.update(kw)
     return RemoteProfile(**base)
 
@@ -22,7 +22,7 @@ class TestSshArgv:
     def test_plain_host(self):
         a = ssh_argv(prof())
         assert a[0] == "ssh" and "-t" in a
-        assert a[-1] == "unitree@192.168.123.164"
+        assert a[-1] == "robot@192.168.1.10"
         assert "-i" not in a
 
     def test_port_and_key(self):
@@ -31,9 +31,9 @@ class TestSshArgv:
         assert a[a.index("-i") + 1] == "/home/me/.ssh/id_ed25519"
 
     def test_container_enters_docker(self):
-        a = ssh_argv(prof(container="g1pilot_run"))
-        assert a[-2] == "unitree@192.168.123.164"
-        assert a[-1] == "docker exec -it g1pilot_run bash -l"
+        a = ssh_argv(prof(container="demo_run"))
+        assert a[-2] == "robot@192.168.1.10"
+        assert a[-1] == "docker exec -it demo_run bash -l"
 
     def test_no_password_anywhere(self):
         # у профиля нет поля пароля; в argv его быть не может
@@ -65,7 +65,7 @@ class TestValidation:
         assert validate_target(prof(port=70000))
 
     def test_normal_values_ok(self):
-        assert validate_target(prof(container="g1pilot_run", key_path="C:\\Users\\me\\id")) == []
+        assert validate_target(prof(container="demo_run", key_path="C:\\Users\\me\\id")) == []
         assert validate_target(prof(host="robot.local")) == []
 
 
@@ -73,15 +73,15 @@ class TestOpenTerminal:
     def test_windows_uses_new_console_and_cmd_k(self):
         calls = []
         shown = open_terminal(
-            prof(container="g1pilot_run"),
+            prof(container="demo_run"),
             popen=lambda cmd, **kw: calls.append((cmd, kw)),
             which=lambda n: "C:\\Windows\\System32\\OpenSSH\\ssh.exe" if n == "ssh" else None,
             os_name="nt")
         cmd, kw = calls[0]
         assert cmd.startswith("cmd.exe /k ssh ")
-        assert "docker exec -it g1pilot_run bash -l" in cmd
+        assert "docker exec -it demo_run bash -l" in cmd
         assert kw["creationflags"] == getattr(subprocess, "CREATE_NEW_CONSOLE", 0x10)
-        assert "unitree@192.168.123.164" in shown
+        assert "robot@192.168.1.10" in shown
 
     def test_windows_without_ssh_says_how_to_enable(self):
         with pytest.raises(TerminalError, match="OpenSSH"):

@@ -188,7 +188,7 @@ class TestContainerWrapping:
     def _r(self):
         ssh = FakeSSH()
         prof = RemoteProfile(host="h", user="u", remote_workspace="/home/u/ws",
-                             container="g1pilot_run", container_workspace="/ros2_ws")
+                             container="demo_run", container_workspace="/ros2_ws")
         return RemoteRunner(ssh, prof, "mpd"), ssh
 
     def test_kill_goes_through_same_container(self):
@@ -199,7 +199,7 @@ class TestContainerWrapping:
         assert ssh.commands
         for cmd in ssh.commands:
             argv = shlex.split(cmd)
-            assert argv[:4] == ["docker", "exec", "-i", "g1pilot_run"]
+            assert argv[:4] == ["docker", "exec", "-i", "demo_run"]
             assert "-- -4242" in argv[-1]
 
     def test_build_runs_in_container_workspace(self):

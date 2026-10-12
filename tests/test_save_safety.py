@@ -51,16 +51,16 @@ def save(project, nodes=(), py_nodes=()):
 
 
 HUMAN_FILES = {
-    "src/lib/g1_core/petri_node.py": "# petri",
-    "src/lib/g1_core/mission_core.cpp": "// core",
-    "src/python/petri/tracker.py": "# tracker",
-    "src/scripts/petri_node.py": "# script",
-    "src/include/g1_stage/types.hpp": "// types",
+    "src/lib/demo_core/demo_node.py": "# demo",
+    "src/lib/demo_core/task_core.cpp": "// core",
+    "src/python/demo/tracker.py": "# tracker",
+    "src/scripts/demo_node.py": "# script",
+    "src/include/demo_stage/types.hpp": "// types",
     "src/kinematics_lib/trajectory_solver.cpp": "// ktraj",
     "src/test/test_core.cpp": "// test",
-    "src/test/test_petri_tracker.py": "# t",
-    "src/launch/petri.launch.py": "# user launch",
-    "src/launch/pc_sim.launch.py": "# user launch 2",
+    "src/test/test_demo_tracker.py": "# t",
+    "src/launch/demo.launch.py": "# user launch",
+    "src/launch/sim.launch.py": "# user launch 2",
     "src/executor_core.cpp": "// top-level helper",
     "README_NODES.md": "# readme",
 }

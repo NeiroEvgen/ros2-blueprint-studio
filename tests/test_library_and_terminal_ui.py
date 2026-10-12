@@ -96,9 +96,9 @@ class TestTerminalButton:
         from ui.remote_panel import RemotePanel
         p = RemotePanel()
         assert not p.btn_terminal.isEnabled()
-        p.ed_host.setText("192.168.123.164")
+        p.ed_host.setText("192.168.1.10")
         assert not p.btn_terminal.isEnabled()          # нет пользователя
-        p.ed_user.setText("unitree")
+        p.ed_user.setText("robot")
         assert p.btn_terminal.isEnabled()              # проект и подключение не нужны
         p.ed_host.setText("a&calc")
         assert not p.btn_terminal.isEnabled()
@@ -107,13 +107,13 @@ class TestTerminalButton:
         import ui.remote_panel as rp
         seen = {}
         monkeypatch.setattr(rp, "open_terminal",
-                            lambda prof: seen.setdefault("p", prof) and "ssh -t unitree@h")
+                            lambda prof: seen.setdefault("p", prof) and "ssh -t robot@h")
         p = rp.RemotePanel()
         logs = []
         p.log.connect(logs.append)
-        p.ed_host.setText("h"); p.ed_user.setText("unitree"); p.ed_container.setText("g1pilot_run")
+        p.ed_host.setText("h"); p.ed_user.setText("robot"); p.ed_container.setText("demo_run")
         p.btn_terminal.click()
-        assert seen["p"].container == "g1pilot_run"
+        assert seen["p"].container == "demo_run"
         assert any("Открыт терминал" in m for m in logs)
 
     def test_error_is_shown_not_raised(self, app, monkeypatch):

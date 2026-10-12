@@ -12,7 +12,7 @@ from core.execution_context import (
     ContextKind, ExecutionContext, resolve_context, host_from_target,
 )
 
-SSH_TARGET = {"type": "ssh", "host": "ssh://unitree@192.168.123.164"}
+SSH_TARGET = {"type": "ssh", "host": "ssh://robot@192.168.1.10"}
 LOCAL_TARGET = {"type": "local", "host": ""}
 
 
@@ -26,15 +26,15 @@ class TestResolve:
     def test_no_session_remote_target_is_ssh(self):
         ctx = resolve_context(SSH_TARGET, session_active=False)
         assert ctx.kind is ContextKind.SSH
-        assert ctx.label() == "SSH: unitree@192.168.123.164"
+        assert ctx.label() == "SSH: robot@192.168.1.10"
 
     def test_local_session_is_container_at_local(self):
         ctx = resolve_context(LOCAL_TARGET, True, "ros2_orchestrator_session")
         assert ctx.label() == "CONTAINER: ros2_orchestrator_session @ local"
 
     def test_remote_session(self):
-        ctx = resolve_context(SSH_TARGET, True, "g1pilot_run")
-        assert ctx.label() == "CONTAINER: g1pilot_run @ unitree@192.168.123.164"
+        ctx = resolve_context(SSH_TARGET, True, "demo_run")
+        assert ctx.label() == "CONTAINER: demo_run @ robot@192.168.1.10"
 
     def test_missing_target_defaults_to_local(self):
         assert resolve_context(None).kind is ContextKind.LOCAL
@@ -54,17 +54,17 @@ class TestShortLogPrefix:
 
     @pytest.mark.parametrize("ctx,expected", [
         (resolve_context(LOCAL_TARGET), "[local]"),
-        (resolve_context(SSH_TARGET), "[ssh:.164]"),
+        (resolve_context(SSH_TARGET), "[ssh:.10]"),
         (resolve_context(LOCAL_TARGET, True, "ros2_orchestrator_session"),
          "[ros2_orchestrator_session@local]"),
-        (resolve_context(SSH_TARGET, True, "g1pilot_run"), "[g1pilot_run@.164]"),
+        (resolve_context(SSH_TARGET, True, "demo_run"), "[demo_run@.10]"),
     ])
     def test_short(self, ctx, expected):
         assert ctx.short() == expected
 
     def test_hostname_kept_when_not_ip(self):
-        ctx = resolve_context({"type": "ssh", "host": "ssh://me@jetson.lab"}, True, "c")
-        assert ctx.short() == "[c@jetson.lab]"
+        ctx = resolve_context({"type": "ssh", "host": "ssh://me@robot.lab"}, True, "c")
+        assert ctx.short() == "[c@robot.lab]"
 
 
 class TestRealRobot:
@@ -72,7 +72,7 @@ class TestRealRobot:
     @pytest.mark.parametrize("kind_args", [
         (LOCAL_TARGET, False, ""),
         (SSH_TARGET, False, ""),
-        (SSH_TARGET, True, "g1pilot_run"),
+        (SSH_TARGET, True, "demo_run"),
     ])
     def test_real_robot_marked_in_text_not_only_color(self, kind_args):
         """Критерий: не только цвет — дальтоник и скриншот в ч/б тоже поймут."""
@@ -97,8 +97,8 @@ class TestRealRobot:
 class TestDescribe:
 
     def test_container_warns_about_host_tools(self):
-        d = resolve_context(SSH_TARGET, True, "g1pilot_run").describe()
-        assert "g1pilot_run" in d and "docker" in d
+        d = resolve_context(SSH_TARGET, True, "demo_run").describe()
+        assert "demo_run" in d and "docker" in d
 
     def test_frozen(self):
         ctx = ExecutionContext()

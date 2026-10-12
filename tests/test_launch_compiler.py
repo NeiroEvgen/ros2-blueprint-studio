@@ -96,9 +96,9 @@ class TestValidity:
 
 class TestCppNodes:
     def test_node_args(self):
-        (a,) = run_launch(_compile([cpp("planner")], pkg="g1_stage"))
+        (a,) = run_launch(_compile([cpp("planner")], pkg="demo_stage"))
         assert a.kind == "Node"
-        assert a.kw["package"] == "g1_stage"
+        assert a.kw["package"] == "demo_stage"
         assert a.kw["executable"] == "planner"
         assert a.kw["name"] == "planner"            # ФИКСИРУЕМ: имя ноды = имя исполняемого
         assert a.kw["output"] == "screen"

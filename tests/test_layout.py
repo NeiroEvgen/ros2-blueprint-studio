@@ -88,18 +88,18 @@ class TestMigrate:
 
     def test_conflict_src_wins_root_backed_up(self, tmp_path):
         root = str(tmp_path)
-        w(root, "mission_core.cpp", "OLD")
-        w(root, "src/mission_core.cpp", "NEW")
+        w(root, "task_core.cpp", "OLD")
+        w(root, "src/task_core.cpp", "NEW")
         rep = migrate(root)
-        assert rep.conflicts == ["mission_core.cpp"]
-        assert r(root, "src/mission_core.cpp") == "NEW"
-        assert r(rep.backup_dir, "mission_core.cpp") == "OLD"
-        assert not os.path.exists(os.path.join(root, "mission_core.cpp"))
+        assert rep.conflicts == ["task_core.cpp"]
+        assert r(root, "src/task_core.cpp") == "NEW"
+        assert r(rep.backup_dir, "task_core.cpp") == "OLD"
+        assert not os.path.exists(os.path.join(root, "task_core.cpp"))
 
     def test_idempotent(self, tmp_path):
         root = str(tmp_path)
         w(root, "package.xml", "px")
-        w(root, "include/g1/a.hpp", "h")
+        w(root, "include/robot/a.hpp", "h")
         migrate(root)
         snap = tree(root)
         rep2 = migrate(root)
@@ -132,21 +132,21 @@ class TestMigrate:
         assert r(root, "src/launch/запуск.launch.py") == "ок"
 
     def test_real_world_project(self, tmp_path):
-        """Раскладка из реального проекта g1_stage (корень + src/ с дублями)."""
+        """Раскладка из реального проекта demo_stage (корень + src/ с дублями)."""
         root = str(tmp_path)
-        for rel in ("CMakeLists.txt", "package.xml", "executor_core.cpp", "mission_core.cpp",
-                    "cpp/mission_executor_node.cpp", "include/g1_stage/types.hpp",
-                    "launch/pc_sim.launch.py"):
+        for rel in ("CMakeLists.txt", "package.xml", "executor_core.cpp", "task_core.cpp",
+                    "cpp/task_executor_node.cpp", "include/demo_stage/types.hpp",
+                    "launch/sim.launch.py"):
             w(root, rel, "A")
         for rel in ("src/CMakeLists.txt", "src/package.xml", "src/executor_core.cpp",
-                    "src/mission_core.cpp", "src/cpp/mission_executor_node.cpp",
-                    "src/include/g1_stage/types.hpp", "src/launch/pc_sim.launch.py"):
+                    "src/task_core.cpp", "src/cpp/task_executor_node.cpp",
+                    "src/include/demo_stage/types.hpp", "src/launch/sim.launch.py"):
             w(root, rel, "A")
-        w(root, "cpp/unitree_arm_driver.cpp", "drv")      # есть только в корне
+        w(root, "cpp/arm_driver.cpp", "drv")      # есть только в корне
         w(root, ".blueprint/state.yaml", "s")
         rep = migrate(root)
-        assert r(root, "src/cpp/unitree_arm_driver.cpp") == "drv"
-        assert len(rep.identical) == 7 and rep.moved == ["cpp/unitree_arm_driver.cpp"]
+        assert r(root, "src/cpp/arm_driver.cpp") == "drv"
+        assert len(rep.identical) == 7 and rep.moved == ["cpp/arm_driver.cpp"]
         assert not ProjectLayout(root).is_legacy()
         assert r(root, ".blueprint/state.yaml") == "s"
 

@@ -2,7 +2,7 @@
 Локализация Studio: словари в locales/<код>.json, добавить язык = положить файл.
 
     from core.i18n import t, set_language
-    t("colcon.build_failed", packages="g1_stage")   # → "Build FAILED: g1_stage"
+    t("colcon.build_failed", packages="demo_stage")   # → "Build FAILED: demo_stage"
 
 Правила:
   * ключ ищется в текущем языке → в en → иначе возвращается сам ключ (интерфейс не падает);

@@ -18,8 +18,8 @@ from core.remote.profile import (
 
 
 def _valid(**kw):
-    base = dict(host="192.168.123.164", user="unitree",
-                remote_workspace="/home/unitree/blueprint_ws/mpd")
+    base = dict(host="192.168.1.10", user="robot",
+                remote_workspace="/home/robot/blueprint_ws/mpd")
     base.update(kw)
     return RemoteProfile(**base)
 
@@ -28,7 +28,7 @@ class TestProfileStore:
 
     def test_roundtrip(self, tmp_path):
         store = ProfileStore(str(tmp_path))
-        p = _valid(container="g1pilot_run", container_workspace="/host_src/mpd", port=2222)
+        p = _valid(container="demo_run", container_workspace="/host_src/mpd", port=2222)
         store.save(p)
         assert store.load() == p
 
@@ -68,10 +68,10 @@ class TestProfileStore:
             ProfileStore(str(tmp_path)).save(_valid(**kw))
 
     def test_build_dir(self):
-        assert _valid().build_dir == "/home/unitree/blueprint_ws/mpd"
+        assert _valid().build_dir == "/home/robot/blueprint_ws/mpd"
         assert _valid(container="c", container_workspace="/host_src/mpd").build_dir == "/host_src/mpd"
         # контейнер без отдельного пути: считаем, что смонтирован тем же путём
-        assert _valid(container="c").build_dir == "/home/unitree/blueprint_ws/mpd"
+        assert _valid(container="c").build_dir == "/home/robot/blueprint_ws/mpd"
 
 
 class TestConnectTOFU:

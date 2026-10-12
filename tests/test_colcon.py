@@ -3,54 +3,54 @@ import re
 import pytest
 from core import colcon
 
-OK = """Starting >>> g1_stage
-Finished <<< g1_stage [1min 2s]
+OK = """Starting >>> demo_stage
+Finished <<< demo_stage [1min 2s]
 
 Summary: 1 package finished [1min 3s]
 """.splitlines()
 
-MISSING_HEADER = """Starting >>> g1_stage
-/root/ros2_ws/src/user_project/cpp/mission_executor_node.cpp:12:10: fatal error: trajectory_msgs/msg/joint_trajectory.hpp: No such file or directory
+MISSING_HEADER = """Starting >>> demo_stage
+/root/ros2_ws/src/user_project/cpp/task_executor_node.cpp:12:10: fatal error: trajectory_msgs/msg/joint_trajectory.hpp: No such file or directory
    12 | #include <trajectory_msgs/msg/joint_trajectory.hpp>
 compilation terminated.
 make[2]: *** [CMakeFiles/x.dir/build.make:76: x.o] Error 1
-Failed   <<< g1_stage [5.2s, exited with code 2]
+Failed   <<< demo_stage [5.2s, exited with code 2]
 
 Summary: 0 packages finished [5.3s]
-  1 package failed: g1_stage
+  1 package failed: demo_stage
 """.splitlines()
 
-PLAIN_SIG = """Starting >>> g1_stage
+PLAIN_SIG = """Starting >>> demo_stage
 CMake Error at CMakeLists.txt:88 (target_link_libraries):
   The plain signature for target_link_libraries has already been used with the
-  target "mission_core".  All uses of target_link_libraries with a target must
+  target "task_core".  All uses of target_link_libraries with a target must
   be either all-keyword or all-plain.
-Failed   <<< g1_stage [1.0s, exited with code 1]
+Failed   <<< demo_stage [1.0s, exited with code 1]
 """.splitlines()
 
-NO_SOURCE = """Starting >>> g1_stage
+NO_SOURCE = """Starting >>> demo_stage
 CMake Error at CMakeLists.txt:40 (add_executable):
   Cannot find source file:
 
     src/cpp/missing.cpp
 CMake Error: Cannot find source file: missing.cpp
-Failed   <<< g1_stage [0.9s, exited with code 1]
+Failed   <<< demo_stage [0.9s, exited with code 1]
 """.splitlines()
 
 
 def test_ok():
     r = colcon.parse_output(OK)
-    assert r.ok and r.built == ["g1_stage"] and not r.failed
+    assert r.ok and r.built == ["demo_stage"] and not r.failed
     assert "OK" in r.summary()
 
 
 def test_missing_header():
     r = colcon.parse_output(MISSING_HEADER)
-    assert not r.ok and r.failed == ["g1_stage"]
+    assert not r.ok and r.failed == ["demo_stage"]
     e = r.errors[0]
-    assert e.file.endswith("mission_executor_node.cpp") and e.line == 12
+    assert e.file.endswith("task_executor_node.cpp") and e.line == 12
     assert "trajectory_msgs" in e.message
-    assert "FAILED" in r.summary() and "mission_executor_node.cpp:12" in r.summary()
+    assert "FAILED" in r.summary() and "task_executor_node.cpp:12" in r.summary()
 
 
 def test_plain_signature():

@@ -38,7 +38,7 @@ def remote_env(sshd, tmp_path):
     colcon.write_text(FAKE_COLCON)
     colcon.chmod(colcon.stat().st_mode | stat.S_IEXEC)
 
-    project = tmp_path / "My G1 Proj"
+    project = tmp_path / "My Robot Proj"
     (project / "src" / "cpp").mkdir(parents=True)
     (project / "src" / "cpp" / "Node.cpp").write_text("int main(){\n  return 0;\n}\n")
     pkg = package_name_for(str(project))
@@ -55,7 +55,7 @@ def remote_env(sshd, tmp_path):
 
 
 def test_package_name_matches_generator_rule():
-    assert package_name_for("/x/My G1 Proj") == "my_g1_proj"
+    assert package_name_for("/x/My Robot Proj") == "my_robot_proj"
     assert package_name_for("C:\\Users\\u\\mpd\\") in ("mpd", "c__users_u_mpd_")
 
 
