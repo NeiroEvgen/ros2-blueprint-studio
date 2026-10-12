@@ -114,7 +114,7 @@ class TestTerminalButton:
         p.ed_host.setText("h"); p.ed_user.setText("robot"); p.ed_container.setText("demo_run")
         p.btn_terminal.click()
         assert seen["p"].container == "demo_run"
-        assert any("Открыт терминал" in m for m in logs)
+        assert any("Terminal opened" in m for m in logs)
 
     def test_error_is_shown_not_raised(self, app, monkeypatch):
         import ui.remote_panel as rp

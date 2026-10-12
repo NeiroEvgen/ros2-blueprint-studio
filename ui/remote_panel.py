@@ -6,6 +6,8 @@
 """
 from PySide6 import QtWidgets, QtCore
 
+from core.i18n import t
+
 from core.remote.profile import RemoteProfile, ProfileStore, HostKeyChanged
 from core.remote.session import RemoteSession
 from core.remote.terminal import TerminalError, open_terminal, validate_target
@@ -40,39 +42,38 @@ class RemotePanel(QtWidgets.QWidget):
         self.ed_host = QtWidgets.QLineEdit(); self.ed_host.setPlaceholderText("192.168.1.10")
         self.sp_port = QtWidgets.QSpinBox(); self.sp_port.setRange(1, 65535); self.sp_port.setValue(22)
         self.ed_user = QtWidgets.QLineEdit(); self.ed_user.setPlaceholderText("robot")
-        self.ed_key = QtWidgets.QLineEdit(); self.ed_key.setPlaceholderText("пусто = ssh-agent / ~/.ssh")
+        self.ed_key = QtWidgets.QLineEdit(); self.ed_key.setPlaceholderText(t("rp.hint_key"))
         btn_key = QtWidgets.QPushButton("…"); btn_key.setFixedWidth(30)
         btn_key.clicked.connect(self._pick_key)
         key_row = QtWidgets.QHBoxLayout(); key_row.addWidget(self.ed_key); key_row.addWidget(btn_key)
         self.ed_pass = QtWidgets.QLineEdit(); self.ed_pass.setEchoMode(QtWidgets.QLineEdit.Password)
-        self.ed_pass.setPlaceholderText("не сохраняется")
+        self.ed_pass.setPlaceholderText(t("rp.hint_pass"))
         self.ed_ws = QtWidgets.QLineEdit(); self.ed_ws.setPlaceholderText("/home/robot/blueprint_ws")
-        self.ed_container = QtWidgets.QLineEdit(); self.ed_container.setPlaceholderText("пусто = собирать на хосте")
-        self.ed_cws = QtWidgets.QLineEdit(); self.ed_cws.setPlaceholderText("тот же каталог внутри контейнера")
+        self.ed_container = QtWidgets.QLineEdit(); self.ed_container.setPlaceholderText(t("rp.hint_container"))
+        self.ed_cws = QtWidgets.QLineEdit(); self.ed_cws.setPlaceholderText(t("rp.hint_cws"))
         self.ed_ros = QtWidgets.QLineEdit("/opt/ros/humble/setup.bash")
 
-        form.addRow("Хост", self.ed_host)
-        form.addRow("Порт", self.sp_port)
-        form.addRow("Пользователь", self.ed_user)
-        form.addRow("Ключ", key_row)
-        form.addRow("Пароль", self.ed_pass)
-        form.addRow("Workspace на хосте", self.ed_ws)
-        form.addRow("Контейнер", self.ed_container)
-        form.addRow("Workspace в контейнере", self.ed_cws)
-        form.addRow("ROS setup", self.ed_ros)
+        form.addRow(t("rp.host"), self.ed_host)
+        form.addRow(t("rp.port"), self.sp_port)
+        form.addRow(t("rp.user"), self.ed_user)
+        form.addRow(t("rp.key"), key_row)
+        form.addRow(t("rp.password"), self.ed_pass)
+        form.addRow(t("rp.ws_host"), self.ed_ws)
+        form.addRow(t("rp.container"), self.ed_container)
+        form.addRow(t("rp.ws_container"), self.ed_cws)
+        form.addRow(t("rp.ros_setup"), self.ed_ros)
         outer.addLayout(form)
         self._form_fields = [self.ed_host, self.ed_user, self.ed_key, self.ed_container]
 
         row = QtWidgets.QHBoxLayout()
-        self.btn_save = self._btn("💾 Сохранить профиль", row, self.on_save)
-        self.btn_connect = self._btn("🔌 Подключить", row, self.on_connect_toggle)
-        self.btn_sync = self._btn("⇅ Sync", row, self.on_sync)
-        self.cb_dry = QtWidgets.QCheckBox("dry-run"); row.addWidget(self.cb_dry)
-        self.btn_build = self._btn("🔨 Build", row, self.on_build)
-        self.btn_cancel = self._btn("⏹ Cancel", row, self.on_cancel)
-        self.btn_terminal = self._btn("🖥 Терминал", row, self.on_terminal)
-        self.btn_terminal.setToolTip("Открыть консоль на роботе (ssh в отдельном окне; "
-                                     "с контейнером — сразу внутрь него)")
+        self.btn_save = self._btn(t("rp.save_profile"), row, self.on_save)
+        self.btn_connect = self._btn(t("rp.connect"), row, self.on_connect_toggle)
+        self.btn_sync = self._btn(t("rp.sync"), row, self.on_sync)
+        self.cb_dry = QtWidgets.QCheckBox(t("rp.dry_run")); row.addWidget(self.cb_dry)
+        self.btn_build = self._btn(t("rp.build"), row, self.on_build)
+        self.btn_cancel = self._btn(t("rp.cancel"), row, self.on_cancel)
+        self.btn_terminal = self._btn(t("rp.terminal"), row, self.on_terminal)
+        self.btn_terminal.setToolTip(t("rp.terminal_tip"))
         row.addStretch()
         outer.addLayout(row)
 
@@ -80,7 +81,7 @@ class RemotePanel(QtWidgets.QWidget):
             w.textChanged.connect(lambda *_: self._update_buttons())
         self.sp_port.valueChanged.connect(lambda *_: self._update_buttons())
 
-        self.lbl_state = QtWidgets.QLabel("Не подключено")
+        self.lbl_state = QtWidgets.QLabel(t("rp.not_connected"))
         self.lbl_state.setStyleSheet("color: #aaa; padding: 4px;")
         outer.addWidget(self.lbl_state)
         outer.addStretch()
@@ -93,7 +94,7 @@ class RemotePanel(QtWidgets.QWidget):
         return b
 
     def _pick_key(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "SSH-ключ")
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, t("rp.key_dialog"))
         if path:
             self.ed_key.setText(path)
 
@@ -130,7 +131,7 @@ class RemotePanel(QtWidgets.QWidget):
         busy = self._tasks.busy
         self.btn_save.setEnabled(bool(self.project_path) and not busy)
         self.btn_connect.setEnabled(bool(self.project_path) and not busy)
-        self.btn_connect.setText("✂ Отключить" if self.connected else "🔌 Подключить")
+        self.btn_connect.setText(t("rp.disconnect") if self.connected else t("rp.connect"))
         self.btn_sync.setEnabled(self.connected and not busy)
         self.btn_build.setEnabled(self.connected and not busy)
         self.btn_cancel.setEnabled(self._building)
@@ -151,9 +152,9 @@ class RemotePanel(QtWidgets.QWidget):
     def on_save(self):
         try:
             ProfileStore(self.project_path).save(self.profile_from_form())
-            self.log.emit("Профиль удалённой цели сохранён (.blueprint/remote.yaml, без пароля)")
+            self.log.emit(t("rp.profile_saved"))
         except ValueError as e:
-            self._fail(f"Профиль не сохранён: {e}")
+            self._fail(t("rp.profile_not_saved", error=e))
 
     def on_connect_toggle(self):
         if self.connected:
@@ -166,7 +167,7 @@ class RemotePanel(QtWidgets.QWidget):
             return
         password = self.ed_pass.text() or None
         session = RemoteSession(self.project_path, prof)
-        self._state(f"Подключение к {prof.display()}…")
+        self._state(t("rp.connecting", target=prof.display()))
 
         def work(emit):
             session.connect(password=password)
@@ -176,15 +177,15 @@ class RemotePanel(QtWidgets.QWidget):
             self.session = s
             self.ed_pass.clear()
             where = s.profile.display() + (f" / {s.profile.container}" if s.profile.container else "")
-            self._state(f"Подключено: {where}")
-            self.log.emit(f"🔌 Подключено к {where}")
+            self._state(t("rp.connected", where=where))
+            self.log.emit(t("rp.connected_log", where=where))
             self.connection_changed.emit(True, s.profile.display(), s.profile.container)
             self._update_buttons()
 
         def fail(msg):
             if "HostKeyChanged" in msg:
-                QtWidgets.QMessageBox.critical(self, "Ключ хоста изменился", msg)
-            self._fail(f"Подключение не удалось: {msg}")
+                QtWidgets.QMessageBox.critical(self, t("rp.hostkey_title"), msg)
+            self._fail(t("rp.connect_failed", error=msg))
 
         self._tasks.start(work, done, fail, parent=self)
         self._update_buttons()
@@ -193,23 +194,23 @@ class RemotePanel(QtWidgets.QWidget):
         if self.session:
             self.session.disconnect()
         self.session = None
-        self._state("Не подключено")
-        self.log.emit("✂ Отключено от удалённой цели")
+        self._state(t("rp.not_connected"))
+        self.log.emit(t("rp.disconnected_log"))
         self.connection_changed.emit(False, "", "")
         self._update_buttons()
 
     def on_sync(self):
         dry = self.cb_dry.isChecked()
         s = self.session
-        self._state("Sync…")
+        self._state(t("rp.sync_running"))
 
         def done(report):
             self._state(report.summary())
             if report.conflicts:
                 QtWidgets.QMessageBox.warning(
-                    self, "Конфликты синхронизации",
-                    "Эти файлы изменены и локально, и на удалённой стороне — "
-                    "НЕ перезаписаны:\n\n" + "\n".join(f"{r}: {w}" for r, w in report.conflicts))
+                    self, t("rp.conflicts_title"),
+                    t("rp.conflicts_text",
+                      files="\n".join(f"{r}: {w}" for r, w in report.conflicts)))
             self._update_buttons()
 
         self._tasks.start(lambda emit: s.sync(on_line=emit, dry_run=dry),
@@ -219,12 +220,12 @@ class RemotePanel(QtWidgets.QWidget):
     def on_build(self):
         s = self.session
         self._building = True
-        self._state("Сборка на удалённой цели…")
+        self._state(t("rp.building"))
 
         def done(rc):
             self._building = False
-            self._state("✅ Сборка прошла" if rc == 0 else f"❌ Сборка упала (rc={rc})")
-            self.log.emit(f"--- REMOTE BUILD FINISHED rc={rc} ---")
+            self._state(t("rp.build_ok") if rc == 0 else t("rp.build_failed", rc=rc))
+            self.log.emit(t("rp.build_finished", rc=rc))
             self._update_buttons()
 
         self._tasks.start(lambda emit: s.build(emit), done, self._fail,
@@ -236,15 +237,15 @@ class RemotePanel(QtWidgets.QWidget):
         try:
             shown = open_terminal(prof)
         except TerminalError as e:
-            self._fail(f"Терминал не открыт: {e}")
+            self._fail(t("rp.terminal_failed", error=e))
             return
         where = prof.display() + (f" / {prof.container}" if prof.container else "")
-        self.log.emit(f"🖥 Открыт терминал: {where}   ({shown})")
-        self.log.emit("   пароль вводится в окне терминала; Studio его не видит")
+        self.log.emit(t("rp.terminal_opened", where=where, shown=shown))
+        self.log.emit(t("rp.terminal_password"))
 
     def on_cancel(self):
         s = self.session
-        self.log.emit("⏹ Отмена: останавливаю процесс на удалённой машине…")
+        self.log.emit(t("rp.cancelling"))
         self._tasks.start(lambda emit: s.cancel(),
-                          lambda ok: self.log.emit("⏹ Остановлено" if ok else "Нечего останавливать"),
+                          lambda ok: self.log.emit(t("rp.stopped") if ok else t("rp.nothing_to_stop")),
                           self._fail, parent=self)
