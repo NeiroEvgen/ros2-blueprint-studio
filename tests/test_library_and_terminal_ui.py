@@ -55,7 +55,7 @@ class TestLibraryInstall:
         w = LibraryManager(FakeDocker())
         w.pkg_input.setText("numpy")
         w.start_install()                      # раньше: AttributeError
-        assert "проект" in w.log_output.toPlainText().lower()
+        assert "open a project" in w.log_output.toPlainText().lower()
         assert w.install_btn.isEnabled()
 
     def test_install_rebuilds_image_and_reenables_button(self, app, project):
@@ -88,7 +88,7 @@ class TestLibraryInstall:
         w.pkg_input.setText("numpy")
         w.start_install()
         spin(app, lambda: w.install_btn.isEnabled())
-        assert "ЛОКАЛЬНЫЙ" in w.log_output.toPlainText()
+        assert "LOCAL" in w.log_output.toPlainText()
 
 
 class TestTerminalButton:

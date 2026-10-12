@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, 
                              QPushButton, QListWidget, QLabel, QComboBox, QTextEdit)
+from core.i18n import t
 
 
 
@@ -22,7 +23,7 @@ class _InstallWorker(QThread):
             )
             self.done.emit(bool(ok))
         except Exception as e:
-            self.log_line.emit(f"Error: {e}")
+            self.log_line.emit(t("lib.error", error=e))
             self.done.emit(False)
 
 class _RebuildWorker(QThread):
@@ -41,7 +42,7 @@ class _RebuildWorker(QThread):
                 self.project_path, status_callback=self.log.emit)
             self.done.emit(True)
         except Exception as e:
-            self.log.emit(f"Error: {e}")
+            self.log.emit(t("lib.error", error=e))
             self.done.emit(False)
 
 
@@ -65,7 +66,7 @@ class LibraryManager(QWidget):
         layout = QVBoxLayout(self)
         
         # Заголовок
-        header = QLabel("Library & Dependency Manager")
+        header = QLabel(t("lib.header"))
         header.setStyleSheet("font-weight: bold; font-size: 14px;")
         layout.addWidget(header)
         
@@ -73,12 +74,12 @@ class LibraryManager(QWidget):
         input_layout = QHBoxLayout()
         
         self.pkg_input = QLineEdit()
-        self.pkg_input.setPlaceholderText("Enter package name (e.g. opencv-python or libopencv-dev)")
+        self.pkg_input.setPlaceholderText(t("lib.pkg_hint"))
         
         self.type_combo = QComboBox()
-        self.type_combo.addItems(["apt (System/C++)", "pip (Python)"])
+        self.type_combo.addItems([t("lib.type_apt"), t("lib.type_pip")])
         
-        self.install_btn = QPushButton("Install")
+        self.install_btn = QPushButton(t("lib.install"))
         self.install_btn.clicked.connect(self.start_install)
         
         input_layout.addWidget(self.pkg_input)
@@ -87,7 +88,7 @@ class LibraryManager(QWidget):
         layout.addLayout(input_layout)
         
         # Лог установки
-        layout.addWidget(QLabel("Installation Output:"))
+        layout.addWidget(QLabel(t("lib.output")))
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
         self.log_output.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: 'Consolas';")
@@ -95,7 +96,7 @@ class LibraryManager(QWidget):
         
         # Быстрые пресеты
         presets_layout = QHBoxLayout()
-        presets_layout.addWidget(QLabel("Common Libraries:"))
+        presets_layout.addWidget(QLabel(t("lib.common")))
         
         common_libs = [
             ("OpenCV (C++)", "libopencv-dev", "apt"),
@@ -106,7 +107,7 @@ class LibraryManager(QWidget):
         
         for label, name, p_type in common_libs:
             btn = QPushButton(label)
-            btn.clicked.connect(lambda checked, n=name, t=p_type: self.quick_install(n, t))
+            btn.clicked.connect(lambda checked, n=name, tp=p_type: self.quick_install(n, tp))
             presets_layout.addWidget(btn)
         
         presets_layout.addStretch()
@@ -130,24 +131,22 @@ class LibraryManager(QWidget):
         pkg_type = "apt" if self.type_combo.currentIndex() == 0 else "pip"
 
         if not self.project_path:
-            self.append_log("Сначала открой проект: библиотека добавляется в его Dockerfile.")
+            self.append_log(t("lib.open_project_first"))
             return
         if self._worker is not None and self._worker.isRunning():
-            self.append_log("Сборка образа уже идёт — дождись её окончания.")
+            self.append_log(t("lib.build_running"))
             return
         if self.remote_connected:
-            self.append_log("⚠ Подключена удалённая цель, но эта вкладка ставит библиотеку "
-                            "в ЛОКАЛЬНЫЙ образ проекта (Docker на этом компьютере), а не на робота. "
-                            "На роботе без интернета пакет надо ставить из офлайн-образа.")
+            self.append_log(t("lib.remote_warning"))
 
         from core.dockerfile_manager import DockerfileManager
         try:
             dm = DockerfileManager(self.project_path)
             dm.add_manual_library(pkg_type, pkg_name)
         except Exception as e:
-            self.append_log(f"Не удалось обновить Dockerfile: {e}")
+            self.append_log(t("lib.dockerfile_failed", error=e))
             return
-        self.append_log(f"Added {pkg_name} ({pkg_type}) to Dockerfile. Rebuilding image...")
+        self.append_log(t("lib.added", name=pkg_name, type=pkg_type))
 
         self.install_btn.setEnabled(False)
         self._worker = _RebuildWorker(self.docker_manager, self.project_path)
@@ -158,7 +157,7 @@ class LibraryManager(QWidget):
     def _on_install_done(self, success):
         pkg_name = self.pkg_input.text().strip()
         if success:
-            self.append_log(f"\n Successfully finished installation of {pkg_name}")
+            self.append_log(t("lib.install_ok", name=pkg_name))
         else:
-            self.append_log(f"\n Failed to install {pkg_name}")
+            self.append_log(t("lib.install_failed", name=pkg_name))
         self.install_btn.setEnabled(True)

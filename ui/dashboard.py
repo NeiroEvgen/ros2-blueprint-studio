@@ -2,12 +2,13 @@ import re
 import datetime
 from collections import deque
 from PySide6 import QtWidgets, QtCore, QtGui
+from core.i18n import t
 
 class TerminalLogDialog(QtWidgets.QDialog):
     
     def __init__(self, node_name, history, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Terminal: {node_name}")
+        self.setWindowTitle(t("dash.terminal_title", name=node_name))
         self.resize(800, 500)
         self.setStyleSheet("background-color: #0c0c0c;")
 
@@ -231,10 +232,10 @@ class ConsoleDashboard(QtWidgets.QWidget):
             QMenu::item:selected { background-color: #007acc; }
         """)
         
-        mode_text = "🔄 Switch to Raw Terminal" if not self.is_raw_mode else "🔄 Switch to Smart Dashboard"
+        mode_text = t("dash.to_raw") if not self.is_raw_mode else t("dash.to_smart")
         mode_action = menu.addAction(mode_text)
         menu.addSeparator()
-        clear_action = menu.addAction("🧹 Clear All Logs")
+        clear_action = menu.addAction(t("dash.clear"))
         
         # Получаем глобальные координаты от виджета, по которому кликнули
         sender_widget = self.sender()

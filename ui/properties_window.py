@@ -1,4 +1,5 @@
 from PySide6 import QtWidgets, QtCore, QtGui
+from core.i18n import t
 
 class PropertiesWindow(QtWidgets.QWidget):
     def __init__(self, graph_py, graph_cpp, parent=None):
@@ -7,7 +8,7 @@ class PropertiesWindow(QtWidgets.QWidget):
         self.graph_cpp = graph_cpp
         self.current_node = None
         
-        self.setWindowTitle("Node Parameters")
+        self.setWindowTitle(t("prop.title"))
         self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.WindowStaysOnTopHint)
         self.resize(350, 450)
         
@@ -21,7 +22,7 @@ class PropertiesWindow(QtWidgets.QWidget):
         self.params_widget = QtWidgets.QWidget()
         params_vbox = QtWidgets.QVBoxLayout(self.params_widget)
         
-        self.node_label = QtWidgets.QLabel("Select a node")
+        self.node_label = QtWidgets.QLabel(t("prop.select_node"))
         self.node_label.setStyleSheet("font-weight: bold; color: #55aaff;")
         params_vbox.addWidget(self.node_label)
         
@@ -32,19 +33,19 @@ class PropertiesWindow(QtWidgets.QWidget):
         self.scroll.setWidget(self.scroll_content)
         params_vbox.addWidget(self.scroll)
         
-        self.tabs.addTab(self.params_widget, "Parameters")
+        self.tabs.addTab(self.params_widget, t("prop.tab_params"))
         
         # --- ВКЛАДКА КОДА ---
         self.code_editor = QtWidgets.QTextEdit()
         self.code_editor.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: 'Consolas', monospace;")
-        self.tabs.addTab(self.code_editor, "Source Code")
+        self.tabs.addTab(self.code_editor, t("prop.tab_code"))
         
         # Кнопки
         btn_layout = QtWidgets.QHBoxLayout()
-        self.add_param_btn = QtWidgets.QPushButton("Add Parameter")
+        self.add_param_btn = QtWidgets.QPushButton(t("prop.add_param"))
         self.add_param_btn.clicked.connect(self.add_custom_parameter)
         
-        self.save_btn = QtWidgets.QPushButton("Apply Changes")
+        self.save_btn = QtWidgets.QPushButton(t("prop.apply"))
         self.save_btn.setStyleSheet("background-color: #2d5a27;")
         self.save_btn.clicked.connect(self.save_parameters)
         
@@ -58,7 +59,7 @@ class PropertiesWindow(QtWidgets.QWidget):
 
     def on_node_selected(self, node):
         self.current_node = node
-        self.node_label.setText(f"Node: {node.name()}")
+        self.node_label.setText(t("prop.node", name=node.name()))
         self.refresh_params()
 
     def set_node(self, node):
@@ -100,7 +101,7 @@ class PropertiesWindow(QtWidgets.QWidget):
 
     def add_custom_parameter(self):
         if not self.current_node: return
-        name, ok = QtWidgets.QInputDialog.getText(self, "New Parameter", "Parameter Name:")
+        name, ok = QtWidgets.QInputDialog.getText(self, t("prop.new_param_title"), t("prop.new_param_prompt"))
         if ok and name:
             # Создаём свойство на ноде сразу, чтобы save_parameters не упал
             if not self.current_node.has_property(name):
@@ -129,9 +130,9 @@ class PropertiesWindow(QtWidgets.QWidget):
 
         parent = self.parent()
         if parent is not None and hasattr(parent, "statusBar"):
-            parent.statusBar().showMessage("Parameters and Code saved", 2000)
+            parent.statusBar().showMessage(t("prop.saved"), 2000)
         elif parent is not None and hasattr(parent, "system_log"):
-            parent.system_log("Parameters and Code saved")
+            parent.system_log(t("prop.saved"))
 
     def _safe_set(self, key, val):
         """set_property с гарантией, что свойство существует (NodeGraphQt требует)."""

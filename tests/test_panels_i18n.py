@@ -67,3 +67,35 @@ def test_remote_panel_has_no_robot_specific_defaults(app):
     blob = " ".join([p.ed_host.placeholderText(), p.ed_user.placeholderText(), p.ed_ws.placeholderText()]).lower()
     assert "unitree" not in blob and "192.168.123" not in blob
     p.deleteLater()
+
+
+def test_small_panels_follow_language(app):
+    from ui.docker_panel import DockerPanel
+    from ui.library_manager import LibraryManager
+
+    class FakeDocker:
+        def list_containers(self, *a, **k): return []
+        client = None
+
+    lib = LibraryManager(FakeDocker())
+    assert lib.install_btn.text() == "Install"
+    assert lib.type_combo.itemText(0).startswith("apt")
+    i18n.set_language("ru")
+    lib2 = LibraryManager(FakeDocker())
+    assert lib2.install_btn.text() == "Установить"
+    assert "Менеджер" in [w.text() for w in lib2.findChildren(QtWidgets.QLabel)][0]
+    i18n.set_language("en")
+    lib.deleteLater(); lib2.deleteLater()
+
+
+    dp = DockerPanel(FakeDocker())
+    assert dp.label.text() == "Docker Containers"
+    assert dp.table.horizontalHeaderItem(2).text() == "Status"
+    dp.timer.stop()
+    i18n.set_language("ru")
+    dp2 = DockerPanel(FakeDocker())
+    assert dp2.label.text() == "Docker-контейнеры"
+    assert dp2.table.horizontalHeaderItem(2).text() == "Статус"
+    dp2.timer.stop()
+    i18n.set_language("en")
+    dp.deleteLater(); dp2.deleteLater()

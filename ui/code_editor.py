@@ -1,4 +1,5 @@
 from PySide6 import QtWidgets, QtGui, QtCore
+from core.i18n import t
 
 # === 1. ПОДСВЕТКА СИНТАКСИСА (Highlighter) ===
 class CodeHighlighter(QtGui.QSyntaxHighlighter):
@@ -180,7 +181,7 @@ class CodeEditor(QtWidgets.QPlainTextEdit):
 class AdvancedCodeDialog(QtWidgets.QDialog):
     def __init__(self, code, language='python', parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Code Editor ({language})")
+        self.setWindowTitle(t("ed.title", language=language))
         self.resize(1000, 700)
         
         layout = QtWidgets.QVBoxLayout(self)
@@ -191,12 +192,12 @@ class AdvancedCodeDialog(QtWidgets.QDialog):
         toolbar.setStyleSheet("background: #333; height: 40px;")
         toolbar_layout = QtWidgets.QHBoxLayout(toolbar)
         
-        lbl = QtWidgets.QLabel(f"Editing: {language.upper()}")
+        lbl = QtWidgets.QLabel(t("ed.editing", language=language.upper()))
         lbl.setStyleSheet("color: white; font-weight: bold;")
         toolbar_layout.addWidget(lbl)
         toolbar_layout.addStretch()
         
-        btn_save = QtWidgets.QPushButton("Save & Close")
+        btn_save = QtWidgets.QPushButton(t("ed.save_close"))
         btn_save.setStyleSheet("background: #2e7d32; color: white; padding: 5px 15px; border: none;")
         btn_save.clicked.connect(self.accept)
         toolbar_layout.addWidget(btn_save)
