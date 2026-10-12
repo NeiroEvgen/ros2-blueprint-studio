@@ -159,3 +159,13 @@ class TestLogsFollowLanguage:
         win.on_save_project()
         assert any("проект не загружен" in m for m in win._logs)
         i18n.set_language("en")
+
+    def test_context_menu_labels_localized(self, win):
+        """Контекстное меню графа строится из словаря (язык задан при старте)."""
+        from core import i18n
+        from core.i18n import t
+        assert t("menu.restart_node") == "Restart Node"
+        i18n.set_language("ru")
+        assert t("menu.restart_node") == "Перезапустить ноду"
+        assert t("menu.add_port", name="String") == "Добавить String"
+        i18n.set_language("en")

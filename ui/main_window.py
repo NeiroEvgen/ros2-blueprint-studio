@@ -557,7 +557,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 cfg.setdefault("target", {})["real_robot"] = self._real_robot
                 store.save(cfg)
             except Exception as e:
-                self.ui.console_sys.append(f"WARN: real_robot flag not saved: {e}")
+                self.ui.console_sys.append(t("log.real_robot_not_saved", error=e))
         self._refresh_context()
         self.system_log(t("log.target_robot") if self._real_robot else t("log.target_sim"))
 
@@ -572,7 +572,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 graphs=[self.graph_py, self.graph_cpp],
                 log_callback=self.system_log)
         except Exception as e:
-            self.system_log(f"Sync error: {e}")
+            self.system_log(t("log.sync_error", error=e))
     # === CORE LOGIC ===
 
     def resolve_node_type(self, code):
@@ -636,7 +636,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                     elif pdir == 'out' and pname not in have_out:
                         node.add_output(pname, multi_output=True, display_name=True)
                 except Exception as pe:
-                    self.system_log(f"WARN: port '{pname}' skipped: {pe}")
+                    self.system_log(t("log.port_skipped", port=pname, error=pe))
 
             # Восстанавливаем код из файла (Закон удобства)
             ext = ".cpp" if "cpp" in meta['type'].lower() else ".py"
@@ -645,9 +645,9 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 with open(code_path, 'r', encoding='utf-8') as f:
                     node.set_property("code_content", f.read())
 
-            self.system_log(f"Successfully imported user node: {new_name}")
+            self.system_log(t("log.user_node_imported", name=new_name))
         except Exception as e:
-            self.system_log(f"Error importing user node: {e}")
+            self.system_log(t("log.user_node_import_error", error=e))
 
     def on_restart_selected(self, graph, *args, **kwargs):
         for node in graph.selected_nodes():
@@ -659,14 +659,14 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             if self._is_lifecycle_node(node):
                 self.process_manager.set_lifecycle_state(node.name(), target_state, self.system_log)
             else:
-                self.system_log(f"'{node.name()}' is not a lifecycle node, skipping.")
+                self.system_log(t("log.not_lifecycle", name=node.name()))
 
     def _is_lifecycle_node(self, node):
         return 'lifecycle' in getattr(node, 'NODE_NAME', '').lower() or \
                'lifecycle' in node.type_.lower()
     
     def on_save_node_to_palette(self, node):
-        palette_name, ok = QtWidgets.QInputDialog.getText(self, "Save to Palette", "Enter Palette Name:")
+        palette_name, ok = QtWidgets.QInputDialog.getText(self, t("dlg.save_palette_title"), t("dlg.save_palette_prompt"))
         if not (ok and palette_name): return
 
         node_name = node.name()
@@ -693,7 +693,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         with open(os.path.join(base_dir, f"logic{ext}"), 'w', encoding='utf-8') as f:
             f.write(code if code else "")
 
-        self.system_log(f" Node '{node_name}' saved to palette '{palette_name}' as native files.")
+        self.system_log(t("log.node_saved_palette", node=node_name, palette=palette_name))
         # Обновляем UI палитры
         p_type = WorkspaceManager.get_project_type(self.current_project_path) if self.current_project_path else "python"
         self.ui.rebuild_palette(ALL_NODE_CLASSES, p_type)
@@ -714,57 +714,57 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             palettes = [d for d in os.listdir(PALETTES_ROOT)
                         if os.path.isdir(os.path.join(PALETTES_ROOT, d))]
         if not palettes:
-            self.system_log("No user palettes to export. Save a node to a palette first.")
+            self.system_log(t("log.no_palettes"))
             return
         name, ok = QtWidgets.QInputDialog.getItem(
-            self, "Export Palette", "Choose palette:", palettes, 0, False)
+            self, t("dlg.export_palette_title"), t("dlg.export_palette_choose"), palettes, 0, False)
         if not (ok and name):
             return
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Export palette as", f"{name}.bppalette",
+            self, t("dlg.export_palette_as"), f"{name}.bppalette",
             "Blueprint Palette (*.bppalette)")
         if not path:
             return
         try:
             out = export_palette(name, path)
-            self.system_log(f"📤 Palette exported: {out}")
+            self.system_log(t("log.palette_exported", path=out))
         except Exception as e:
-            self.system_log(f"Export failed: {e}")
+            self.system_log(t("log.export_failed", error=e))
 
     def on_import_palette(self):
         from core.palette_share import import_palette
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Import palette", "", "Blueprint Palette (*.bppalette *.zip)")
+            self, t("dlg.import_palette_title"), "", "Blueprint Palette (*.bppalette *.zip)")
         if not path:
             return
         try:
             pname, nodes = import_palette(path)
         except FileExistsError as e:
             ans = QtWidgets.QMessageBox.question(
-                self, "Palette exists",
-                f"Palette '{e}' already exists. Overwrite?")
+                self, t("dlg.palette_exists_title"),
+                t("dlg.palette_exists_text", name=e))
             if ans != QtWidgets.QMessageBox.Yes:
                 return
             try:
                 pname, nodes = import_palette(path, overwrite=True)
             except Exception as e2:
-                self.system_log(f"Import failed: {e2}")
+                self.system_log(t("log.import_failed", error=e2))
                 return
         except Exception as e:
-            self.system_log(f"Import failed: {e}")
+            self.system_log(t("log.import_failed", error=e))
             return
 
         # Обновляем палитру в UI
         p_type = WorkspaceManager.get_project_type(self.current_project_path) \
             if self.current_project_path else "python"
         self.ui.rebuild_palette(ALL_NODE_CLASSES, p_type)
-        self.system_log(f"📥 Imported palette '{pname}': {len(nodes)} node(s): {', '.join(nodes)}")
+        self.system_log(t("log.palette_imported", name=pname, count=len(nodes), nodes=", ".join(nodes)))
 
     def on_assign_container(self, graph, *args, **kwargs):
         """Назначает выбранным нодам деплой-группу (свойство container_group)."""
         selected = graph.selected_nodes()
         if not selected:
-            self.system_log("Select node(s) first.")
+            self.system_log(t("log.select_nodes_first"))
             return
 
         existing = ["main"]
@@ -772,8 +772,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             existing = self.container_settings.group_names()
 
         name, ok = QtWidgets.QInputDialog.getItem(
-            self, "Assign to container",
-            "Container group (введи новое имя или выбери):",
+            self, t("dlg.assign_title"),
+            t("dlg.assign_prompt"),
             existing, 0, True)
         if not (ok and name):
             return
@@ -795,7 +795,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self.container_settings.refresh_groups()
 
         self._refresh_container_counts()
-        self.system_log(f"Assigned {len(selected)} node(s) -> container '{gname}'")
+        self.system_log(t("log.assigned", count=len(selected), group=gname))
 
     def _refresh_container_counts(self):
         """Счётчик нод по группам в UI (roadmap 2.4)."""
@@ -822,23 +822,23 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
     def on_import_foreign_project(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(
-            self, "Import existing ROS 2 package (folder)")
+            self, t("dlg.import_pkg_title"))
         if not path:
             return
         try:
             result = import_ros2_package(path)
         except Exception as e:
-            self.system_log(f"Import failed: {e}")
+            self.system_log(t("log.import_failed", error=e))
             return
 
         graph = self.graph_py if self.ui.tabs.currentIndex() == 0 else self.graph_cpp
 
         # Зависимости — в лог (панель зависимостей можно навесить позже)
         if result['deps']:
-            self.system_log(f"📦 {result['package_name']} depends: "
-                            + ", ".join(result['deps']))
+            self.system_log(t("log.pkg_depends", name=result['package_name'],
+                              deps=", ".join(result['deps'])))
         for w in result['warnings']:
-            self.system_log(f"WARN: {w}")
+            self.system_log(t("log.warn", text=w))
 
         # Раскидываем ноды сеткой
         cols = 4
@@ -866,12 +866,10 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                     node.set_property(prop, val)
                 created += 1
             except Exception as e:
-                self.system_log(f"WARN: node for {entry['filename']} failed: {e}")
+                self.system_log(t("log.node_failed", file=entry['filename'], error=e))
 
         self._refresh_container_counts()
-        self.system_log(
-            f"✅ Imported '{result['package_name']}': {created} file-node(s). "
-            "Связи не восстанавливаются (Level 1) — ноды помечены is_imported.")
+        self.system_log(t("log.pkg_imported", name=result['package_name'], count=created))
 
     def setup_graph_context_menus(self, graph):
         """Adds custom actions (add port, rescan) to right-click menu"""
@@ -883,27 +881,27 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         root_menu.add_separator()
 
         # v0.6.0: деплой-группы
-        root_menu.add_command(" Assign to container...", partial(self.on_assign_container, graph))
-        root_menu.add_command(" Restart Node", partial(self.on_restart_selected, graph))
-        root_menu.add_command(" Freeze (deactivate)", partial(self.on_freeze_selected, graph, 'deactivate'))
-        root_menu.add_command(" Unfreeze (activate)", partial(self.on_freeze_selected, graph, 'activate'))
+        root_menu.add_command(" " + t("menu.assign_container"), partial(self.on_assign_container, graph))
+        root_menu.add_command(" " + t("menu.restart_node"), partial(self.on_restart_selected, graph))
+        root_menu.add_command(" " + t("menu.freeze"), partial(self.on_freeze_selected, graph, 'deactivate'))
+        root_menu.add_command(" " + t("menu.unfreeze"), partial(self.on_freeze_selected, graph, 'activate'))
         root_menu.add_separator()
 
         # Manual Rescan Action
-        root_menu.add_command(" Rescan Code for Ports", partial(self.on_manual_rescan, graph))
+        root_menu.add_command(" " + t("menu.rescan"), partial(self.on_manual_rescan, graph))
         root_menu.add_separator()
         
         # Add Output Ports
-        out_menu = root_menu.add_menu("Add Custom Output (Publisher)")
+        out_menu = root_menu.add_menu(t("menu.add_output"))
         for name, color in MSG_COLORS.items():
             short_name = name.split('/')[-1]
-            out_menu.add_command(f"Add {short_name}", partial(self.on_add_port_clicked, graph, name, color))
+            out_menu.add_command(t("menu.add_port", name=short_name), partial(self.on_add_port_clicked, graph, name, color))
             
         # Add Input Ports
-        in_menu = root_menu.add_menu("Add Custom Input (Subscriber)")
+        in_menu = root_menu.add_menu(t("menu.add_input"))
         for name, color in MSG_COLORS.items():
             short_name = name.split('/')[-1]
-            in_menu.add_command(f"Add {short_name}", partial(self.on_add_input_clicked, graph, name, color))
+            in_menu.add_command(t("menu.add_port", name=short_name), partial(self.on_add_input_clicked, graph, name, color))
 
     def on_manual_rescan(self, graph, *args, **kwargs):
         selected = graph.selected_nodes()
@@ -917,7 +915,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                     with open(full_path, 'r', encoding='utf-8') as f: content = f.read()
                     ports = self.watcher._scan_ports(content, full_path)
                     self.on_file_changed_externally(filename, content, ports)
-                    self.system_log(f" Manually rescanned: {filename}")
+                    self.system_log(t("log.rescanned", file=filename))
 
     def on_add_port_clicked(self, graph, port_type, port_color):
         selected_nodes = graph.selected_nodes()
