@@ -1,5 +1,6 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 from core.i18n import t
+from ui.fonts import mono_font
 
 # === 1. ПОДСВЕТКА СИНТАКСИСА (Highlighter) ===
 class CodeHighlighter(QtGui.QSyntaxHighlighter):
@@ -109,7 +110,7 @@ class CodeEditor(QtWidgets.QPlainTextEdit):
         self.updateLineNumberAreaWidth(0)
         
         # Шрифт
-        font = QtGui.QFont("Consolas", 11)
+        font = mono_font(11)
         font.setStyleHint(QtGui.QFont.Monospace)
         self.setFont(font)
         

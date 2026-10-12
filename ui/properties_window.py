@@ -1,5 +1,6 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 from core.i18n import t
+from ui.fonts import MONO_CSS
 
 class PropertiesWindow(QtWidgets.QWidget):
     def __init__(self, graph_py, graph_cpp, parent=None):
@@ -37,7 +38,7 @@ class PropertiesWindow(QtWidgets.QWidget):
         
         # --- ВКЛАДКА КОДА ---
         self.code_editor = QtWidgets.QTextEdit()
-        self.code_editor.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: 'Consolas', monospace;")
+        self.code_editor.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: " + MONO_CSS + ";")
         self.tabs.addTab(self.code_editor, t("prop.tab_code"))
         
         # Кнопки

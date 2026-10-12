@@ -2,6 +2,7 @@ from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, 
                              QPushButton, QListWidget, QLabel, QComboBox, QTextEdit)
 from core.i18n import t
+from ui.fonts import MONO_CSS
 
 
 
@@ -91,7 +92,7 @@ class LibraryManager(QWidget):
         layout.addWidget(QLabel(t("lib.output")))
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
-        self.log_output.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: 'Consolas';")
+        self.log_output.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: " + MONO_CSS + ";")
         layout.addWidget(self.log_output)
         
         # Быстрые пресеты

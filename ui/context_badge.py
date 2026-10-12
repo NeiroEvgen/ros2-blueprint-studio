@@ -8,7 +8,11 @@ class ContextBadge(QtWidgets.QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAlignment(QtCore.Qt.AlignCenter)
-        self.setMinimumWidth(220)
+        # Явный минимум: подпись («CONTAINER: имя @ user@host» бывает очень длинной) не должна
+        # распирать верхнюю панель и мешать сужать окно; при нехватке места бейдж сжимается
+        # (полный текст — в подсказке). Политику Ignored не использовать: раскладка с ней
+        # наезжает соседними кнопками на бейдж.
+        self.setMinimumWidth(110)
         self.set_context(ExecutionContext())
 
     def set_context(self, ctx):
