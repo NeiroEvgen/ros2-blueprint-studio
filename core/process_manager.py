@@ -32,7 +32,7 @@ class ProcessManager:
                 'language': language, 'package_name': package_name,
                 'entry': executable_or_path,
             }
-            log(f"▶ Started node '{node_name}'")
+            log(f"Started node '{node_name}'")
 
     def stop_node(self, node_name, status_callback=None):
         def log(m):
@@ -40,7 +40,7 @@ class ProcessManager:
         if node_name not in self.processes:
             return
         self._kill_by_name(node_name)
-        log(f"⏹ Stopped node '{node_name}'")
+        log(f"Stopped node '{node_name}'")
 
     def _kill_by_name(self, node_name):
         info = self.processes.get(node_name)
@@ -57,15 +57,15 @@ class ProcessManager:
             return
 
         if info['language'] == "cpp" and rebuild_cpp:
-            log(f"🔨 Rebuilding package '{info['package_name']}'...")
+            log(f"Rebuilding package '{info['package_name']}'...")
             build_cmd = (
                 "bash -c 'source /opt/ros/humble/setup.bash && cd /root/ros2_ws && "
                 f"colcon build --symlink-install --packages-select {info['package_name']}'")
             result = self.docker.container.exec_run(build_cmd)
             if result.exit_code != 0:
-                log(f"❌ Build failed:\n{result.output.decode(errors='ignore')[-800:]}")
+                log(f"Build failed:\n{result.output.decode(errors='ignore')[-800:]}")
                 return
-            log("✅ Build finished.")
+            log("Build finished.")
 
         self.start_node(node_name, info['language'], info['package_name'],
                         info['entry'], status_callback)
@@ -82,7 +82,7 @@ class ProcessManager:
         result = self.docker.container.exec_run(cmd)
         output = result.output.decode(errors='ignore').strip()
         if result.exit_code == 0:
-            log(f"🧊 '{node_name}' -> {target_state}: {output}")
+            log(f"'{node_name}' -> {target_state}: {output}")
         else:
             log(f"⚠ Lifecycle transition failed for '{node_name}': {output}")
 

@@ -11,7 +11,7 @@ class TestTranslate:
 
     def test_switch_language(self):
         assert i18n.set_language("ru")
-        assert i18n.t("build.aborted").startswith("⛔ Сборка")
+        assert i18n.t("build.aborted").startswith("Сборка")
 
     def test_unknown_language_rejected_and_unchanged(self):
         i18n.set_language("ru")
@@ -28,7 +28,7 @@ class TestTranslate:
         assert i18n.t("colcon.build_failed") == "Build FAILED: {packages}"
 
     def test_extra_params_ignored(self):
-        assert i18n.t("build.finished", unused=1) == "✅ Build phase finished."
+        assert i18n.t("build.finished", unused=1) == "Build phase finished."
 
     def test_fallback_to_english_for_missing_key(self, tmp_path, monkeypatch):
         (tmp_path / "en.json").write_text(json.dumps({"a": "english", "b": "only en"}), encoding="utf-8")

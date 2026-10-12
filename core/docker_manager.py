@@ -90,7 +90,7 @@ class RosContainerManager:
             log("Загрузка образа...")
             self.client.images.pull(self.image_name)
         if self.image_name == FALLBACK_IMAGE:
-            log(f"💡 Совет: собери {STUDIO_IMAGE} (docker_image/build_studio_image.*) — "
+            log(f"Совет: собери {STUDIO_IMAGE} (docker_image/build_studio_image.*) — "
                 "тогда пакеты не будут доустанавливаться при каждой новой сессии.")
 
     def start_session(self, project_path, status_callback=None, force_recreate=False):
@@ -114,7 +114,7 @@ class RosContainerManager:
                 self.image_name, project_image)
             if existing.status == "running" and same_image and not force_recreate:
                 self.container = existing
-                log(f"♻️  Reusing existing live session (container already running).")
+                log(f"Reusing existing live session (container already running).")
                 return
             else:
                 existing.remove(force=True)
@@ -183,10 +183,10 @@ class RosContainerManager:
 
         if not missing:
             self.container.exec_run(["bash", "-c", "touch /tmp/session_setup_done"])
-            if log: log("📦 Session packages already present — no apt needed.")
+            if log: log("Session packages already present — no apt needed.")
             return []
 
-        if log: log(f"📦 Installing missing session packages in background: {' '.join(missing)}")
+        if log: log(f"Installing missing session packages in background: {' '.join(missing)}")
         self.container.exec_run(
             ["bash", "-c",
              f"({apt_snippet(missing)}) > /tmp/session_setup.log 2>&1; "
@@ -311,7 +311,7 @@ class RosContainerManager:
         if not (alive.output and alive.output.decode().strip()):
             tail = self.container.exec_run("tail -5 /tmp/foxglove.log").output
             raise RuntimeError(f"Bridge не запустился. Лог: {(tail or b'').decode(errors='ignore')}")
-        log("🦊 Foxglove bridge запущен: ws://localhost:8765")
+        log("Foxglove bridge запущен: ws://localhost:8765")
 
 
     def list_containers(self):
@@ -379,11 +379,11 @@ class RosContainerManager:
             raise RuntimeError("No Dockerfile found for this project.")
         project_name = os.path.basename(project_path).lower()
         image_tag = f"blueprint-{project_name}:latest"
-        log(f"🔨 Building project image {image_tag}...")
+        log(f"Building project image {image_tag}...")
         base = pick_base_image(self._image_exists)
         log(f"   base image: {base}")
         self.client.images.build(path=project_path, dockerfile="Dockerfile",
                                  tag=image_tag, rm=True,
                                  buildargs={"BASE_IMAGE": base})
-        log(f"✅ Image ready: {image_tag}")
+        log(f"Image ready: {image_tag}")
         return image_tag

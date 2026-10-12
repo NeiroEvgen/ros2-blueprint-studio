@@ -7,6 +7,7 @@
 from PySide6 import QtWidgets, QtCore
 
 from core.i18n import t
+from ui import icons
 
 from core.remote.profile import RemoteProfile, ProfileStore, HostKeyChanged
 from core.remote.session import RemoteSession
@@ -66,13 +67,13 @@ class RemotePanel(QtWidgets.QWidget):
         self._form_fields = [self.ed_host, self.ed_user, self.ed_key, self.ed_container]
 
         row = QtWidgets.QHBoxLayout()
-        self.btn_save = self._btn(t("rp.save_profile"), row, self.on_save)
-        self.btn_connect = self._btn(t("rp.connect"), row, self.on_connect_toggle)
-        self.btn_sync = self._btn(t("rp.sync"), row, self.on_sync)
+        self.btn_save = self._btn(t("rp.save_profile"), row, self.on_save, "save")
+        self.btn_connect = self._btn(t("rp.connect"), row, self.on_connect_toggle, "plug")
+        self.btn_sync = self._btn(t("rp.sync"), row, self.on_sync, "sync")
         self.cb_dry = QtWidgets.QCheckBox(t("rp.dry_run")); row.addWidget(self.cb_dry)
-        self.btn_build = self._btn(t("rp.build"), row, self.on_build)
-        self.btn_cancel = self._btn(t("rp.cancel"), row, self.on_cancel)
-        self.btn_terminal = self._btn(t("rp.terminal"), row, self.on_terminal)
+        self.btn_build = self._btn(t("rp.build"), row, self.on_build, "build")
+        self.btn_cancel = self._btn(t("rp.cancel"), row, self.on_cancel, "stop")
+        self.btn_terminal = self._btn(t("rp.terminal"), row, self.on_terminal, "terminal")
         self.btn_terminal.setToolTip(t("rp.terminal_tip"))
         row.addStretch()
         outer.addLayout(row)
@@ -86,8 +87,11 @@ class RemotePanel(QtWidgets.QWidget):
         outer.addWidget(self.lbl_state)
         outer.addStretch()
 
-    def _btn(self, text, layout, slot):
+    def _btn(self, text, layout, slot, icon_name=None):
         b = QtWidgets.QPushButton(text)
+        if icon_name:
+            b.setIcon(icons.icon(icon_name))
+            b.setIconSize(QtCore.QSize(16, 16))
         b.setStyleSheet(_BTN)
         b.clicked.connect(slot)
         layout.addWidget(b)
@@ -132,6 +136,7 @@ class RemotePanel(QtWidgets.QWidget):
         self.btn_save.setEnabled(bool(self.project_path) and not busy)
         self.btn_connect.setEnabled(bool(self.project_path) and not busy)
         self.btn_connect.setText(t("rp.disconnect") if self.connected else t("rp.connect"))
+        self.btn_connect.setIcon(icons.icon("unplug" if self.connected else "plug"))
         self.btn_sync.setEnabled(self.connected and not busy)
         self.btn_build.setEnabled(self.connected and not busy)
         self.btn_cancel.setEnabled(self._building)
@@ -142,7 +147,7 @@ class RemotePanel(QtWidgets.QWidget):
         self.lbl_state.setText(text)
 
     def _fail(self, msg):
-        self.log.emit(f"❌ {msg}")
+        self.log.emit(f"{msg}")
         self._state(msg)
         self._building = False
         self._update_buttons()

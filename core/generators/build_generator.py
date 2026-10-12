@@ -290,7 +290,7 @@ def generate_cpp_build_files(src_dir: str, created_files=None):
     auto = render_cmake_auto(pkg_name, scan.deps, scan.executables,
                              scan.find_only, scan.link_libs, scan.companions)
     cmake = render_cmake(auto, resolve_user_block(cmake_path, auto))
-    logging.info("✨ CMakeLists.txt сгенерирован/обновлен" if write_if_changed(cmake_path, cmake)
+    logging.info("CMakeLists.txt сгенерирован/обновлен" if write_if_changed(cmake_path, cmake)
                  else "⏭ CMakeLists.txt пропущен (нет изменений)")
 
     pkg_path = os.path.join(src_dir, "package.xml")

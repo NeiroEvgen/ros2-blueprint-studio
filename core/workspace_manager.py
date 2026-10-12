@@ -19,9 +19,9 @@ class WorkspaceManager:
         if not os.path.exists(WorkspaceManager.WORKSPACE_DIR):
             try:
                 os.makedirs(WorkspaceManager.WORKSPACE_DIR)
-                print(f"📁 Created new workspace at: {WorkspaceManager.WORKSPACE_DIR}")
+                print(f"Created new workspace at: {WorkspaceManager.WORKSPACE_DIR}")
             except OSError as e:
-                print(f"❌ Error creating workspace: {e}")
+                print(f"Error creating workspace: {e}")
                 # Fallback на случай проблем с правами - создаем рядом со скриптом
                 fallback = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "BlueprintStudioProjects")
                 fallback = os.path.abspath(fallback)

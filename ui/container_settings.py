@@ -7,6 +7,7 @@
 from PySide6 import QtWidgets, QtCore
 
 from core.i18n import t
+from ui import icons
 
 from core.container_config import (ContainerConfigStore, GlobalPresetStore,
                                    make_config, safe_group_name, netem_command)
@@ -176,6 +177,7 @@ class ContainerSettingsPanel(QtWidgets.QWidget):
         right.addWidget(form_scroll, 1)
 
         self.btn_save = QtWidgets.QPushButton(t("cs.save_group"))
+        self.btn_save.setIcon(icons.icon("save"))
         self.btn_save.clicked.connect(self._on_save)
         right.addWidget(self.btn_save)
 

@@ -34,12 +34,12 @@ def test_container_settings_english_and_russian(app):
     from ui.container_settings import ContainerSettingsPanel
     p = ContainerSettingsPanel()
     en = _all_texts(p)
-    assert "Container groups" in en and "💾 Save group config" in en
+    assert "Container groups" in en and "Save group config" in en
     assert "Open a project to edit container configs." in en
     i18n.set_language("ru")
     p2 = ContainerSettingsPanel()
     ru = _all_texts(p2)
-    assert "Группы контейнеров" in ru and "💾 Сохранить конфиг группы" in ru
+    assert "Группы контейнеров" in ru and "Сохранить конфиг группы" in ru
     assert p2.sp_delay.suffix() == " мс"
     assert p2.env_table.horizontalHeaderItem(0).text() == "КЛЮЧ"
     i18n.set_language("en")
@@ -50,12 +50,12 @@ def test_remote_panel_english_and_russian(app):
     from ui.remote_panel import RemotePanel
     p = RemotePanel()
     assert p.lbl_state.text() == "Not connected"
-    assert p.btn_connect.text() == "🔌 Connect"
-    assert p.btn_terminal.text() == "🖥 Terminal"
+    assert p.btn_connect.text() == "Connect"
+    assert p.btn_terminal.text() == "Terminal"
     i18n.set_language("ru")
     p2 = RemotePanel()
     assert p2.lbl_state.text() == "Не подключено"
-    assert p2.btn_connect.text() == "🔌 Подключить"
+    assert p2.btn_connect.text() == "Подключить"
     assert "ssh" in p2.btn_terminal.toolTip()
     i18n.set_language("en")
     p.deleteLater(); p2.deleteLater()
@@ -99,3 +99,27 @@ def test_small_panels_follow_language(app):
     dp2.timer.stop()
     i18n.set_language("en")
     dp.deleteLater(); dp2.deleteLater()
+
+
+def test_buttons_have_vector_icons_not_emoji(app):
+    """Эмодзи в подписях зависят от шрифтов ОС; кнопки используют векторные иконки."""
+    from ui.remote_panel import RemotePanel
+    p = RemotePanel()
+    for b in (p.btn_save, p.btn_connect, p.btn_sync, p.btn_build, p.btn_cancel, p.btn_terminal):
+        assert not b.icon().isNull(), b.text()
+    p.deleteLater()
+
+
+def test_no_pictographic_emoji_in_ui_strings():
+    """Ни в словарях, ни в коде интерфейса не должно быть эмодзи-пиктограмм (⚠ ↑ ✕ допустимы)."""
+    import glob, json, re
+    emo = re.compile("[\U0001F300-\U0001FAFF✅❌⏹▶♻✨⚡✂⇅⛔]")
+    root = os.path.dirname(os.path.dirname(__file__))
+    for code in ("en", "ru"):
+        data = json.load(open(os.path.join(root, "locales", f"{code}.json"), encoding="utf-8"))
+        bad = [k for k, v in data.items() if isinstance(v, str) and emo.search(v)]
+        assert not bad, (code, bad)
+    for f in glob.glob(os.path.join(root, "ui", "*.py")):
+        for n, line in enumerate(open(f, encoding="utf-8"), 1):
+            if not line.lstrip().startswith("#"):
+                assert not emo.search(line), (f, n, line.strip())

@@ -115,7 +115,7 @@ class ProjectManager:
                     for f in os.listdir(code_dirs[lang]):
                         if f.endswith(ext) and f not in valid_files:
                             os.remove(os.path.join(code_dirs[lang], f))
-                            logging.info(f"🗑 Удалён устаревший файл: {f}")
+                            logging.info(f"Удалён устаревший файл: {f}")
                 except Exception as e:
                     logging.warning(f"Cleanup skipped: {e}")
 
@@ -429,7 +429,7 @@ class ProjectManager:
                 updated = True
                 
         if updated: 
-            log_callback(f"⚡ Sync: Added ports to {incoming_name}")
+            log_callback(f"Sync: Added ports to {incoming_name}")
             target_node.update()
 
     # ==========================================
@@ -527,4 +527,4 @@ class ProjectManager:
                 else:
                     print(f" Ноды не найдены по именам! {out_name} -> {in_name}")
 
-        print(f"🔗 ВОССТАНОВЛЕНО СВЯЗЕЙ: {restored_count} из {len(connections_data)}")
+        print(f"ВОССТАНОВЛЕНО СВЯЗЕЙ: {restored_count} из {len(connections_data)}")

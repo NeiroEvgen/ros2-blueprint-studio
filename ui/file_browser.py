@@ -13,6 +13,7 @@ from core.remote.providers import LocalProvider
 from core.remote.editing import EditBuffer, FileChangedExternally, NotEditable
 from ui.code_editor import CodeEditor, CodeHighlighter, mode_for_path
 from ui.qt_worker import TaskHost
+from ui import icons
 
 _PLACEHOLDER = "__loading__"
 ROLE_PATH = QtCore.Qt.UserRole
@@ -62,7 +63,8 @@ class FileBrowser(QtWidgets.QWidget):
         bar = QtWidgets.QHBoxLayout()
         self.lbl_file = QtWidgets.QLabel("Файл не открыт")
         self.lbl_file.setStyleSheet("color: #ccc; padding: 2px;")
-        self.btn_save = QtWidgets.QPushButton("💾 Save  (Ctrl+S)")
+        self.btn_save = QtWidgets.QPushButton("Save  (Ctrl+S)")
+        self.btn_save.setIcon(icons.icon("save"))
         self.btn_save.clicked.connect(self.save_current)
         bar.addWidget(self.lbl_file, 1)
         bar.addWidget(self.btn_save)
@@ -171,7 +173,9 @@ class FileBrowser(QtWidgets.QWidget):
             item.takeChildren()
             for e in entries:
                 child = QtWidgets.QTreeWidgetItem(
-                    [("📁 " if e.is_dir else "") + e.name, "" if e.is_dir else _size(e.size)])
+                    [e.name, "" if e.is_dir else _size(e.size)])
+                if e.is_dir:
+                    child.setIcon(0, icons.icon("open", color="#d6b656", size=16))
                 child.setData(0, ROLE_PATH, e.path)
                 child.setData(0, ROLE_DIR, e.is_dir)
                 if e.is_dir:
@@ -258,7 +262,7 @@ class FileBrowser(QtWidgets.QWidget):
         buf, text = self._buffer, self.editor.toPlainText()
 
         def done(_):
-            self.log.emit(f"💾 Сохранено: {buf.path}")
+            self.log.emit(f"Сохранено: {buf.path}")
             self._update_title()
 
         def fail(msg):
@@ -271,7 +275,7 @@ class FileBrowser(QtWidgets.QWidget):
                 if r == QtWidgets.QMessageBox.Yes:
                     self.save_current(force=True)
                 return
-            self.log.emit(f"❌ Не сохранено {buf.path}: {msg}")
+            self.log.emit(f"Не сохранено {buf.path}: {msg}")
 
         self._tasks.start(lambda emit: buf.save(text, force=force), done, fail, parent=self)
 
