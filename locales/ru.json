@@ -287,5 +287,12 @@
   "ed.title": "Редактор кода ({language})",
   "ed.editing": "Редактирование: {language}",
   "ed.save_close": "Сохранить и закрыть",
-  "ui.more": "Ещё действия"
+  "ui.more": "Ещё действия",
+  "tab.dashboard": "ROS2 Dashboard",
+  "tab.docker": "Docker",
+  "tab.libraries": "Библиотеки",
+  "tab.containers": "Контейнеры",
+  "tab.remote": "Удалённо",
+  "tab.files": "Файлы",
+  "dock.unavailable": "Docker недоступен"
 }

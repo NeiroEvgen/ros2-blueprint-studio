@@ -157,3 +157,38 @@ def test_mono_font_stack_has_fallbacks():
     from ui.fonts import MONO_FAMILIES, MONO_CSS
     assert "Consolas" in MONO_FAMILIES and "DejaVu Sans Mono" in MONO_FAMILIES and "monospace" in MONO_FAMILIES
     assert "Consolas" in MONO_CSS and MONO_CSS.endswith("monospace")
+
+
+# ---------- нижняя панель: окно можно сделать низким ----------
+
+def test_window_can_be_short(app):
+    """Раньше высоту держала вкладка Remote (~330 px): окно не опускалось ниже ~570 px."""
+    from ui import main_window as mw
+    w = mw.RosVisualRunner()
+    try:
+        assert w.minimumSizeHint().height() <= 450, w.minimumSizeHint()
+    finally:
+        w.close(); w.deleteLater()
+
+
+def test_console_tabs_are_scrollable_and_titles_translated(app):
+    from ui import main_window as mw
+    w = mw.RosVisualRunner()
+    try:
+        tabs = w._console_tab_widget
+        titles = [tabs.tabText(i) for i in range(tabs.count())]
+        assert {"Docker", "Libraries", "Containers", "Remote", "Files"} <= set(titles)
+        # панели остаются доступными как атрибуты окна, но лежат в прокручиваемых областях
+        assert w.remote_panel.parent() is not None
+        assert isinstance(tabs.widget(tabs.indexOf(w.remote_panel.parentWidget().parentWidget())),
+                          QtWidgets.QScrollArea)
+        i18n.set_language("ru")
+        w.retranslate_tabs()
+        titles_ru = [tabs.tabText(i) for i in range(tabs.count())]
+        assert "Удалённо" in titles_ru and "Файлы" in titles_ru and "Библиотеки" in titles_ru
+        i18n.set_language("en")
+        w.retranslate_tabs()
+        assert "Remote" in [tabs.tabText(i) for i in range(tabs.count())]
+    finally:
+        i18n.set_language("en")
+        w.close(); w.deleteLater()

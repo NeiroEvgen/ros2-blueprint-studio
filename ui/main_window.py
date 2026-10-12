@@ -14,6 +14,7 @@ from core.file_watcher import FileWatcher
 from core.export_manager import ExportManager 
 from core.workspace_manager import WorkspaceManager
 from core.i18n import t
+from ui.scroll import scrollable
 from core import layout as project_layout
 from core.ros_process import DeployWorker, LogMonitorWorker
 from core.container_config import ContainerConfigStore, safe_group_name, resolved_env
@@ -66,8 +67,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         except Exception: 
             self.system_log(t("log.docker_missing"))
         self.process_manager = ProcessManager(self.container_manager)
-        self.docker_panel = DockerPanel(self.container_manager) if self.container_manager else QtWidgets.QLabel("Docker not available")
-        self.library_manager = LibraryManager(self.container_manager) if self.container_manager else QtWidgets.QLabel("Docker not available")
+        self.docker_panel = DockerPanel(self.container_manager) if self.container_manager else QtWidgets.QLabel(t("dock.unavailable"))
+        self.library_manager = LibraryManager(self.container_manager) if self.container_manager else QtWidgets.QLabel(t("dock.unavailable"))
         
         if hasattr(self.ui, 'console_ros'):
             # Ищем QTabWidget, в котором лежит наша консоль (он может быть не прямым родителем)
@@ -80,21 +81,33 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 if idx != -1:
                     # Убираем старую текстовую консоль и вставляем таблицу
                     tab_widget.removeTab(idx)
-                    tab_widget.insertTab(idx, self.dashboard, "ROS2 Dashboard")
-                    tab_widget.addTab(self.docker_panel, "Docker")
-                    tab_widget.addTab(self.library_manager, "Libraries")
+                    self._console_tab_widget = tab_widget
+                    self._console_tab_keys = {}          # страница вкладки -> ключ заголовка
+
+                    def add_tab(widget, key, at=None):
+                        page = widget if key == "tab.dashboard" else scrollable(widget)
+                        if at is None:
+                            tab_widget.addTab(page, t(key))
+                        else:
+                            tab_widget.insertTab(at, page, t(key))
+                        self._console_tab_keys[page] = key
+                        return page
+
+                    add_tab(self.dashboard, "tab.dashboard", at=idx)
+                    add_tab(self.docker_panel, "tab.docker")
+                    add_tab(self.library_manager, "tab.libraries")
                     self.container_settings = ContainerSettingsPanel(
                         get_docker_manager=lambda: self.container_manager)
-                    tab_widget.addTab(self.container_settings, "Containers")
+                    add_tab(self.container_settings, "tab.containers")
                     from ui.remote_panel import RemotePanel
                     from ui.file_browser import FileBrowser
                     self.remote_panel = RemotePanel()
                     self.remote_panel.log.connect(self.system_log)
                     self.remote_panel.connection_changed.connect(self._on_remote_changed)
-                    tab_widget.addTab(self.remote_panel, "Remote")
+                    add_tab(self.remote_panel, "tab.remote")
                     self.file_browser = FileBrowser()
                     self.file_browser.log.connect(self.system_log)
-                    tab_widget.addTab(self.file_browser, "Files")
+                    add_tab(self.file_browser, "tab.files")
         # 2. Graph Setup (delegated to ui/graph_setup.py)
         self.graph_py, self.graph_cpp, self.f_py, self.f_cpp = setup_graphs(
             self.ui.tabs, self.resolve_node_type, self.on_graph_delete
@@ -498,6 +511,16 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self._load_real_robot_flag()
         self._refresh_context()
         self.system_log(t("log.project_loaded", path=path, type=p_type.upper()))
+
+    def retranslate_tabs(self):
+        """Заголовки вкладок нижней панели (Dashboard/Docker/Libraries/Containers/Remote/Files)."""
+        tabs = getattr(self, "_console_tab_widget", None)
+        for page, key in getattr(self, "_console_tab_keys", {}).items():
+            idx = tabs.indexOf(page) if tabs is not None else -1
+            if idx >= 0:
+                tabs.setTabText(idx, t(key))
+        if hasattr(self.ui, "retranslate"):
+            self.ui.retranslate()
 
     def system_log(self, text):
         ctx = getattr(self, "_exec_ctx", None)

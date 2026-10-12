@@ -285,5 +285,12 @@
   "ed.title": "Code Editor ({language})",
   "ed.editing": "Editing: {language}",
   "ed.save_close": "Save & Close",
-  "ui.more": "More actions"
+  "ui.more": "More actions",
+  "tab.dashboard": "ROS2 Dashboard",
+  "tab.docker": "Docker",
+  "tab.libraries": "Libraries",
+  "tab.containers": "Containers",
+  "tab.remote": "Remote",
+  "tab.files": "Files",
+  "dock.unavailable": "Docker not available"
 }
