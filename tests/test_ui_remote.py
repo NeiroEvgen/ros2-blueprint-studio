@@ -49,7 +49,7 @@ def window(app, sshd, tmp_path, monkeypatch):
            and issubclass(c, QtWidgets.QMainWindow) and c.__module__ == mw.__name__][0]
     w = cls()
 
-    project = tmp_path / "g1proj"
+    project = tmp_path / "demoproj"
     (project / "src" / "cpp").mkdir(parents=True)
     (project / "src" / "cpp" / "Node.cpp").write_text("int main(){}\n")
     w.current_project_path = str(project)
@@ -59,7 +59,7 @@ def window(app, sshd, tmp_path, monkeypatch):
     fakebin = tmp_path / "fakebin"; fakebin.mkdir()
     c = fakebin / "colcon"; c.write_text(FAKE_COLCON); c.chmod(c.stat().st_mode | stat.S_IEXEC)
     setup = tmp_path / "setup.bash"
-    setup.write_text(f'export PATH="{fakebin}:$PATH"\nexport PKG=g1proj\n')
+    setup.write_text(f'export PATH="{fakebin}:$PATH"\nexport PKG=demoproj\n')
     ws = tmp_path / "remote_ws"; ws.mkdir()
 
     rp = w.remote_panel
@@ -106,19 +106,19 @@ def test_full_ui_flow(window, monkeypatch):
     # Sync
     rp.btn_sync.click()
     wait_for(lambda: "Sync →" in _log(w))
-    assert (ws / "src" / "g1proj" / "cpp" / "Node.cpp").read_text() == "int main(){}\n"
+    assert (ws / "src" / "demoproj" / "cpp" / "Node.cpp").read_text() == "int main(){}\n"
 
     # Build
     rp.btn_build.click()
     wait_for(lambda: "REMOTE BUILD FINISHED" in _log(w))
-    assert "Finished <<< g1proj" in _log(w)
+    assert "Finished <<< demoproj" in _log(w)
     assert "rc=0" in _log(w)
 
     # Files: источник «Хост», открыть файл, поправить, сохранить
     labels = [fb.cmb_source.itemText(i) for i in range(fb.cmb_source.count())]
     host_idx = next(i for i, t in enumerate(labels) if t.startswith("Хост"))
     fb.cmb_source.setCurrentIndex(host_idx)
-    remote_file = str(ws / "src" / "g1proj" / "cpp" / "Node.cpp")
+    remote_file = str(ws / "src" / "demoproj" / "cpp" / "Node.cpp")
     fb.open_path(remote_file)
     wait_for(lambda: fb._buffer is not None and fb.editor.toPlainText() == "int main(){}\n")
     assert not fb.btn_save.isEnabled()

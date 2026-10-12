@@ -1,4 +1,5 @@
 import os
+from core.i18n import t
 from PySide6 import QtWidgets, QtCore, QtGui
 
 # === 1. УМНЫЙ СПИСОК  ===
@@ -61,16 +62,16 @@ class UiManager:
         from nodes.group_logic import create_group_from_selection
         group_node, msg = create_group_from_selection(graph)
         if group_node:
-            self.main_window.system_log(f"Group created: {group_node.name()}")
+            self.main_window.system_log(t("ui.group_created", name=group_node.name()))
         else:
-            self.main_window.system_log(f"Group error: {msg}")
+            self.main_window.system_log(t("ui.group_error", msg=msg))
 
     def update_breadcrumbs(self, stack):
         path_str = " > ".join([item["name"] for item in stack])
         self.breadcrumb_label.setText(path_str)
 
     def setup_ui(self):
-        self.main_window.setWindowTitle("ROS2 Visual Studio (File-Based)")
+        self.main_window.setWindowTitle(t("ui.window_title"))
         self.main_window.resize(1400, 900)        
         central_widget = QtWidgets.QWidget()
         self.main_window.setCentralWidget(central_widget)
@@ -100,34 +101,28 @@ class UiManager:
             top_layout.addWidget(btn)
             return btn
 
-        self.actions['open'] = add_btn(" Open")
-        self.actions['save'] = add_btn(" Save")
+        self.actions['open'] = add_btn("")
+        self.actions['save'] = add_btn("")
         
         line = QtWidgets.QFrame(); line.setFrameShape(QtWidgets.QFrame.VLine); line.setStyleSheet("color: #444;")
         top_layout.addWidget(line)
         
-        self.actions['run'] = add_btn("▶ RUN", "#2e7d32")
-        self.actions['stop'] = add_btn("⏹ STOP", "#c62828")
+        self.actions['run'] = add_btn("", "#2e7d32")
+        self.actions['stop'] = add_btn("", "#c62828")
         self.actions['stop'].setEnabled(False)
         
         self.actions['viz_mode'] = QtWidgets.QComboBox()
         self.actions['viz_mode'].addItems(["Foxglove", "X11 (XLaunch)"])
-        self.actions['viz_mode'].setToolTip(
-            "Foxglove: веб-визуализация без X-сервера (рекомендуется)\n"
-            "X11: классический RViz через XLaunch")
         self.actions['viz_mode'].setStyleSheet(
             "QComboBox { background-color: #555; color: white; padding: 5px; border-radius: 3px; }")
         top_layout.addWidget(self.actions['viz_mode'])
-        self.actions['visualize'] = add_btn(" Visualize", "#1565c0")
+        self.actions['visualize'] = add_btn("", "#1565c0")
 
         from ui.context_badge import ContextBadge
         self.context_badge = ContextBadge()
         top_layout.addWidget(self.context_badge)
-        self.actions['real_robot'] = QtWidgets.QPushButton("🤖 Real robot")
+        self.actions['real_robot'] = QtWidgets.QPushButton()
         self.actions['real_robot'].setCheckable(True)
-        self.actions['real_robot'].setToolTip(
-            "Отметь, если цель — реальное железо. Сохраняется в проекте.\n"
-            "Бейдж станет красным, в каждой строке лога появится ⚠ROBOT.")
         self.actions['real_robot'].setStyleSheet(
             "QPushButton { background-color: #555; color: white; border: none;"
             " padding: 5px 12px; border-radius: 3px; }"
@@ -135,13 +130,13 @@ class UiManager:
         top_layout.addWidget(self.actions['real_robot'])
 
         top_layout.addStretch()
-        self.actions['export_palette'] = add_btn(" Palette ⬆")
-        self.actions['import_palette'] = add_btn(" Palette ⬇")
-        self.actions['group'] = add_btn(" Group")
+        self.actions['export_palette'] = add_btn("")
+        self.actions['import_palette'] = add_btn("")
+        self.actions['group'] = add_btn("")
         self.actions['group'].clicked.connect(self.on_group_clicked)
-        self.actions['clear'] = add_btn(" Clear")
-        self.actions['export_docker'] = add_btn(" Export")
-        self.actions['import_pkg'] = add_btn(" Import Pkg")
+        self.actions['clear'] = add_btn("")
+        self.actions['export_docker'] = add_btn("")
+        self.actions['import_pkg'] = add_btn("")
 
         main_layout.addWidget(top_bar)
 
@@ -153,7 +148,7 @@ class UiManager:
         palette_panel = QtWidgets.QWidget()
         palette_layout = QtWidgets.QVBoxLayout(palette_panel)
         palette_layout.setContentsMargins(0,0,0,0)
-        lbl = QtWidgets.QLabel("Node Palette")
+        lbl = self.palette_label = QtWidgets.QLabel()
         lbl.setStyleSheet("background: #222; color: #ddd; padding: 5px; font-weight: bold; border-bottom: 1px solid #444;")
         palette_layout.addWidget(lbl)
         
@@ -177,11 +172,11 @@ class UiManager:
         self.breadcrumb_bar.setStyleSheet("background-color: #3c3c3c; border-bottom: 1px solid #222;")
         breadcrumb_layout = QtWidgets.QHBoxLayout(self.breadcrumb_bar)
         breadcrumb_layout.setContentsMargins(10, 0, 10, 0)
-        self.breadcrumb_label = QtWidgets.QLabel("Root")
+        self.breadcrumb_label = QtWidgets.QLabel()
         self.breadcrumb_label.setStyleSheet("color: #bbb; font-weight: bold;")
         breadcrumb_layout.addWidget(self.breadcrumb_label)
         
-        self.btn_back = QtWidgets.QPushButton("← Back")
+        self.btn_back = QtWidgets.QPushButton()
         self.btn_back.setStyleSheet("""
             QPushButton { background: #555; color: white; border-radius: 3px; padding: 2px 10px; }
             QPushButton:hover { background: #777; }
@@ -199,21 +194,21 @@ class UiManager:
         main_splitter.addWidget(graph_container)
 
         # КОНСОЛИ
-        console_dock = QtWidgets.QDockWidget("Logs & Terminal", self.main_window)
+        console_dock = self.console_dock = QtWidgets.QDockWidget(self.main_window)
         console_widget = QtWidgets.QWidget()
         console_layout = QtWidgets.QVBoxLayout(console_widget)
         console_layout.setContentsMargins(0,0,0,0)
         
-        console_tabs = QtWidgets.QTabWidget()
+        console_tabs = self.console_tabs = QtWidgets.QTabWidget()
         self.console_sys = QtWidgets.QTextEdit()
         self.console_sys.setReadOnly(True)
         self.console_sys.setStyleSheet("background-color: #1e1e1e; color: #00ff00; font-family: Consolas; border: none;")
-        console_tabs.addTab(self.console_sys, "System Log")
+        console_tabs.addTab(self.console_sys, "")
         
         self.console_ros = QtWidgets.QTextEdit()
         self.console_ros.setReadOnly(True)
         self.console_ros.setStyleSheet("background-color: #1e1e1e; color: #00ffff; font-family: Consolas; border: none;")
-        console_tabs.addTab(self.console_ros, "ROS2 Output")
+        console_tabs.addTab(self.console_ros, "")
         
         console_layout.addWidget(console_tabs)
         console_dock.setWidget(console_widget)
@@ -221,6 +216,33 @@ class UiManager:
 
         main_splitter.setStretchFactor(0, 1)
         main_splitter.setStretchFactor(1, 5)
+        self.retranslate()
+
+    def retranslate(self):
+        """Все тексты панели из словаря; вызывается при построении и при смене языка."""
+        a = self.actions
+        self.main_window.setWindowTitle(t("ui.window_title"))
+        for key, text in (("open", " " + t("ui.open")), ("save", " " + t("ui.save")),
+                          ("run", t("ui.run")), ("stop", t("ui.stop")),
+                          ("visualize", " " + t("ui.visualize")),
+                          ("export_palette", " " + t("ui.palette_export")),
+                          ("import_palette", " " + t("ui.palette_import")),
+                          ("group", " " + t("ui.group")), ("clear", " " + t("ui.clear")),
+                          ("export_docker", " " + t("ui.export")),
+                          ("import_pkg", " " + t("ui.import_pkg"))):
+            a[key].setText(text)
+        a['viz_mode'].setToolTip(t("ui.viz_tooltip"))
+        a['real_robot'].setText(t("ui.real_robot"))
+        a['real_robot'].setToolTip(t("ui.real_robot_tip"))
+        self.palette_label.setText(t("ui.node_palette"))
+        self.btn_back.setText(t("ui.back"))
+        if not self.breadcrumb_label.text():
+            self.breadcrumb_label.setText(t("ui.root"))
+        self.console_dock.setWindowTitle(t("ui.logs_terminal"))
+        for widget, key in ((self.console_sys, "ui.log_system"), (self.console_ros, "ui.log_ros")):
+            idx = self.console_tabs.indexOf(widget)     # вкладки могут быть переставлены/заменены
+            if idx >= 0:
+                self.console_tabs.setTabText(idx, t(key))
 
     def set_visible_graph(self, mode="python"):
         if mode == "mixed":
