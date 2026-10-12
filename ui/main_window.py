@@ -64,7 +64,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         try:
             self.container_manager = RosContainerManager()
         except Exception: 
-            self.system_log("WARNING: Docker not found or not running.")
+            self.system_log(t("log.docker_missing"))
         self.process_manager = ProcessManager(self.container_manager)
         self.docker_panel = DockerPanel(self.container_manager) if self.container_manager else QtWidgets.QLabel("Docker not available")
         self.library_manager = LibraryManager(self.container_manager) if self.container_manager else QtWidgets.QLabel("Docker not available")
@@ -116,7 +116,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.ui.actions['real_robot'].toggled.connect(self.on_real_robot_toggled)
         self._refresh_context()       # Навигация
         self.current_subgraph = None
-        self.navigation_stack = [{"name": "Root", "node": None}]
+        self.navigation_stack = [{"name": t("ui.root"), "node": None}]
 
         # 6. Init Logic
         if self.current_project_path:
@@ -172,17 +172,17 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                                     and child.get_property('parent_group_id') == gid):
                                 graph.delete_node(child)
                         graph.delete_node(node)
-                        self.system_log(f"Group + contents deleted: {node.name()}")
+                        self.system_log(t("log.group_deleted", name=node.name()))
                     else:
                         # Del: распускаем — дети наружу, терминалы удаляются
                         dissolve_group(graph, node)
                         graph.delete_node(node)
-                        self.system_log(f"Group dissolved: {node.name()}")
+                        self.system_log(t("log.group_dissolved", name=node.name()))
                 else:
                     # обычная нода
                     graph.delete_node(node)
             except Exception as e:
-                self.system_log(f"Delete error: {e}")
+                self.system_log(t("log.delete_error", error=e))
 
         self._refresh_container_counts() if hasattr(self, '_refresh_container_counts') else None
 
@@ -204,7 +204,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 self._set_node_visible(node, False)
         
         #self._refresh_pipe_visibility(graph)  # см. ниже про граф
-        self.system_log(f"Entered subgraph: {name}")
+        self.system_log(t("log.entered_subgraph", name=name))
 
     def exit_subgraph(self):
         if len(self.navigation_stack) <= 1:
@@ -238,7 +238,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 else:
                     node.view.setVisible(False)
             
-        self.system_log("Exited to " + target["name"])
+        self.system_log(t("log.exited_to", name=target["name"]))
 
     def setup_graph_signals(self):
         """Подключает сигналы графа для открытия редактора и настроек"""
@@ -281,7 +281,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         if ctrl_held:
             self.properties_win.set_node(node)
             self.properties_win.show()
-            self.system_log(f"Opened properties for: {node.name()}")
+            self.system_log(t("log.opened_properties", name=node.name()))
             return
 
         # Обычный двойной клик по группе -> заходим внутрь
@@ -292,12 +292,12 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         # Обычный двойной клик по обычной ноде -> только код
         if node.has_property('code_content'):
             if not self.current_project_path:
-                self.system_log("Открой/сохрани проект перед редактированием кода ноды.")
+                self.system_log(t("log.open_project_first"))
                 return
             
             self.project_manager.open_node_in_editor(node, self.current_project_path)
             self.watcher.start_watching(os.path.join(self.current_project_path, "src"))
-            self.system_log(f"Opened code for: {node.name()}")
+            self.system_log(t("log.opened_code", name=node.name()))
     def connect_actions(self):
         """Восстанавливает связи кнопок управления"""
         self.ui.actions['run'].clicked.connect(self.on_run_project)
@@ -325,10 +325,10 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
     def on_save_project(self):
         if not self.current_project_path:
-            self.system_log("Error: No project loaded.")
+            self.system_log(t("log.no_project"))
             return
         ok, _ = self._save_result(self.project_manager.save_project(self.current_project_path))
-        self.system_log("💾 Project saved" if ok else "Error: failed to save project files.")
+        self.system_log(t("log.project_saved") if ok else t("log.save_failed"))
         self._log_save_warnings()
 
     def _log_save_warnings(self):
@@ -355,8 +355,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         """Открыть другой проект с диска (как «Open from Disk…» в стартовом окне)."""
         if self.current_project_path:
             ans = QtWidgets.QMessageBox.question(
-                self, "Open project",
-                "Сохранить текущий проект перед открытием другого?",
+                self, t("dlg.open_project_title"),
+                t("dlg.save_before_open"),
                 QtWidgets.QMessageBox.Save | QtWidgets.QMessageBox.Discard
                 | QtWidgets.QMessageBox.Cancel)
             if ans == QtWidgets.QMessageBox.Cancel:
@@ -365,10 +365,10 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 ok, _ = self._save_result(
                     self.project_manager.save_project(self.current_project_path))
                 if not ok:
-                    self.system_log("Error: failed to save current project; open cancelled.")
+                    self.system_log(t("log.save_failed_open_cancelled"))
                     return
         root = WorkspaceManager.get_workspace_root()
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Open Project Folder", root)
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, t("dlg.open_folder_title"), root)
         if path:
             self.on_load_project_init(path)
 
@@ -379,18 +379,17 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
         if mode.startswith("X11"):
             # Классика: просто напоминание, RViz-нода сама откроет окно при Run
-            self.system_log("X11 mode: убедись, что XLaunch запущен "
-                            "(Multiple windows, Disable access control).")
+            self.system_log(t("log.x11_hint"))
             return
 
         # === Foxglove ===
         if not self.container_manager or not self.container_manager.container:
-            self.system_log("Error: сессия не запущена. Нажми Run, потом Visualize.")
+            self.system_log(t("log.session_not_running"))
             return
         try:
             self.container_manager.start_foxglove_bridge(self.system_log)
         except Exception as e:
-            self.system_log(f"Foxglove bridge error: {e}")
+            self.system_log(t("log.foxglove_error", error=e))
             return
 
         # Открываем Foxglove в браузере с автоподключением к ws://localhost:8765
@@ -398,40 +397,40 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         url = ("https://app.foxglove.dev/?ds=foxglove-websocket"
                "&ds.url=ws%3A%2F%2Flocalhost%3A8765")
         webbrowser.open(url)
-        self.system_log("Foxglove открыт в браузере (подключение к ws://localhost:8765)")
+        self.system_log(t("log.foxglove_opened"))
 
     def on_clear_graph(self):
         graph = self.graph_py if self.ui.tabs.currentIndex() == 0 else self.graph_cpp
         graph.clear_session()
-        self.system_log("Graph cleared.")
+        self.system_log(t("log.graph_cleared"))
 
     def on_run_project(self):
         if not self.current_project_path:
-            self.system_log("Error: No project loaded.")
+            self.system_log(t("log.no_project"))
             return
         if not self.container_manager:
-            self.system_log("Error: Docker is not available. Cannot run.")
+            self.system_log(t("log.docker_unavailable"))
             return
 
         # 1. Сначала компилируем/сохраняем граф в файлы проекта
-        self.system_log("Saving & generating project files...")
+        self.system_log(t("log.generating"))
         ok, apt_packages = self._save_result(
             self.project_manager.save_project(self.current_project_path))
         if not ok:
-            self.system_log("Error: Failed to generate project files. Aborting run.")
+            self.system_log(t("log.generate_failed_abort"))
             return
         self.watcher.start_watching(os.path.join(self.current_project_path, "src"))
 
         self.ui.actions['run'].setEnabled(False)
         self.ui.actions['stop'].setEnabled(True)
-        self.system_log("Starting project...")
+        self.system_log(t("log.starting"))
 
         
         try:
             store = ContainerConfigStore(self.current_project_path)
             self.container_manager.extra_env = resolved_env(store.get("main"))
         except Exception as e:
-            self.system_log(f"WARN: env config skipped: {e}")
+            self.system_log(t("log.env_skipped", error=e))
 
         # 2. Запускаем деплой в отдельном потоке
         self.deploy_worker = DeployWorker(self.container_manager, self.current_project_path, extra_apt_packages=apt_packages)
@@ -445,7 +444,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         """Вызывается, когда DeployWorker завершил работу."""
         self.ui.actions['run'].setEnabled(True)
         self.ui.actions['stop'].setEnabled(False)
-        self.system_log("--- DEPLOY FINISHED ---")
+        self.system_log(t("log.deploy_finished"))
         self._refresh_context()
 
     def on_stop_project(self):
@@ -454,28 +453,28 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self.deploy_worker.stop()
         self.ui.actions['run'].setEnabled(True)
         self.ui.actions['stop'].setEnabled(False)
-        self.system_log("Project stopped.")
+        self.system_log(t("log.stopped"))
         self._refresh_context()
 
     def on_export_docker(self):
         if not self.current_project_path:
-            self.system_log("Error: No project loaded.")
+            self.system_log(t("log.no_project"))
             return
         # Сначала сгенерируем актуальные файлы из графа
-        self.system_log("Generating fresh project files before export...")
+        self.system_log(t("log.export_generating"))
         if not self.project_manager.save_project(self.current_project_path):
-            self.system_log("Error: project generation failed. Export aborted.")
+            self.system_log(t("log.export_generate_failed"))
             return
         try:
-            self.system_log("Exporting portable Docker package...")
+            self.system_log(t("log.export_running"))
             zip_path = ExportManager.export_to_portable_package(self.current_project_path)
-            self.system_log(f"Export complete: {zip_path}")
+            self.system_log(t("log.export_complete", path=zip_path))
             QtWidgets.QMessageBox.information(
-                self, "Export Complete",
-                f"Portable Docker package created:\n{zip_path}"
+                self, t("dlg.export_complete_title"),
+                t("dlg.export_complete_text", path=zip_path)
             )
         except Exception as e:
-            self.system_log(f"Export failed: {e}")
+            self.system_log(t("log.export_failed", error=e))
             traceback.print_exc()
 
     def on_load_project_init(self, path):
@@ -498,7 +497,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self._refresh_container_counts()
         self._load_real_robot_flag()
         self._refresh_context()
-        self.system_log(f"Project loaded: {path} ({p_type.upper()})")
+        self.system_log(t("log.project_loaded", path=path, type=p_type.upper()))
 
     def system_log(self, text):
         ctx = getattr(self, "_exec_ctx", None)
@@ -560,7 +559,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             except Exception as e:
                 self.ui.console_sys.append(f"WARN: real_robot flag not saved: {e}")
         self._refresh_context()
-        self.system_log("⚠ Цель — РЕАЛЬНЫЙ РОБОТ" if self._real_robot else "Цель — симуляция")
+        self.system_log(t("log.target_robot") if self._real_robot else t("log.target_sim"))
 
     def ros_log(self, text):
         self.dashboard.process_log(text)

@@ -143,3 +143,19 @@ class TestSaveWarnings:
         win.project_manager.save_project = lambda p: setattr(win.project_manager, "last_warnings", ["W1"]) or (True, set())
         win.ui.actions["save"].click()
         assert any("W1" in m for m in win._logs)
+
+
+class TestLogsFollowLanguage:
+    """Сообщения главного окна идут через словарь: тот же сценарий на двух языках."""
+
+    def test_no_project_message_in_both_languages(self, win):
+        from core import i18n
+        win.current_project_path = None
+        win._logs.clear()
+        win.on_save_project()
+        assert any("No project loaded" in m for m in win._logs)
+        i18n.set_language("ru")
+        win._logs.clear()
+        win.on_save_project()
+        assert any("проект не загружен" in m for m in win._logs)
+        i18n.set_language("en")
