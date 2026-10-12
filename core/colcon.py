@@ -92,3 +92,20 @@ def parse_output(lines) -> BuildResult:
         res.errors.append(pending_cmake)
     res.ok = not res.failed and not res.errors
     return res
+
+
+def iter_lines(chunks):
+    """
+    Поток байтовых чанков Docker → отдельные строки (str). Чанк может содержать несколько
+    строк или обрываться посреди строки; без этого разбора строка 'Failed <<< pkg' теряется
+    внутри многострочного чанка и сборка отчитывается как «неизвестный пакет».
+    """
+    buf = ""
+    for chunk in chunks:
+        buf += chunk.decode("utf-8", errors="replace") if isinstance(chunk, (bytes, bytearray)) else chunk
+        parts = re.split(r"\r\n|\n|\r", buf)
+        buf = parts.pop()
+        for p in parts:
+            yield p.strip()
+    if buf.strip():
+        yield buf.strip()

@@ -9,6 +9,7 @@
 import logging
 import os
 import re
+from core.template_render import render_pristine_template
 
 from core.generators.cpp_generator import CppGenerator
 from core.generators.python_generator import PythonGenerator
@@ -173,6 +174,8 @@ def process_flat_nodes(flat_nodes, target_dir, project_type):
         except Exception as e:
             logging.warning(f"Disk re-read skipped for {filename}: {e}")
 
+        existing_code = render_pristine_template(
+            existing_code, custom, node_data['name'], is_cpp_mode)
         freshly_generated = generator.generate(node_data)
 
         if existing_code and existing_code.strip():

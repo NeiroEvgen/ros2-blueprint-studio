@@ -272,8 +272,8 @@ class RosContainerManager:
 
                 with timer.phase("deps"):
                     dep_stream = self.container.exec_run(dep_cmd, stream=True)
-                    for line in dep_stream.output:
-                        sys_callback(line.decode('utf-8', errors='replace').strip())
+                    for text in colcon.iter_lines(dep_stream.output):
+                        sys_callback(text)
 
             sys_callback(t("build.building"))
 
@@ -281,8 +281,7 @@ class RosContainerManager:
             build_lines, exit_code = [], None
             with timer.phase("colcon"):
                 build_stream = self.container.exec_run(build_cmd, stream=True)
-                for line in build_stream.output:
-                    text = line.decode('utf-8', errors='replace').strip()
+                for text in colcon.iter_lines(build_stream.output):
                     m = re.match(r"__COLCON_EXIT=(\d+)", text)
                     if m:
                         exit_code = int(m.group(1))

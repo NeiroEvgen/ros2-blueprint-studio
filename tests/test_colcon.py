@@ -104,7 +104,7 @@ class FakeContainer:
         if joined.startswith("test -f"):
             return _Res(0)
         if "colcon build" in joined:
-            lines = [l.encode() for l in self.build_lines] + [f"__COLCON_EXIT={self.exit_code}".encode()]
+            lines = [(l + "\n").encode() for l in self.build_lines] + [f"__COLCON_EXIT={self.exit_code}\n".encode()]
             return _Res(0, lines)
         if "ros2 launch" in joined:
             return _Res(0, [b"launched"])
