@@ -15,6 +15,7 @@ import tarfile
 import time
 import os
 import re
+import hashlib
 from core import colcon
 from core.i18n import t
 
@@ -43,6 +44,9 @@ def pick_base_image(image_exists):
     except Exception:
         pass
     return FALLBACK_IMAGE
+
+DEPS_STAMP_PREFIX = "/root/ros2_ws/.studio_deps_"
+
 
 class _NullTimer:
     """Заглушка, когда замер не нужен."""
@@ -206,6 +210,23 @@ class RosContainerManager:
             detach=True)
         return missing
 
+    def _deps_stamp(self, extra_apt):
+        """
+        Путь файла-отметки «зависимости уже установлены» для текущего набора package.xml
+        и доп. apt-пакетов; None, если отпечаток получить не удалось (тогда ставим всегда).
+        Отметка лежит в контейнере: новый контейнер → зависимости ставятся заново.
+        """
+        try:
+            r = self.container.exec_run(["bash", "-c",
+                "find /root/ros2_ws/src -name package.xml | sort | xargs -r cat | sha256sum"])
+            digest = (r.output or b"").decode("utf-8", errors="replace").split()[0]
+        except Exception:
+            return None
+        if r.exit_code != 0 or len(digest) != 64:
+            return None
+        fp = hashlib.sha256((digest + "|" + " ".join(sorted(extra_apt or []))).encode()).hexdigest()[:16]
+        return f"{DEPS_STAMP_PREFIX}{fp}"
+
     def run_project_launch(self, sys_callback, ros_callback, extra_apt_packages=None, timer=None):
         timer = timer or _NullTimer()
         check_cmake = self.container.exec_run("test -f /root/ros2_ws/src/user_project/CMakeLists.txt")
@@ -222,19 +243,25 @@ class RosContainerManager:
                 except InvalidPackageName as e:
                     sys_callback(t("build.invalid_pkg", error=e))
 
-            dep_cmd = ["bash", "-c",
-                apt_snippet(extra, update=True) + "; "
-                "for i in $(seq 1 15); do "
-                "  rosdep install -y --from-paths /root/ros2_ws/src --ignore-src --rosdistro humble "
-                "    > /tmp/rosdep_out.log 2>&1 && break; "
-                "  echo \"[deps] rosdep failed (lock busy?), retry $i...\"; sleep 3; "
-                "done; "
-                "cat /tmp/rosdep_out.log"]
+            stamp = self._deps_stamp(extra)
+            if stamp and self.container.exec_run(["test", "-f", stamp]).exit_code == 0:
+                sys_callback(t("build.deps_cached"))
+            else:
+                mark = (f"rm -f {DEPS_STAMP_PREFIX}*; touch {stamp}" if stamp else "true")
+                dep_cmd = ["bash", "-c",
+                    apt_snippet(extra, update=True) + "; apt_rc=$?; ok=0; "
+                    "for i in $(seq 1 15); do "
+                    "  rosdep install -y --from-paths /root/ros2_ws/src --ignore-src --rosdistro humble "
+                    "    > /tmp/rosdep_out.log 2>&1 && ok=1 && break; "
+                    "  echo \"[deps] rosdep failed (lock busy?), retry $i...\"; sleep 3; "
+                    "done; "
+                    "cat /tmp/rosdep_out.log; "
+                    f"if [ $apt_rc -eq 0 ] && [ $ok -eq 1 ]; then {mark}; fi"]
 
-            with timer.phase("deps"):
-                dep_stream = self.container.exec_run(dep_cmd, stream=True)
-                for line in dep_stream.output:
-                    sys_callback(line.decode('utf-8', errors='replace').strip())
+                with timer.phase("deps"):
+                    dep_stream = self.container.exec_run(dep_cmd, stream=True)
+                    for line in dep_stream.output:
+                        sys_callback(line.decode('utf-8', errors='replace').strip())
 
             sys_callback(t("build.building"))
 
