@@ -6,6 +6,7 @@
 
 Без Qt, без docker. Граф сюда приходит уже сериализованным (dict).
 """
+import hashlib
 import logging
 import os
 import re
@@ -100,6 +101,35 @@ def process_and_save_files(session_data, target_dir, project_type):
     return process_flat_nodes(flat_nodes, target_dir, project_type)
 
 
+def code_hash(text):
+    """Отпечаток кода без различий в переводах строк (Windows пишет \\r\\n, читает \\n)."""
+    return hashlib.sha1((text or "").replace("\r\n", "\n").encode("utf-8")).hexdigest()
+
+
+def choose_code(node_code, disk_code, synced_hash):
+    """
+    Чей код записывать: правка в Studio (node_code) или файл на диске (disk_code).
+    synced_hash — отпечаток кода при последней синхронизации узла с файлом.
+      узел не менялся           → побеждает диск (правка в IDE / внешняя);
+      менялся узел, диск — нет  → побеждает узел (правка в окне свойств);
+      менялись оба              → диск (чужие данные не затираем), причина "conflict".
+    Без отпечатка (старый проект, состояние неизвестно) — диск: не затираем чужие правки;
+    отпечаток появится после первого же сохранения.
+    Возвращает (код, причина).
+    """
+    if not disk_code or not disk_code.strip():
+        return node_code, "no_disk"
+    if not node_code or not node_code.strip() or code_hash(node_code) == code_hash(disk_code):
+        return disk_code, "same"
+    if synced_hash and code_hash(node_code) == synced_hash:
+        return disk_code, "disk"
+    if not synced_hash:
+        return disk_code, "disk"
+    if code_hash(disk_code) == synced_hash:
+        return node_code, "node"
+    return disk_code, "conflict"
+
+
 def process_flat_nodes(flat_nodes, target_dir, project_type):
     """Плоский список нод ([{'node','namespace',...}]) → файлы <target_dir>/<node>.(cpp|py)."""
     is_cpp_mode = (project_type == "cpp")
@@ -168,9 +198,10 @@ def process_flat_nodes(flat_nodes, target_dir, project_type):
             if os.path.exists(file_path):
                 with open(file_path, 'r', encoding='utf-8') as df:
                     disk_code = df.read()
-                if disk_code.strip():
-                    existing_code = disk_code
-                    custom['code_content'] = disk_code
+                existing_code, why = choose_code(existing_code, disk_code, custom.get('code_sync_hash'))
+                if why == "conflict":
+                    logging.warning(f"{filename}: изменён и в Studio, и на диске — взята версия с диска")
+                custom['code_content'] = existing_code
         except Exception as e:
             logging.warning(f"Disk re-read skipped for {filename}: {e}")
 
@@ -187,6 +218,7 @@ def process_flat_nodes(flat_nodes, target_dir, project_type):
 
         if code_to_write:
             custom['code_content'] = code_to_write
+            custom['code_sync_hash'] = code_hash(code_to_write)
             custom['source_file'] = filename
 
             created.append({

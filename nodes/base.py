@@ -25,6 +25,7 @@ class RosNodeBase(BaseNode):
             ('is_imported', False),
             ('source_file', ''),
             ('code_content', ''),
+            ('code_sync_hash', ''),
         ):
             if not self.has_property(_prop):
                 self.create_property(_prop, _default)

@@ -49,6 +49,23 @@ class ProjectManager:
     # ==========================================
     #               СОХРАНЕНИЕ
     # ==========================================
+    @staticmethod
+    def _sync_live_nodes(pairs):
+        """
+        Итоговый код и отпечаток синхронизации — обратно в живые узлы: иначе следующая правка
+        в окне свойств будет выглядеть как «изменились обе стороны» и потеряется.
+        """
+        for graph, session in pairs:
+            try:
+                items = dict(graph_ir._node_items(session))
+                for node in graph.all_nodes():
+                    custom = (items.get(node.id) or {}).get("custom") or {}
+                    for key in ("code_content", "code_sync_hash"):
+                        if key in custom and node.has_property(key) and node.get_property(key) != custom[key]:
+                            node.set_property(key, custom[key])
+            except Exception as e:      # синхронизация — удобство, а не причина провала сохранения
+                logging.warning(f"Live node sync skipped: {e}")
+
     def save_project(self, project_path):
         print("[SAVE DEBUG] save_project ВЫЗВАН, path=", project_path)
         self.last_warnings = []
@@ -93,6 +110,8 @@ class ProjectManager:
             created_files = []
             for lang in languages:
                 created_files += node_sources.process_flat_nodes(flat_by_lang[lang], code_dirs[lang], lang) or []
+            self._sync_live_nodes([(self.graph_py, merged)] if self.single
+                                  else [(self.graph_py, py_data), (self.graph_cpp, cpp_data)])
 
             from core.generators.dependency_resolver import DependencyResolver, DepSet
             from core.dockerfile_manager import DockerfileManager
@@ -369,8 +388,12 @@ class ProjectManager:
                 if found_path:
                     try:
                         with open(found_path, 'r', encoding='utf-8') as f:
-                            node.set_property('code_content', f.read())
-                    except: pass
+                            text = f.read()
+                        node.set_property('code_content', text)
+                        if node.has_property('code_sync_hash'):
+                            node.set_property('code_sync_hash', node_sources.code_hash(text))
+                    except Exception:
+                        pass
                 else:
                     node.set_property('code_content', "// Source file not found on disk.")
 
