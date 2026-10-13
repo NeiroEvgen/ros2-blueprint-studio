@@ -261,7 +261,7 @@ def test_green_cmake_file_becomes_editable_file_node(app, tmp_path, single):
         assert "CMakeLists" not in (root / "src/launch/project_launch.py").read_text(encoding="utf-8")
 
         # правка на диске → в ноду
-        cmake.write_text(cmake.read_text(encoding="utf-8") + "# from disk\n")
+        cmake.write_text(cmake.read_text(encoding="utf-8") + "# from disk\n", encoding="utf-8")
         w.project_manager.sync_file_nodes(str(root / "src"))
         assert "# from disk" in node.get_property("code_content")
     finally:
