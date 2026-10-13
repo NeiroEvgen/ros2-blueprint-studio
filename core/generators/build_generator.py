@@ -59,6 +59,10 @@ class SourceScan:
     xml_extra: Set[str] = field(default_factory=set)
     # exec-файл → доп. исходники (.cpp соседей локальных заголовков), пути от cpp_dir
     companions: dict = field(default_factory=dict)
+    # отмеченные пользователем файлы (пути от src/)
+    extra_sources: List[str] = field(default_factory=list)   # в каждый executable
+    marked_execs: List[str] = field(default_factory=list)    # отдельные executable (есть main)
+    include_dirs: List[str] = field(default_factory=list)    # → include_directories
 
 
 def _canon(dep: str) -> str:
@@ -67,38 +71,48 @@ def _canon(dep: str) -> str:
     return "opencv" if dep == "OpenCV" else dep
 
 
-def scan_sources(cpp_dir: str) -> SourceScan:
+def _scan_text(content: str, scan: "SourceScan", resolver) -> None:
+    for match in _PATTERN_MSG.findall(content):
+        scan.deps.add(match[0])
+    for match in _PATTERN_LIBS.findall(content):
+        scan.deps.add("opencv" if match == "opencv2" else match)
+    # apt-имя пакета часто НЕ совпадает с именем для find_package —
+    # реестр знает оба.
+    for inc in resolver.scan_includes(content, "cpp"):
+        entry = resolver.resolve_include(inc)
+        if entry:
+            scan.apt.update(entry.get("apt", []))
+            if entry.get("link_only"):
+                scan.find_only.update(entry.get("cmake_find", []))
+                scan.link_libs.update(entry.get("cmake_link", []))
+                scan.xml_extra.update(entry.get("xml_depend", []))
+            else:
+                scan.deps.update(_canon(d) for d in entry.get("cmake_find", []))
+        else:
+            scan.unresolved.add(inc)
+
+
+def scan_sources(cpp_dir: str, marked=()) -> SourceScan:
+    """
+    marked — файлы, отмеченные пользователем во вкладке Files (пути от src/).
+    .cpp без main() дописываются в каждый executable, .cpp с main() становятся
+    отдельным executable, папки заголовков уходят в include_directories.
+    """
     from core.generators.dependency_resolver import DependencyResolver
     resolver = DependencyResolver()
     scan = SourceScan()
-    if not os.path.exists(cpp_dir):
+    src_dir = os.path.dirname(os.path.normpath(cpp_dir))
+    if not os.path.exists(cpp_dir) and not marked:
         return scan
 
-    for file in os.listdir(cpp_dir):
+    listing = os.listdir(cpp_dir) if os.path.isdir(cpp_dir) else []
+    for file in listing:
         if file.endswith(('.cpp', '.hpp', '.h')):
             with open(os.path.join(cpp_dir, file), 'r', encoding='utf-8') as f:
-                content = f.read()
-            for match in _PATTERN_MSG.findall(content):
-                scan.deps.add(match[0])
-            for match in _PATTERN_LIBS.findall(content):
-                scan.deps.add("opencv" if match == "opencv2" else match)
-            # apt-имя пакета часто НЕ совпадает с именем для find_package —
-            # реестр знает оба.
-            for inc in resolver.scan_includes(content, "cpp"):
-                entry = resolver.resolve_include(inc)
-                if entry:
-                    scan.apt.update(entry.get("apt", []))
-                    if entry.get("link_only"):
-                        scan.find_only.update(entry.get("cmake_find", []))
-                        scan.link_libs.update(entry.get("cmake_link", []))
-                        scan.xml_extra.update(entry.get("xml_depend", []))
-                    else:
-                        scan.deps.update(_canon(d) for d in entry.get("cmake_find", []))
-                else:
-                    scan.unresolved.add(inc)
+                _scan_text(f.read(), scan, resolver)
 
     # Executable только из файлов с int main(): остальные .cpp — библиотечные хелперы.
-    for file in sorted(os.listdir(cpp_dir)):
+    for file in sorted(listing):
         if file.endswith('.cpp'):
             with open(os.path.join(cpp_dir, file), 'r', encoding='utf-8') as f:
                 if _MAIN_RE.search(f.read()):
@@ -108,7 +122,35 @@ def scan_sources(cpp_dir: str) -> SourceScan:
         extra = _companions(cpp_dir, file, set(scan.executables))
         if extra:
             scan.companions[file] = extra
+
+    _apply_marked(scan, src_dir, marked, resolver)
     return scan
+
+
+def _apply_marked(scan, src_dir, marked, resolver) -> None:
+    top = {f"cpp/{f}" for f in scan.executables}
+    for rel in marked:
+        ext = os.path.splitext(rel)[1].lower()
+        if ext not in (".cpp", ".cc", ".cxx", ".hpp", ".h", ".hh"):
+            continue
+        try:
+            with open(os.path.join(src_dir, rel), 'r', encoding='utf-8') as f:
+                text = f.read()
+        except (OSError, UnicodeDecodeError):
+            logging.warning(f"Marked file unreadable, skipped: {rel}")
+            continue
+        _scan_text(text, scan, resolver)
+        d = os.path.dirname(rel)
+        if d and d not in scan.include_dirs:
+            scan.include_dirs.append(d)
+        if ext in (".hpp", ".h", ".hh") or rel in top:
+            continue
+        if _MAIN_RE.search(text):
+            scan.marked_execs.append(rel)
+        else:
+            scan.extra_sources.append(rel)
+    scan.include_dirs.sort()
+    scan.extra_sources = sorted(set(scan.extra_sources))
 
 
 _LOCAL_INC_RE = re.compile(r'#include\s*"([^"]+)"')
@@ -148,7 +190,8 @@ def _cmake_name(dep: str) -> str:
     return "OpenCV" if dep == "opencv" else dep
 
 
-def render_cmake_auto(pkg_name: str, deps, executables, find_only=(), link_libs=(), companions=None) -> str:
+def render_cmake_auto(pkg_name: str, deps, executables, find_only=(), link_libs=(), companions=None,
+                      extra_sources=(), marked_execs=(), include_dirs=()) -> str:
     companions = companions or {}
     auto = "cmake_minimum_required(VERSION 3.8)\n"
     auto += f"project({pkg_name})\n\n"
@@ -159,12 +202,21 @@ def render_cmake_auto(pkg_name: str, deps, executables, find_only=(), link_libs=
         auto += f"find_package({_cmake_name(dep)} REQUIRED)\n"
     for lib in sorted(set(find_only) - {_cmake_name(d) for d in deps}):
         auto += f"find_package({lib} REQUIRED)\n"
-    auto += "\ninclude_directories(include)\n\n"
+    auto += "\ninclude_directories(" + " ".join(["include"] + list(include_dirs)) + ")\n\n"
 
     deps_str = " ".join(_cmake_name(d) for d in sorted(deps))
-    for file in executables:
-        exec_name = os.path.splitext(file)[0]
-        sources = " ".join(f"cpp/{x}" for x in [file] + list(companions.get(file, [])))
+    jobs = [(os.path.splitext(f)[0], [f"cpp/{x}" for x in [f] + list(companions.get(f, []))])
+            for f in executables]
+    taken = {n for n, _ in jobs}
+    for rel in marked_execs:
+        name = os.path.splitext(os.path.basename(rel))[0]
+        if name in taken:
+            logging.warning(f"Marked file {rel}: executable '{name}' already exists, skipped")
+            continue
+        taken.add(name)
+        jobs.append((name, [rel]))
+    for exec_name, srcs in jobs:
+        sources = " ".join(srcs + [x for x in extra_sources if x not in srcs])
         auto += f"add_executable({exec_name} {sources})\n"
         auto += f"ament_target_dependencies({exec_name} {deps_str})\n"
         if link_libs:
@@ -277,18 +329,21 @@ def generate_cpp_build_files(src_dir: str, created_files=None):
     Возвращает (apt_packages: set, executable_names: set).
     """
     pkg_name = package_name_from_dir(os.path.dirname(src_dir))
-    scan = scan_sources(os.path.join(src_dir, "cpp"))
+    from core import build_marks
+    marked = build_marks.marked_files(src_dir, build_marks.load(os.path.dirname(src_dir)))
+    scan = scan_sources(os.path.join(src_dir, "cpp"), marked)
 
     if scan.unresolved:
         logging.warning(f"CMake deps found but not in apt registry (add to "
                         f"core/generators/dependency_registry.json): "
                         f"{sorted(scan.unresolved)}")
-    if not scan.executables:
+    if not scan.executables and not scan.marked_execs:
         logging.warning("No .cpp file with int main() found — nothing to build as executable.")
 
     cmake_path = os.path.join(src_dir, "CMakeLists.txt")
     auto = render_cmake_auto(pkg_name, scan.deps, scan.executables,
-                             scan.find_only, scan.link_libs, scan.companions)
+                             scan.find_only, scan.link_libs, scan.companions,
+                             scan.extra_sources, scan.marked_execs, scan.include_dirs)
     cmake = render_cmake(auto, resolve_user_block(cmake_path, auto))
     logging.info("CMakeLists.txt сгенерирован/обновлен" if write_if_changed(cmake_path, cmake)
                  else "⏭ CMakeLists.txt пропущен (нет изменений)")
@@ -298,4 +353,6 @@ def generate_cpp_build_files(src_dir: str, created_files=None):
                  if write_if_changed(pkg_path, render_package_xml(pkg_name, scan.deps | scan.xml_extra))
                  else "⏭ package.xml пропущен (нет изменений)")
 
-    return scan.apt, {os.path.splitext(f)[0] for f in scan.executables}
+    names = {os.path.splitext(f)[0] for f in scan.executables}
+    names |= {os.path.splitext(os.path.basename(f))[0] for f in scan.marked_execs}
+    return scan.apt, names

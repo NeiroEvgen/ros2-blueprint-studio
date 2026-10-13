@@ -15,14 +15,18 @@ from ui.code_editor import CodeEditor, CodeHighlighter, mode_for_path
 from ui.qt_worker import TaskHost
 from ui import icons
 from core.i18n import t
+from core import build_marks
 
 _PLACEHOLDER = "__loading__"
 ROLE_PATH = QtCore.Qt.UserRole
 ROLE_DIR = QtCore.Qt.UserRole + 1
+COL_MARK = 2
+_MARK_COLORS = {build_marks.YELLOW: "#e6c200", build_marks.GREEN: "#4caf50"}
 
 
 class FileBrowser(QtWidgets.QWidget):
     log = QtCore.Signal(str)
+    marks_changed = QtCore.Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -33,6 +37,8 @@ class FileBrowser(QtWidgets.QWidget):
         self._loading_text = False
         self._current_idx = -1
         self._orphan_path = None     # файл, чей источник пропал (связь оборвалась)
+        self._local_root = None      # src/ проекта; отметки сборки только для него
+        self._marks = {}
         self._build_ui()
         self.set_sources(None, None)
 
@@ -53,7 +59,9 @@ class FileBrowser(QtWidgets.QWidget):
 
         split = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self.tree = QtWidgets.QTreeWidget()
-        self.tree.setHeaderLabels([t("fb.col_name"), t("fb.col_size")])
+        self.tree.setHeaderLabels([t("fb.col_name"), t("fb.col_size"), t("fb.col_build")])
+        self.tree.headerItem().setToolTip(COL_MARK, t("fb.build_tip"))
+        self.tree.itemClicked.connect(self._on_click)
         self.tree.itemExpanded.connect(self._on_expand)
         self.tree.itemDoubleClicked.connect(self._on_open)
         split.addWidget(self.tree)
@@ -91,6 +99,8 @@ class FileBrowser(QtWidgets.QWidget):
         """
         old_provider = self._provider
         self._sources = []
+        self._local_root = local_root if (local_root and os.path.isdir(local_root)) else None
+        self._reload_marks()
         if local_root and os.path.isdir(local_root):
             self._sources.append((t("fb.src_project"), LocalProvider(), local_root))
         if session is not None and session.connected:
@@ -133,6 +143,64 @@ class FileBrowser(QtWidgets.QWidget):
         self.reload_tree()
         self._update_title()
 
+    # ---------- отметки сборки ----------
+
+    def _project_dir(self):
+        return os.path.dirname(os.path.normpath(self._local_root)) if self._local_root else None
+
+    def _marks_active(self):
+        """Отметки есть только у локального проекта (источник №0 — проект)."""
+        return bool(self._local_root) and self._current_idx == 0 and bool(self._sources) \
+            and self._sources[0][2] == self._local_root
+
+    def _reload_marks(self):
+        pd = self._project_dir()
+        self._marks = build_marks.load(pd) if pd else {}
+
+    def _rel(self, path):
+        return build_marks.norm(os.path.relpath(path, self._local_root))
+
+    def _paint_mark(self, item):
+        path = item.data(0, ROLE_PATH)
+        if not self._marks_active() or not path or path == self._local_root:
+            item.setText(COL_MARK, "")
+            return
+        rel = self._rel(path)
+        own = self._marks.get(rel)
+        st = own or build_marks.effective(self._marks, rel)
+        item.setTextAlignment(COL_MARK, QtCore.Qt.AlignCenter)
+        if st is None:
+            item.setText(COL_MARK, "○")
+            item.setForeground(COL_MARK, QtGui.QBrush(QtGui.QColor("#666")))
+            item.setToolTip(COL_MARK, t("fb.mark_none"))
+            return
+        item.setText(COL_MARK, "●")
+        col = QtGui.QColor(_MARK_COLORS[st])
+        if own is None:                      # унаследована от папки — бледнее
+            col.setAlpha(120)
+        item.setForeground(COL_MARK, QtGui.QBrush(col))
+        item.setToolTip(COL_MARK, t("fb.mark_" + st))
+
+    def _on_click(self, item, col):
+        if col != COL_MARK or not self._marks_active():
+            return
+        path = item.data(0, ROLE_PATH)
+        if not path or path == self._local_root:
+            return
+        rel = self._rel(path)
+        cur = self._marks.get(rel)
+        self._marks = build_marks.set_mark(self._project_dir(), rel, build_marks.next_state(cur))
+        self._repaint_marks()
+        self.marks_changed.emit()
+
+    def _repaint_marks(self):
+        def walk(it):
+            self._paint_mark(it)
+            for i in range(it.childCount()):
+                walk(it.child(i))
+        for i in range(self.tree.topLevelItemCount()):
+            walk(self.tree.topLevelItem(i))
+
     def _on_source_changed(self, idx):
         """Смену источника инициировал пользователь в комбобоксе."""
         if not self._confirm_discard():
@@ -153,6 +221,7 @@ class FileBrowser(QtWidgets.QWidget):
 
     def reload_tree(self):
         self.tree.clear()
+        self.tree.setColumnHidden(COL_MARK, not self._marks_active())
         root = self._current_root()
         if not self._provider or not root:
             return
@@ -181,6 +250,7 @@ class FileBrowser(QtWidgets.QWidget):
                 if e.is_dir:
                     child.addChild(QtWidgets.QTreeWidgetItem([_PLACEHOLDER]))
                 item.addChild(child)
+                self._paint_mark(child)
 
         def fail(msg):
             item.takeChildren()

@@ -323,5 +323,10 @@
   "launcher.single_canvas_tip": "One graph for Python and C++ nodes. Takes effect on next launch. Turn off to return to separate Python and C++ tabs. Saves project in format v4 (Studio 0.5.x cannot open it; a backup of the old state is kept).",
   "timing.summary": "Timings: {parts} (total {total}s)",
   "build.deps_cached": "Dependencies unchanged since last run — skipping apt/rosdep.",
-  "dash.close": "Close"
+  "dash.close": "Close",
+  "fb.col_build": "Build",
+  "fb.build_tip": "Click to cycle: none → yellow (CMake) → green (CMake + canvas node)",
+  "fb.mark_none": "Not included in the build",
+  "fb.mark_yellow": "Yellow: included in CMakeLists.txt",
+  "fb.mark_green": "Green: in CMakeLists.txt and shown on the canvas"
 }
