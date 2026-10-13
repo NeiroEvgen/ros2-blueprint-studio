@@ -20,16 +20,16 @@ def _project(tmp_path):
     cpp = proj / "src" / "cpp"
     (cpp / "kin").mkdir(parents=True)
     (proj / ".blueprint").mkdir()
-    (cpp / "node.cpp").write_text("#include <rclcpp/rclcpp.hpp>\nint main(){}\n")
-    (cpp / "kin" / "solver.hpp").write_text("#pragma once\n")
-    (cpp / "kin" / "solver.cpp").write_text('#include "solver.hpp"\n#include <opencv2/core.hpp>\n')
-    (cpp / "kin" / "tool.cpp").write_text("int main(){}\n")
+    (cpp / "node.cpp").write_text("#include <rclcpp/rclcpp.hpp>\nint main(){}\n", encoding="utf-8")
+    (cpp / "kin" / "solver.hpp").write_text("#pragma once\n", encoding="utf-8")
+    (cpp / "kin" / "solver.cpp").write_text('#include "solver.hpp"\n#include <opencv2/core.hpp>\n', encoding="utf-8")
+    (cpp / "kin" / "tool.cpp").write_text("int main(){}\n", encoding="utf-8")
     return proj, proj / "src"
 
 
 def _gen(src):
     ProjectManager(None, None)._generate_cpp_build_files(str(src), [])
-    return (src / "CMakeLists.txt").read_text()
+    return (src / "CMakeLists.txt").read_text(encoding="utf-8")
 
 
 def test_marks_roundtrip_and_cycle(tmp_path):
@@ -100,7 +100,7 @@ def test_missing_marked_file_is_ignored(tmp_path):
 
 def test_duplicate_executable_name_skipped(tmp_path):
     proj, src = _project(tmp_path)
-    (src / "cpp" / "kin" / "node.cpp").write_text("int main(){}\n")
+    (src / "cpp" / "kin" / "node.cpp").write_text("int main(){}\n", encoding="utf-8")
     bm.set_mark(str(proj), "cpp/kin/node.cpp", bm.YELLOW)
     assert _gen(src).count("add_executable(node ") == 1
 
@@ -153,18 +153,18 @@ def _mixed_project(tmp_path):
     root = tmp_path / "mix"
     for d in ("src/cpp", "src/python", ".blueprint", "docker"):
         (root / d).mkdir(parents=True)
-    (root / "project_config.json").write_text(json.dumps({"name": "mix", "type": "mixed"}))
-    (root / "src/cpp/solver.cpp").write_text("#include <rclcpp/rclcpp.hpp>\nint main(){}\n// mine\n")
-    (root / "src/python/cam.py").write_text("print('mine')\n")
+    (root / "project_config.json").write_text(json.dumps({"name": "mix", "type": "mixed"}), encoding="utf-8")
+    (root / "src/cpp/solver.cpp").write_text("#include <rclcpp/rclcpp.hpp>\nint main(){}\n// mine\n", encoding="utf-8")
+    (root / "src/python/cam.py").write_text("print('mine')\n", encoding="utf-8")
     (root / "src/cpp/sub").mkdir()
-    (root / "src/cpp/sub/deep.cpp").write_text("int main(){}\n")
+    (root / "src/cpp/sub/deep.cpp").write_text("int main(){}\n", encoding="utf-8")
     return root
 
 
 def test_green_node_files_split_code_and_plain(tmp_path):
     root = _mixed_project(tmp_path)
-    (root / "src/cpp/sub/deep.hpp").write_text("#pragma once\n")
-    (root / "src/CMakeLists.txt").write_text("project(x)\n")
+    (root / "src/cpp/sub/deep.hpp").write_text("#pragma once\n", encoding="utf-8")
+    (root / "src/CMakeLists.txt").write_text("project(x)\n", encoding="utf-8")
     for rel in ("cpp/solver.cpp", "python/cam.py", "cpp/sub/deep.cpp", "cpp/sub/deep.hpp", "CMakeLists.txt"):
         bm.set_mark(str(root), rel, bm.GREEN)
     code, plain = bm.green_node_files(str(root), ("cpp", "python"))
@@ -183,12 +183,12 @@ def test_bound_nested_node_keeps_file_in_place_and_launches_it(tmp_path):
     root = _mixed_project(tmp_path)
     (root / "src/python/tools").mkdir()
     code = "print('nested mine')\n"
-    (root / "src/python/tools/deep.py").write_text(code)
+    (root / "src/python/tools/deep.py").write_text(code, encoding="utf-8")
     node = {"node": {"name": "deep", "ports": [], "custom": {
         "bound_file": "python/tools/deep.py", "source_file": "deep.py", "code_content": ""}},
         "namespace": "", "container_group": "main"}
     created = node_sources.process_flat_nodes([node], str(root / "src/python"), "python")
-    assert (root / "src/python/tools/deep.py").read_text() == code        # не затёрт и не скопирован
+    assert (root / "src/python/tools/deep.py").read_text(encoding="utf-8") == code        # не затёрт и не скопирован
     assert not (root / "src/python/deep.py").exists()
     assert created[0]["relpath"] == "tools/deep.py"
     launch = LaunchCompiler(created, "mix").compile()
@@ -218,9 +218,9 @@ def test_green_file_becomes_node_bound_to_disk_file(app, tmp_path, single):
         res = w.project_manager.save_project(str(root))
         assert res and res[0] is True
         # код файла не затёрт шаблоном, файл остался на месте
-        assert "// mine" in (root / "src/cpp/solver.cpp").read_text()
-        assert "mine" in (root / "src/python/cam.py").read_text()
-        cm = (root / "src/CMakeLists.txt").read_text()
+        assert "// mine" in (root / "src/cpp/solver.cpp").read_text(encoding="utf-8")
+        assert "mine" in (root / "src/python/cam.py").read_text(encoding="utf-8")
+        cm = (root / "src/CMakeLists.txt").read_text(encoding="utf-8")
         assert "add_executable(solver cpp/solver.cpp)" in cm and "add_executable(deep cpp/sub/deep.cpp)" in cm
         assert (root / "src/cpp/sub/deep.cpp").exists() and not (root / "src/cpp/deep.cpp").exists()
     finally:
@@ -246,7 +246,7 @@ def test_green_cmake_file_becomes_editable_file_node(app, tmp_path, single):
         nodes = [n for g in w.graphs.all() for n in g.all_nodes() if n.type_ == w.project_manager.FILE_NODE_TYPE]
         assert sorted(n.get_property("bound_file") for n in nodes) == ["CMakeLists.txt", "package.xml"]
         node = next(n for n in nodes if n.get_property("bound_file") == "CMakeLists.txt")
-        assert node.get_property("code_content") == cmake.read_text()
+        assert node.get_property("code_content") == cmake.read_text(encoding="utf-8")
 
         # правка в ноде → в файл при Save (USER-зона живёт, AUTO перегенерируется)
         from core.generators.build_generator import CMAKE_USER_END
@@ -254,14 +254,14 @@ def test_green_cmake_file_becomes_editable_file_node(app, tmp_path, single):
             CMAKE_USER_END, "find_package(yaml-cpp REQUIRED)\n" + CMAKE_USER_END)
         node.set_property("code_content", edited)
         assert w.project_manager.save_project(str(root))
-        assert "find_package(yaml-cpp REQUIRED)" in cmake.read_text()
-        assert node.get_property("code_content") == cmake.read_text()       # нода обновлена из файла
+        assert "find_package(yaml-cpp REQUIRED)" in cmake.read_text(encoding="utf-8")
+        assert node.get_property("code_content") == cmake.read_text(encoding="utf-8")       # нода обновлена из файла
         # ноды-файлы не попали ни в код, ни в launch
         assert not (root / "src/cpp/CMakeLists.cpp").exists()
-        assert "CMakeLists" not in (root / "src/launch/project_launch.py").read_text()
+        assert "CMakeLists" not in (root / "src/launch/project_launch.py").read_text(encoding="utf-8")
 
         # правка на диске → в ноду
-        cmake.write_text(cmake.read_text() + "# from disk\n")
+        cmake.write_text(cmake.read_text(encoding="utf-8") + "# from disk\n")
         w.project_manager.sync_file_nodes(str(root / "src"))
         assert "# from disk" in node.get_property("code_content")
     finally:
@@ -277,7 +277,7 @@ def test_file_node_survives_save_and_reload(app, tmp_path, single):
     try:
         root = _mixed_project(tmp_path)
         w.current_project_path = str(root)
-        (root / "src/notes.yaml").write_text("a: 1\n")
+        (root / "src/notes.yaml").write_text("a: 1\n", encoding="utf-8")
         bm.set_mark(str(root), "notes.yaml", bm.GREEN)
         assert w.sync_green_nodes() == 1
         assert w.project_manager.save_project(str(root))
