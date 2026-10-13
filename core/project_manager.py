@@ -141,11 +141,16 @@ class ProjectManager:
             # 3.1 ОЧИСТКА ФАЙЛОВ-ПРИЗРАКОВ (по ПОЛНОМУ списку — до фильтрации по executable,
             # иначе .cpp-хелперы без main() будут ошибочно сочтены "устаревшими" и удалены).
             # Чистим только код-папку своего языка и только файлы его расширения.
+            from core import build_marks
+            marks = build_marks.load(project_path)
             for lang in languages:
                 valid_files = {cf['filename'] for cf in created_files if cf['language'] == lang}
                 ext = ".cpp" if lang == graph_ir.CPP else ".py"
                 try:
                     for f in os.listdir(code_dirs[lang]):
+                        rel = build_marks.norm(os.path.relpath(os.path.join(code_dirs[lang], f), src_dir))
+                        if build_marks.effective(marks, rel):
+                            continue       # отмечен во вкладке Files — не призрак
                         if f.endswith(ext) and f not in valid_files:
                             os.remove(os.path.join(code_dirs[lang], f))
                             logging.info(f"Удалён устаревший файл: {f}")

@@ -330,5 +330,6 @@
   "fb.build_tip": "Клик переключает: нет → жёлтая (CMake) → зелёная (CMake + нода на столе)",
   "fb.mark_none": "Не входит в сборку",
   "fb.mark_yellow": "Жёлтая: файл включён в CMakeLists.txt",
-  "fb.mark_green": "Зелёная: в CMakeLists.txt и виден на рабочем столе"
+  "fb.mark_green": "Зелёная: в CMakeLists.txt и виден на рабочем столе",
+  "log.green_nodes": "На стол добавлено нод: {count} (файлы с зелёной отметкой)"
 }

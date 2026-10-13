@@ -328,5 +328,6 @@
   "fb.build_tip": "Click to cycle: none → yellow (CMake) → green (CMake + canvas node)",
   "fb.mark_none": "Not included in the build",
   "fb.mark_yellow": "Yellow: included in CMakeLists.txt",
-  "fb.mark_green": "Green: in CMakeLists.txt and shown on the canvas"
+  "fb.mark_green": "Green: in CMakeLists.txt and shown on the canvas",
+  "log.green_nodes": "Added {count} node(s) to the canvas for green-marked files"
 }

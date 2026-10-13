@@ -109,6 +109,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                     add_tab(self.remote_panel, "tab.remote")
                     self.file_browser = FileBrowser()
                     self.file_browser.log.connect(self.system_log)
+                    self.file_browser.marks_changed.connect(self.sync_green_nodes)
                     add_tab(self.file_browser, "tab.files")
         # 2. Graph Setup (delegated to ui/graph_setup.py)
         self.graph_py, self.graph_cpp, self.f_py, self.f_cpp = setup_graphs(
@@ -512,6 +513,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         if hasattr(self, "file_browser"):
             self.file_browser.set_sources(os.path.join(path, "src"), None)
             self._refresh_container_counts()
+        self.sync_green_nodes()
         self._load_real_robot_flag()
         self._refresh_context()
         self.system_log(t("log.project_loaded", path=path, type=p_type.upper()))
@@ -844,6 +846,44 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         'cpp': 'ros.cpp.CppCustomNode',
         'python': 'ros.py.PyStringPubNode',
     }
+
+    def sync_green_nodes(self):
+        """Файлы с зелёной отметкой (вкладка Files) → ноды на столе, привязанные к файлу на диске.
+        Снятие отметки ноду НЕ удаляет: у неё могут быть провода и настройки."""
+        path = getattr(self, "current_project_path", None)
+        if not path:
+            return 0
+        from core import build_marks, graph_ir
+        from core.node_sources import code_hash
+        from core.workspace_manager import WorkspaceManager
+        langs = graph_ir.project_languages(WorkspaceManager.get_project_type(path))
+        created = 0
+        for lang, filename, rel in build_marks.green_node_files(path, langs):
+            graph = self.graphs.for_language(lang)
+            if any(n.has_property('source_file') and n.get_property('source_file') == filename
+                   and (('cpp' in n.type_) == (lang == 'cpp'))
+                   for g in self.graphs.all() for n in g.all_nodes()):
+                continue
+            try:
+                full = os.path.join(path, "src", rel)
+                with open(full, 'r', encoding='utf-8') as f:
+                    code = f.read()
+                stem = os.path.splitext(filename)[0]
+                taken = len(graph.all_nodes())
+                node = graph.create_node(self.IMPORT_NODE_TYPES[lang], name=stem,
+                                         pos=[(taken % 4) * 320, (taken // 4) * 220])
+                for prop, val in (('source_file', filename), ('code_content', code),
+                                  ('code_sync_hash', code_hash(code))):
+                    if not node.has_property(prop):
+                        node.create_property(prop, val)
+                    node.set_property(prop, val)
+                created += 1
+            except Exception as e:
+                self.system_log(t("log.node_failed", file=filename, error=e))
+        if created:
+            self._refresh_container_counts()
+            self.system_log(t("log.green_nodes", count=created))
+        return created
 
     def on_import_foreign_project(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(

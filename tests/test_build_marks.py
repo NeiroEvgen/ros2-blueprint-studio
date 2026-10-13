@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from tests.test_save_safety import project  # noqa: F401  (fixture)
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from core import build_marks as bm
@@ -131,3 +132,69 @@ def test_marks_hidden_for_non_project_source(app):
     from ui.file_browser import FileBrowser, COL_MARK
     fb = FileBrowser()
     assert fb.tree.isColumnHidden(COL_MARK)
+
+
+def test_save_keeps_marked_top_level_file(project):
+    """Файл в cpp/ без ноды, но с отметкой, не считается «призраком» и не удаляется при Save."""
+    from tests.test_save_safety import save, cpp_node, MAIN
+    save(project, nodes=[cpp_node("a", MAIN), cpp_node("b", MAIN)])
+    bm.set_mark(str(project), "cpp/b.cpp", bm.YELLOW)
+    save(project, nodes=[cpp_node("a", MAIN)])
+    assert (project / "src/cpp/b.cpp").exists()
+    bm.set_mark(str(project), "cpp/b.cpp", None)
+    save(project, nodes=[cpp_node("a", MAIN)])
+    assert not (project / "src/cpp/b.cpp").exists()
+
+
+# ---------- зелёные отметки → ноды на столе ----------
+
+def _mixed_project(tmp_path):
+    import json
+    root = tmp_path / "mix"
+    for d in ("src/cpp", "src/python", ".blueprint", "docker"):
+        (root / d).mkdir(parents=True)
+    (root / "project_config.json").write_text(json.dumps({"name": "mix", "type": "mixed"}))
+    (root / "src/cpp/solver.cpp").write_text("#include <rclcpp/rclcpp.hpp>\nint main(){}\n// mine\n")
+    (root / "src/python/cam.py").write_text("print('mine')\n")
+    (root / "src/cpp/sub").mkdir()
+    (root / "src/cpp/sub/deep.cpp").write_text("int main(){}\n")
+    return root
+
+
+def test_green_node_files_only_top_level(tmp_path):
+    root = _mixed_project(tmp_path)
+    for rel in ("cpp/solver.cpp", "python/cam.py", "cpp/sub/deep.cpp"):
+        bm.set_mark(str(root), rel, bm.GREEN)
+    assert bm.green_node_files(str(root), ("cpp", "python")) == [
+        ("cpp", "solver.cpp", "cpp/solver.cpp"), ("python", "cam.py", "python/cam.py")]
+    bm.set_mark(str(root), "cpp/solver.cpp", bm.YELLOW)
+    assert [f for _, f, _ in bm.green_node_files(str(root), ("cpp", "python"))] == ["cam.py"]
+
+
+@pytest.mark.parametrize("single", [True, False])
+def test_green_file_becomes_node_bound_to_disk_file(app, tmp_path, single):
+    from core import settings
+    from ui import main_window as mw
+    settings.set("single_canvas", single)
+    w = mw.RosVisualRunner()
+    try:
+        root = _mixed_project(tmp_path)
+        w.current_project_path = str(root)
+        bm.set_mark(str(root), "cpp/solver.cpp", bm.GREEN)
+        bm.set_mark(str(root), "python/cam.py", bm.GREEN)
+        assert w.sync_green_nodes() == 2
+        assert w.sync_green_nodes() == 0                     # повторно дублей нет
+        assert {n.get_property("source_file") for g in w.graphs.all() for n in g.all_nodes()} \
+            == {"solver.cpp", "cam.py"}
+        if not single:
+            assert [n.name() for n in w.graph_cpp.all_nodes()] == ["solver"]
+            assert [n.name() for n in w.graph_py.all_nodes()] == ["cam"]
+
+        res = w.project_manager.save_project(str(root))
+        assert res and res[0] is True
+        # код файла не затёрт шаблоном, файл остался на месте
+        assert "// mine" in (root / "src/cpp/solver.cpp").read_text()
+        assert "mine" in (root / "src/python/cam.py").read_text()
+        assert "add_executable(solver cpp/solver.cpp)" in (root / "src/CMakeLists.txt").read_text()
+    finally:
+        w.close(); w.deleteLater()

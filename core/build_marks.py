@@ -95,3 +95,24 @@ def marked_files(src_dir: str, marks: dict, states=STATES) -> list:
                     if effective(marks, r) in states:
                         out.add(r)
     return sorted(out)
+
+
+def green_node_files(project_dir: str, languages) -> list:
+    """
+    Зелёные файлы, которым нужна нода на столе: лежат прямо в папке кода языка
+    (src/cpp/x.cpp, src/python/x.py). Вложенные файлы ноды не получают —
+    генератор кода работает с плоскими папками.
+    Возвращает [(language, filename, rel_path)], отсортировано.
+    """
+    from core.layout import ProjectLayout
+    layout = ProjectLayout(project_dir)
+    marks = load(project_dir)
+    green = set(marked_files(layout.src, marks, states=(GREEN,)))
+    out = []
+    for lang in languages:
+        ext = ".cpp" if lang == "cpp" else ".py"
+        prefix = norm(os.path.relpath(layout.code_dir(lang), layout.src)) + "/"
+        for rel in sorted(green):
+            if rel.startswith(prefix) and "/" not in rel[len(prefix):] and rel.endswith(ext):
+                out.append((lang, rel[len(prefix):], rel))
+    return out
