@@ -66,6 +66,42 @@ class ProjectManager:
             except Exception as e:      # синхронизация — удобство, а не причина провала сохранения
                 logging.warning(f"Live node sync skipped: {e}")
 
+    FILE_NODE_TYPE = "ros.nodes.meta.FileNode"
+
+    def sync_file_nodes(self, src_dir):
+        """
+        Ноды-файлы (зелёная отметка) ↔ файлы на диске, по тем же правилам, что у нод с кодом
+        (core.node_sources.choose_code): правка в Studio → в файл, правка на диске → в ноду,
+        обе → побеждает диск. Возвращает число обновлённых нод.
+        """
+        graphs = [self.graph_py] if self.single else [self.graph_py, self.graph_cpp]
+        changed = 0
+        for g in graphs:
+            for n in g.all_nodes():
+                if getattr(n, "type_", "") != self.FILE_NODE_TYPE or not n.has_property('bound_file'):
+                    continue
+                rel = (n.get_property('bound_file') or '').replace('\\', '/').strip('/')
+                full = os.path.normpath(os.path.join(src_dir, rel))
+                if not rel or not os.path.isfile(full):
+                    continue
+                try:
+                    with open(full, 'r', encoding='utf-8') as f:
+                        disk = f.read()
+                except (OSError, UnicodeDecodeError):
+                    continue                     # бинарный файл — ноде нечего показывать
+                node_code = n.get_property('code_content') or ''
+                code, why = node_sources.choose_code(node_code, disk, n.get_property('code_sync_hash'))
+                if why == "conflict":
+                    logging.warning(f"{rel}: изменён и в Studio, и на диске — взята версия с диска")
+                if node_sources.code_hash(code) != node_sources.code_hash(disk):
+                    with open(full, 'w', encoding='utf-8') as f:
+                        f.write(code)
+                if code != node_code:
+                    n.set_property('code_content', code)
+                    changed += 1
+                n.set_property('code_sync_hash', node_sources.code_hash(code))
+        return changed
+
     def save_project(self, project_path):
         print("[SAVE DEBUG] save_project ВЫЗВАН, path=", project_path)
         self.last_warnings = []
@@ -87,6 +123,7 @@ class ProjectManager:
 
             logging.info(f"Saving project {pkg_name} ({project_type}) into {sorted(code_dirs.values())}")
 
+            self.sync_file_nodes(src_dir)              # правки нод-файлов → на диск, до serialize
             self._backup_dynamic_ports(self.graph_py)
             if not self.single:
                 self._backup_dynamic_ports(self.graph_cpp)
@@ -190,6 +227,7 @@ class ProjectManager:
             except Exception as ce:
                 logging.warning(f"Compose skipped: {ce}")
 
+            self.sync_file_nodes(src_dir)              # CMakeLists/launch перегенерированы → нода показывает свежий файл
             return True, cpp_apt_deps
 
         except Exception as e:

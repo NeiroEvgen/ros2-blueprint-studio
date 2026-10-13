@@ -161,18 +161,18 @@ def _mixed_project(tmp_path):
     return root
 
 
-def test_green_node_files_any_depth_and_skips(tmp_path):
+def test_green_node_files_split_code_and_plain(tmp_path):
     root = _mixed_project(tmp_path)
     (root / "src/cpp/sub/deep.hpp").write_text("#pragma once\n")
-    for rel in ("cpp/solver.cpp", "python/cam.py", "cpp/sub/deep.cpp", "cpp/sub/deep.hpp"):
+    (root / "src/CMakeLists.txt").write_text("project(x)\n")
+    for rel in ("cpp/solver.cpp", "python/cam.py", "cpp/sub/deep.cpp", "cpp/sub/deep.hpp", "CMakeLists.txt"):
         bm.set_mark(str(root), rel, bm.GREEN)
-    nodes, skipped = bm.green_node_files(str(root), ("cpp", "python"))
-    assert nodes == [("cpp", "solver.cpp", "cpp/solver.cpp"), ("cpp", "deep.cpp", "cpp/sub/deep.cpp"),
-                     ("python", "cam.py", "python/cam.py")]
-    assert skipped == [("cpp/sub/deep.hpp", "not_source")]
-    nodes, skipped = bm.green_node_files(str(root), ("python",))
-    assert [n[1] for n in nodes] == ["cam.py"] and {r for r, w in skipped if w == "language"} == \
-        {"cpp/solver.cpp", "cpp/sub/deep.cpp"}
+    code, plain = bm.green_node_files(str(root), ("cpp", "python"))
+    assert code == [("cpp", "solver.cpp", "cpp/solver.cpp"), ("cpp", "deep.cpp", "cpp/sub/deep.cpp"),
+                    ("python", "cam.py", "python/cam.py")]
+    assert plain == ["CMakeLists.txt", "cpp/sub/deep.hpp"]
+    code, plain = bm.green_node_files(str(root), ("python",))       # .cpp в python-проекте — просто файл
+    assert [n[1] for n in code] == ["cam.py"] and "cpp/solver.cpp" in plain
     bm.set_mark(str(root), "cpp/solver.cpp", bm.YELLOW)
     assert "solver.cpp" not in [n[1] for n in bm.green_node_files(str(root), ("cpp",))[0]]
 
@@ -223,5 +223,69 @@ def test_green_file_becomes_node_bound_to_disk_file(app, tmp_path, single):
         cm = (root / "src/CMakeLists.txt").read_text()
         assert "add_executable(solver cpp/solver.cpp)" in cm and "add_executable(deep cpp/sub/deep.cpp)" in cm
         assert (root / "src/cpp/sub/deep.cpp").exists() and not (root / "src/cpp/deep.cpp").exists()
+    finally:
+        w.close(); w.deleteLater()
+
+
+@pytest.mark.parametrize("single", [True, False])
+def test_green_cmake_file_becomes_editable_file_node(app, tmp_path, single):
+    from core import settings
+    from ui import main_window as mw
+    settings.set("single_canvas", single)
+    w = mw.RosVisualRunner()
+    try:
+        root = _mixed_project(tmp_path)
+        w.current_project_path = str(root)
+        bm.set_mark(str(root), "cpp/solver.cpp", bm.YELLOW)
+        assert w.project_manager.save_project(str(root))
+        cmake = root / "src/CMakeLists.txt"
+        assert cmake.exists()
+        bm.set_mark(str(root), "CMakeLists.txt", bm.GREEN)
+        bm.set_mark(str(root), "package.xml", bm.GREEN)
+        assert w.sync_green_nodes() == 2 and w.sync_green_nodes() == 0
+        nodes = [n for g in w.graphs.all() for n in g.all_nodes() if n.type_ == w.project_manager.FILE_NODE_TYPE]
+        assert sorted(n.get_property("bound_file") for n in nodes) == ["CMakeLists.txt", "package.xml"]
+        node = next(n for n in nodes if n.get_property("bound_file") == "CMakeLists.txt")
+        assert node.get_property("code_content") == cmake.read_text()
+
+        # правка в ноде → в файл при Save (USER-зона живёт, AUTO перегенерируется)
+        from core.generators.build_generator import CMAKE_USER_END
+        edited = node.get_property("code_content").replace(
+            CMAKE_USER_END, "find_package(yaml-cpp REQUIRED)\n" + CMAKE_USER_END)
+        node.set_property("code_content", edited)
+        assert w.project_manager.save_project(str(root))
+        assert "find_package(yaml-cpp REQUIRED)" in cmake.read_text()
+        assert node.get_property("code_content") == cmake.read_text()       # нода обновлена из файла
+        # ноды-файлы не попали ни в код, ни в launch
+        assert not (root / "src/cpp/CMakeLists.cpp").exists()
+        assert "CMakeLists" not in (root / "src/launch/project_launch.py").read_text()
+
+        # правка на диске → в ноду
+        cmake.write_text(cmake.read_text() + "# from disk\n")
+        w.project_manager.sync_file_nodes(str(root / "src"))
+        assert "# from disk" in node.get_property("code_content")
+    finally:
+        w.close(); w.deleteLater()
+
+
+@pytest.mark.parametrize("single", [True, False])
+def test_file_node_survives_save_and_reload(app, tmp_path, single):
+    from core import settings
+    from ui import main_window as mw
+    settings.set("single_canvas", single)
+    w = mw.RosVisualRunner()
+    try:
+        root = _mixed_project(tmp_path)
+        w.current_project_path = str(root)
+        (root / "src/notes.yaml").write_text("a: 1\n")
+        bm.set_mark(str(root), "notes.yaml", bm.GREEN)
+        assert w.sync_green_nodes() == 1
+        assert w.project_manager.save_project(str(root))
+        for g in w.graphs.all():
+            g.clear_session()
+        assert w.project_manager.load_project(str(root))
+        found = [n for g in w.graphs.all() for n in g.all_nodes() if n.type_ == w.project_manager.FILE_NODE_TYPE]
+        assert [n.get_property("bound_file") for n in found] == ["notes.yaml"]
+        assert w.sync_green_nodes() == 0                      # после загрузки дубля нет
     finally:
         w.close(); w.deleteLater()

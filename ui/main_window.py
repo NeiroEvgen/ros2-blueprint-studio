@@ -857,6 +857,37 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             return bound == rel
         return node.get_property('source_file') == filename and "/" not in rel.split("/", 1)[-1]
 
+    def _ensure_file_node(self, path, langs, rel):
+        """Нода-файл для зелёного не-кодового файла (CMakeLists.txt, package.xml, заголовок…). 1 — создана."""
+        from core import build_marks
+        from core.node_sources import code_hash
+        if any(n.has_property('bound_file') and n.get_property('bound_file') == rel
+               and n.type_ == self.project_manager.FILE_NODE_TYPE
+               for g in self.graphs.all() for n in g.all_nodes()):
+            return 0
+        lang = build_marks.node_language(rel)
+        if lang not in langs:
+            lang = "cpp" if "cpp" in langs else "python"
+        graph = self.graphs.for_language(lang)
+        try:
+            with open(os.path.join(path, "src", rel), 'r', encoding='utf-8') as f:
+                code = f.read()
+        except (OSError, UnicodeDecodeError) as e:
+            self.system_log(t("log.node_failed", file=rel, error=e))
+            return 0
+        try:
+            taken = len(graph.all_nodes())
+            node = graph.create_node(self.project_manager.FILE_NODE_TYPE, name=os.path.basename(rel),
+                                     pos=[(taken % 4) * 320, (taken // 4) * 220])
+            for prop, val in (('bound_file', rel), ('code_content', code), ('code_sync_hash', code_hash(code))):
+                if not node.has_property(prop):
+                    node.create_property(prop, val)
+                node.set_property(prop, val)
+            return 1
+        except Exception as e:
+            self.system_log(t("log.node_failed", file=rel, error=e))
+            return 0
+
     def sync_green_nodes(self):
         """Файлы с зелёной отметкой (вкладка Files) → ноды на столе, привязанные к файлу на диске.
         Снятие отметки ноду НЕ удаляет: у неё могут быть провода и настройки."""
@@ -867,9 +898,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         from core.node_sources import code_hash
         from core.workspace_manager import WorkspaceManager
         langs = graph_ir.project_languages(WorkspaceManager.get_project_type(path))
-        nodes, skipped = build_marks.green_node_files(path, langs)
-        for rel, why in skipped:
-            self.system_log(t("log.green_skipped_" + why, file=rel))
+        self.project_manager.sync_file_nodes(os.path.join(path, "src"))
+        nodes, plain = build_marks.green_node_files(path, langs)
         created = 0
         for lang, filename, rel in nodes:
             graph = self.graphs.for_language(lang)
@@ -892,6 +922,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 created += 1
             except Exception as e:
                 self.system_log(t("log.node_failed", file=filename, error=e))
+        for rel in plain:
+            created += self._ensure_file_node(path, langs, rel)
         if created:
             self._refresh_container_counts()
             self.system_log(t("log.green_nodes", count=created))

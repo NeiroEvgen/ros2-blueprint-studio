@@ -354,6 +354,7 @@ class UiManager:
             if project_type == "python" and "ros.cpp" in identifier: continue
             if project_type == "cpp" and (".py" in identifier): continue
             if "internal" in identifier: continue
+            if identifier.endswith(".FileNode"): continue      # создаётся зелёной отметкой, не из палитры
 
             item = QtWidgets.QListWidgetItem(name)
             item.setData(QtCore.Qt.UserRole, identifier)

@@ -329,7 +329,5 @@
   "fb.mark_none": "Not included in the build",
   "fb.mark_yellow": "Yellow: included in CMakeLists.txt",
   "fb.mark_green": "Green: in CMakeLists.txt and shown on the canvas",
-  "log.green_nodes": "Added {count} node(s) to the canvas for green-marked files",
-  "log.green_skipped_not_source": "Green mark on {file}: only .cpp/.py files get a canvas node (C++ sources and headers still go to CMake)",
-  "log.green_skipped_language": "Green mark on {file}: this project has no nodes of that language, no canvas node created"
+  "log.green_nodes": "Added {count} node(s) to the canvas for green-marked files"
 }

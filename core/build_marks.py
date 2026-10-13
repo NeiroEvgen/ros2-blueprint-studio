@@ -115,21 +115,18 @@ def green_files(project_dir: str) -> list:
 
 def green_node_files(project_dir: str, languages):
     """
-    Зелёные файлы → (будут_ноды, пропущены).
-      будут_ноды — [(language, filename, rel)] для .cpp/.cc/.cxx и .py любой папки под src/
-                   (кроме launch/ и __init__.py), язык которых есть в проекте;
-      пропущены  — [(rel, причина)]: заголовки, чужие расширения, язык вне проекта.
+    Зелёные файлы → (ноды_с_кодом, ноды_файлы).
+      ноды_с_кодом — [(language, filename, rel)]: .cpp/.cc/.cxx и .py любой папки под src/
+                     (кроме launch/ и __init__.py), язык которых есть в проекте;
+      ноды_файлы   — [rel]: всё остальное (CMakeLists.txt, package.xml, заголовки, yaml…) —
+                     такой файл показывается на столе простой нодой-файлом.
     """
-    nodes, skipped = [], []
+    code, plain = [], []
     for rel in green_files(project_dir):
         lang = node_language(rel)
         base = os.path.basename(rel)
-        if lang is None:
-            skipped.append((rel, "not_source"))
-        elif rel.startswith("launch/") or base.startswith("__"):
-            skipped.append((rel, "not_source"))
-        elif lang not in languages:
-            skipped.append((rel, "language"))
+        if lang in languages and not rel.startswith("launch/") and not base.startswith("__"):
+            code.append((lang, base, rel))
         else:
-            nodes.append((lang, base, rel))
-    return nodes, skipped
+            plain.append(rel)
+    return code, plain
