@@ -20,8 +20,40 @@ from core import build_marks
 _PLACEHOLDER = "__loading__"
 ROLE_PATH = QtCore.Qt.UserRole
 ROLE_DIR = QtCore.Qt.UserRole + 1
+ROLE_MARK = QtCore.Qt.UserRole + 2     # (состояние, унаследовано?) — рисует MarkDelegate
 COL_MARK = 2
 _MARK_COLORS = {build_marks.YELLOW: "#e6c200", build_marks.GREEN: "#4caf50"}
+
+
+class MarkDelegate(QtWidgets.QStyledItemDelegate):
+    """Рисует кружок отметки сам: цвет не зависит от стилей приложения (текст мог выходить белым)."""
+
+    def paint(self, painter, option, index):
+        mark = index.data(ROLE_MARK)
+        if mark is None:
+            return super().paint(painter, option, index)
+        QtWidgets.QApplication.style().drawPrimitive(
+            QtWidgets.QStyle.PE_PanelItemViewItem, option, painter, option.widget)
+        state, inherited = mark
+        r = min(option.rect.height() - 8, 14)
+        c = option.rect.center()
+        rect = QtCore.QRect(c.x() - r // 2, c.y() - r // 2, r, r)
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        if state is None:
+            painter.setPen(QtGui.QPen(QtGui.QColor("#777"), 1.5))
+            painter.setBrush(QtCore.Qt.NoBrush)
+        else:
+            col = QtGui.QColor(_MARK_COLORS[state])
+            if inherited:
+                col.setAlpha(120)
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(col)
+        painter.drawEllipse(rect)
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        return QtCore.QSize(28, 22)
 
 
 class FileBrowser(QtWidgets.QWidget):
@@ -62,6 +94,13 @@ class FileBrowser(QtWidgets.QWidget):
         self.tree.setHeaderLabels([t("fb.col_name"), t("fb.col_size"), t("fb.col_build")])
         self.tree.headerItem().setToolTip(COL_MARK, t("fb.build_tip"))
         self.tree.itemClicked.connect(self._on_click)
+        self.tree.setItemDelegateForColumn(COL_MARK, MarkDelegate(self.tree))
+        hdr = self.tree.header()
+        hdr.setStretchLastSection(False)
+        hdr.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(COL_MARK, QtWidgets.QHeaderView.Fixed)
+        self.tree.setColumnWidth(COL_MARK, 64)
         self.tree.itemExpanded.connect(self._on_expand)
         self.tree.itemDoubleClicked.connect(self._on_open)
         split.addWidget(self.tree)
@@ -82,7 +121,7 @@ class FileBrowser(QtWidgets.QWidget):
         self.editor.textChanged.connect(self._update_title)
         rl.addWidget(self.editor)
         split.addWidget(right)
-        split.setSizes([300, 700])
+        split.setSizes([380, 620])
         lay.addWidget(split)
 
         QtGui.QShortcut(QtGui.QKeySequence.Save, self, activated=self.save_current)
@@ -163,23 +202,13 @@ class FileBrowser(QtWidgets.QWidget):
     def _paint_mark(self, item):
         path = item.data(0, ROLE_PATH)
         if not self._marks_active() or not path or path == self._local_root:
-            item.setText(COL_MARK, "")
+            item.setData(COL_MARK, ROLE_MARK, None)
             return
         rel = self._rel(path)
         own = self._marks.get(rel)
         st = own or build_marks.effective(self._marks, rel)
-        item.setTextAlignment(COL_MARK, QtCore.Qt.AlignCenter)
-        if st is None:
-            item.setText(COL_MARK, "○")
-            item.setForeground(COL_MARK, QtGui.QBrush(QtGui.QColor("#666")))
-            item.setToolTip(COL_MARK, t("fb.mark_none"))
-            return
-        item.setText(COL_MARK, "●")
-        col = QtGui.QColor(_MARK_COLORS[st])
-        if own is None:                      # унаследована от папки — бледнее
-            col.setAlpha(120)
-        item.setForeground(COL_MARK, QtGui.QBrush(col))
-        item.setToolTip(COL_MARK, t("fb.mark_" + st))
+        item.setData(COL_MARK, ROLE_MARK, (st, own is None and st is not None))
+        item.setToolTip(COL_MARK, t("fb.mark_" + st) if st else t("fb.mark_none"))
 
     def _on_click(self, item, col):
         if col != COL_MARK or not self._marks_active():

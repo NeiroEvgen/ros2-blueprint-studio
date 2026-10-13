@@ -106,7 +106,7 @@ def test_duplicate_executable_name_skipped(tmp_path):
 
 
 def test_file_browser_marks_column(app, tmp_path):
-    from ui.file_browser import FileBrowser, COL_MARK
+    from ui.file_browser import FileBrowser, COL_MARK, ROLE_MARK
     proj, src = _project(tmp_path)
     fb = FileBrowser()
     fb.set_sources(str(src), None)
@@ -120,10 +120,10 @@ def test_file_browser_marks_column(app, tmp_path):
     it.setData(0, QtCore.Qt.UserRole, path)
     top.addChild(it)
     fb._on_click(it, COL_MARK)
-    assert bm.load(str(proj)) == {"cpp/node.cpp": "yellow"} and it.text(COL_MARK) == "●"
+    assert bm.load(str(proj)) == {"cpp/node.cpp": "yellow"} and it.data(COL_MARK, ROLE_MARK) == ("yellow", False)
     fb._on_click(it, COL_MARK)
     fb._on_click(it, COL_MARK)
-    assert bm.load(str(proj)) == {} and it.text(COL_MARK) == "○" and len(seen) == 3
+    assert bm.load(str(proj)) == {} and it.data(COL_MARK, ROLE_MARK) == (None, False) and len(seen) == 3
     fb._on_click(it, 1)                       # не колонка отметок
     assert len(seen) == 3
 
