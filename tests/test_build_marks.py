@@ -289,3 +289,76 @@ def test_file_node_survives_save_and_reload(app, tmp_path, single):
         assert w.sync_green_nodes() == 0                      # после загрузки дубля нет
     finally:
         w.close(); w.deleteLater()
+
+
+# ---------- регрессия: отметки папок не ломают CMake и launch ----------
+
+def _g1_like(project):
+    """Проект, похожий на реальный: три узла, хелперы, kinematics_lib, test/ с main()."""
+    from tests.test_save_safety import cpp_node
+    src = project / "src"
+    for d in ("include", "kinematics_lib", "test", "scripts", "python"):
+        (src / d).mkdir(exist_ok=True)
+    main = "#include <rclcpp/rclcpp.hpp>\n{inc}int main(int a,char**b){{return 0;}}\n"
+    code = {
+        "exec_node": main.format(inc='#include "executor_core.hpp"\n'),
+        "plan_node": main.format(inc='#include "mission_core.hpp"\n'),
+        "sim_node": main.format(inc=""),
+    }
+    (src / "cpp/executor_core.hpp").write_text("#pragma once\n", encoding="utf-8")
+    (src / "cpp/executor_core.cpp").write_text('#include "executor_core.hpp"\n', encoding="utf-8")
+    (src / "cpp/mission_core.hpp").write_text("#pragma once\n", encoding="utf-8")
+    (src / "cpp/mission_core.cpp").write_text('#include "mission_core.hpp"\n', encoding="utf-8")
+    (src / "include/api.hpp").write_text("#pragma once\n", encoding="utf-8")
+    (src / "kinematics_lib/solver.hpp").write_text("#pragma once\n", encoding="utf-8")
+    (src / "kinematics_lib/solver.cpp").write_text('#include "solver.hpp"\n', encoding="utf-8")
+    (src / "test/test_solver.cpp").write_text("#include <gtest/gtest.h>\nint main(){}\n", encoding="utf-8")
+    (src / "scripts/tool.py").write_text("print(1)\n", encoding="utf-8")
+    return [cpp_node(n, c) for n, c in code.items()]
+
+
+def test_folder_marks_do_not_change_launch_or_spawn_executables(project):
+    from tests.test_save_safety import save
+    nodes = _g1_like(project)
+    save(project, nodes=nodes)
+    before_launch = (project / "src/launch/project_launch.py").read_text(encoding="utf-8")
+    before_cmake = (project / "src/CMakeLists.txt").read_text(encoding="utf-8")
+    assert "kinematics_lib/solver.cpp" not in before_cmake
+
+    assert not (project / "src/cpp/executor_core.cpp").exists()    # без отметки хелпер без ноды — призрак (как раньше)
+    _g1_like(project)                                              # вернуть файлы и отметить папки
+    for d in ("cpp", "include", "kinematics_lib", "launch", "scripts", "python", "test"):
+        bm.set_mark(str(project), d, bm.YELLOW)
+    bm.set_mark(str(project), "CMakeLists.txt", bm.GREEN)
+    save(project, nodes=nodes)
+
+    assert (project / "src/launch/project_launch.py").read_text(encoding="utf-8") == before_launch
+    cmake = (project / "src/CMakeLists.txt").read_text(encoding="utf-8")
+    assert "include_directories(include cpp kinematics_lib test)" in cmake      # include/ не дублируется
+    assert "add_executable(test_solver" not in cmake                            # main() из папки — не бинарник
+    assert cmake.count("add_executable(") == 3
+    # каждый узел: свои хелперы (по #include) + kinematics_lib, чужие хелперы не подмешаны
+    assert "add_executable(exec_node cpp/exec_node.cpp cpp/executor_core.cpp kinematics_lib/solver.cpp)" in cmake
+    assert "add_executable(plan_node cpp/plan_node.cpp cpp/mission_core.cpp kinematics_lib/solver.cpp)" in cmake
+    assert "add_executable(sim_node cpp/sim_node.cpp kinematics_lib/solver.cpp)" in cmake
+    # файлы под отметками на месте
+    for rel in ("cpp/executor_core.cpp", "cpp/mission_core.cpp", "test/test_solver.cpp"):
+        assert (project / "src" / rel).exists(), rel
+
+
+def test_explicit_file_mark_still_makes_executable_from_main(project):
+    from tests.test_save_safety import save
+    nodes = _g1_like(project)
+    bm.set_mark(str(project), "test/test_solver.cpp", bm.YELLOW)       # именно файл, не папка
+    save(project, nodes=nodes)
+    assert "add_executable(test_solver test/test_solver.cpp" in \
+        (project / "src/CMakeLists.txt").read_text(encoding="utf-8")
+
+
+def test_unmarked_helper_without_node_is_still_ghost(project):
+    """Без отметки поведение прежнее: .cpp в cpp/ без ноды — призрак; с отметкой — живёт."""
+    from tests.test_save_safety import save
+    nodes = _g1_like(project)
+    (project / "src/cpp/stray.cpp").write_text("int helper(){return 1;}\n", encoding="utf-8")
+    save(project, nodes=nodes)
+    assert not (project / "src/cpp/stray.cpp").exists()

@@ -92,11 +92,14 @@ def _scan_text(content: str, scan: "SourceScan", resolver) -> None:
             scan.unresolved.add(inc)
 
 
-def scan_sources(cpp_dir: str, marked=()) -> SourceScan:
+def scan_sources(cpp_dir: str, marked=(), explicit=None) -> SourceScan:
     """
     marked — файлы, отмеченные пользователем во вкладке Files (пути от src/).
     .cpp без main() дописываются в каждый executable, .cpp с main() становятся
     отдельным executable, папки заголовков уходят в include_directories.
+    explicit — пути, отмеченные именно как файлы (а не через отметку папки); None = все.
+    Файл, попавший под отметку папки, НЕ становится executable (так папка test/ или scripts/
+    не плодит бинарники) и, лежа прямо в cpp/, не дублируется: его и так ведёт сканер.
     """
     from core.generators.dependency_resolver import DependencyResolver
     resolver = DependencyResolver()
@@ -123,11 +126,11 @@ def scan_sources(cpp_dir: str, marked=()) -> SourceScan:
         if extra:
             scan.companions[file] = extra
 
-    _apply_marked(scan, src_dir, marked, resolver)
+    _apply_marked(scan, src_dir, marked, resolver, explicit)
     return scan
 
 
-def _apply_marked(scan, src_dir, marked, resolver) -> None:
+def _apply_marked(scan, src_dir, marked, resolver, explicit=None) -> None:
     top = {f"cpp/{f}" for f in scan.executables}
     for rel in marked:
         ext = os.path.splitext(rel)[1].lower()
@@ -141,12 +144,16 @@ def _apply_marked(scan, src_dir, marked, resolver) -> None:
             continue
         _scan_text(text, scan, resolver)
         d = os.path.dirname(rel)
-        if d and d not in scan.include_dirs:
+        if d and d not in scan.include_dirs and d != "include":      # include/ уже в списке
             scan.include_dirs.append(d)
         if ext in (".hpp", ".h", ".hh") or rel in top:
             continue
+        by_folder = explicit is not None and rel not in explicit
         if _MAIN_RE.search(text):
-            scan.marked_execs.append(rel)
+            if not by_folder:
+                scan.marked_execs.append(rel)
+        elif by_folder and os.path.dirname(rel) == "cpp":
+            continue                     # хелпер прямо в cpp/: сканер уже подключает его по #include
         else:
             scan.extra_sources.append(rel)
     scan.include_dirs.sort()
@@ -330,8 +337,9 @@ def generate_cpp_build_files(src_dir: str, created_files=None):
     """
     pkg_name = package_name_from_dir(os.path.dirname(src_dir))
     from core import build_marks
-    marked = build_marks.marked_files(src_dir, build_marks.load(os.path.dirname(src_dir)))
-    scan = scan_sources(os.path.join(src_dir, "cpp"), marked)
+    marks = build_marks.load(os.path.dirname(src_dir))
+    marked = build_marks.marked_files(src_dir, marks)
+    scan = scan_sources(os.path.join(src_dir, "cpp"), marked, set(marks))
 
     if scan.unresolved:
         logging.warning(f"CMake deps found but not in apt registry (add to "
