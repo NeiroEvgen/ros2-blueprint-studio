@@ -161,14 +161,38 @@ def _mixed_project(tmp_path):
     return root
 
 
-def test_green_node_files_only_top_level(tmp_path):
+def test_green_node_files_any_depth_and_skips(tmp_path):
     root = _mixed_project(tmp_path)
-    for rel in ("cpp/solver.cpp", "python/cam.py", "cpp/sub/deep.cpp"):
+    (root / "src/cpp/sub/deep.hpp").write_text("#pragma once\n")
+    for rel in ("cpp/solver.cpp", "python/cam.py", "cpp/sub/deep.cpp", "cpp/sub/deep.hpp"):
         bm.set_mark(str(root), rel, bm.GREEN)
-    assert bm.green_node_files(str(root), ("cpp", "python")) == [
-        ("cpp", "solver.cpp", "cpp/solver.cpp"), ("python", "cam.py", "python/cam.py")]
+    nodes, skipped = bm.green_node_files(str(root), ("cpp", "python"))
+    assert nodes == [("cpp", "solver.cpp", "cpp/solver.cpp"), ("cpp", "deep.cpp", "cpp/sub/deep.cpp"),
+                     ("python", "cam.py", "python/cam.py")]
+    assert skipped == [("cpp/sub/deep.hpp", "not_source")]
+    nodes, skipped = bm.green_node_files(str(root), ("python",))
+    assert [n[1] for n in nodes] == ["cam.py"] and {r for r, w in skipped if w == "language"} == \
+        {"cpp/solver.cpp", "cpp/sub/deep.cpp"}
     bm.set_mark(str(root), "cpp/solver.cpp", bm.YELLOW)
-    assert [f for _, f, _ in bm.green_node_files(str(root), ("cpp", "python"))] == ["cam.py"]
+    assert "solver.cpp" not in [n[1] for n in bm.green_node_files(str(root), ("cpp",))[0]]
+
+
+def test_bound_nested_node_keeps_file_in_place_and_launches_it(tmp_path):
+    from core import node_sources
+    from core.generators.launch_generator import LaunchCompiler
+    root = _mixed_project(tmp_path)
+    (root / "src/python/tools").mkdir()
+    code = "print('nested mine')\n"
+    (root / "src/python/tools/deep.py").write_text(code)
+    node = {"node": {"name": "deep", "ports": [], "custom": {
+        "bound_file": "python/tools/deep.py", "source_file": "deep.py", "code_content": ""}},
+        "namespace": "", "container_group": "main"}
+    created = node_sources.process_flat_nodes([node], str(root / "src/python"), "python")
+    assert (root / "src/python/tools/deep.py").read_text() == code        # не затёрт и не скопирован
+    assert not (root / "src/python/deep.py").exists()
+    assert created[0]["relpath"] == "tools/deep.py"
+    launch = LaunchCompiler(created, "mix").compile()
+    assert "/python/tools/deep.py" in launch
 
 
 @pytest.mark.parametrize("single", [True, False])
@@ -182,12 +206,13 @@ def test_green_file_becomes_node_bound_to_disk_file(app, tmp_path, single):
         w.current_project_path = str(root)
         bm.set_mark(str(root), "cpp/solver.cpp", bm.GREEN)
         bm.set_mark(str(root), "python/cam.py", bm.GREEN)
-        assert w.sync_green_nodes() == 2
+        bm.set_mark(str(root), "cpp/sub/deep.cpp", bm.GREEN)
+        assert w.sync_green_nodes() == 3
         assert w.sync_green_nodes() == 0                     # повторно дублей нет
-        assert {n.get_property("source_file") for g in w.graphs.all() for n in g.all_nodes()} \
-            == {"solver.cpp", "cam.py"}
+        assert {n.get_property("bound_file") for g in w.graphs.all() for n in g.all_nodes()} \
+            == {"cpp/solver.cpp", "python/cam.py", "cpp/sub/deep.cpp"}
         if not single:
-            assert [n.name() for n in w.graph_cpp.all_nodes()] == ["solver"]
+            assert sorted(n.name() for n in w.graph_cpp.all_nodes()) == ["deep", "solver"]
             assert [n.name() for n in w.graph_py.all_nodes()] == ["cam"]
 
         res = w.project_manager.save_project(str(root))
@@ -195,6 +220,8 @@ def test_green_file_becomes_node_bound_to_disk_file(app, tmp_path, single):
         # код файла не затёрт шаблоном, файл остался на месте
         assert "// mine" in (root / "src/cpp/solver.cpp").read_text()
         assert "mine" in (root / "src/python/cam.py").read_text()
-        assert "add_executable(solver cpp/solver.cpp)" in (root / "src/CMakeLists.txt").read_text()
+        cm = (root / "src/CMakeLists.txt").read_text()
+        assert "add_executable(solver cpp/solver.cpp)" in cm and "add_executable(deep cpp/sub/deep.cpp)" in cm
+        assert (root / "src/cpp/sub/deep.cpp").exists() and not (root / "src/cpp/deep.cpp").exists()
     finally:
         w.close(); w.deleteLater()

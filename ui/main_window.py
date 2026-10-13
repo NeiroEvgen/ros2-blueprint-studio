@@ -847,6 +847,16 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         'python': 'ros.py.PyStringPubNode',
     }
 
+    @staticmethod
+    def _node_binds(node, lang, filename, rel):
+        """Нода уже привязана к этому файлу (новая — по bound_file, старая — по имени файла)."""
+        if (('cpp' in node.type_) != (lang == 'cpp')):
+            return False
+        bound = node.get_property('bound_file')
+        if bound:
+            return bound == rel
+        return node.get_property('source_file') == filename and "/" not in rel.split("/", 1)[-1]
+
     def sync_green_nodes(self):
         """Файлы с зелёной отметкой (вкладка Files) → ноды на столе, привязанные к файлу на диске.
         Снятие отметки ноду НЕ удаляет: у неё могут быть провода и настройки."""
@@ -857,11 +867,13 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         from core.node_sources import code_hash
         from core.workspace_manager import WorkspaceManager
         langs = graph_ir.project_languages(WorkspaceManager.get_project_type(path))
+        nodes, skipped = build_marks.green_node_files(path, langs)
+        for rel, why in skipped:
+            self.system_log(t("log.green_skipped_" + why, file=rel))
         created = 0
-        for lang, filename, rel in build_marks.green_node_files(path, langs):
+        for lang, filename, rel in nodes:
             graph = self.graphs.for_language(lang)
-            if any(n.has_property('source_file') and n.get_property('source_file') == filename
-                   and (('cpp' in n.type_) == (lang == 'cpp'))
+            if any(n.has_property('bound_file') and self._node_binds(n, lang, filename, rel)
                    for g in self.graphs.all() for n in g.all_nodes()):
                 continue
             try:
@@ -872,8 +884,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 taken = len(graph.all_nodes())
                 node = graph.create_node(self.IMPORT_NODE_TYPES[lang], name=stem,
                                          pos=[(taken % 4) * 320, (taken // 4) * 220])
-                for prop, val in (('source_file', filename), ('code_content', code),
-                                  ('code_sync_hash', code_hash(code))):
+                for prop, val in (('source_file', filename), ('bound_file', rel),
+                                  ('code_content', code), ('code_sync_hash', code_hash(code))):
                     if not node.has_property(prop):
                         node.create_property(prop, val)
                     node.set_property(prop, val)

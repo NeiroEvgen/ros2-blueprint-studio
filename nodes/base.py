@@ -24,6 +24,7 @@ class RosNodeBase(BaseNode):
             ('container_group', 'main'),
             ('is_imported', False),
             ('source_file', ''),
+            ('bound_file', ''),     # путь от src/: нода привязана к этому файлу на диске (зелёная отметка)
             ('code_content', ''),
             ('code_sync_hash', ''),
         ):

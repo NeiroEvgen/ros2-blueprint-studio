@@ -97,22 +97,39 @@ def marked_files(src_dir: str, marks: dict, states=STATES) -> list:
     return sorted(out)
 
 
-def green_node_files(project_dir: str, languages) -> list:
-    """
-    Зелёные файлы, которым нужна нода на столе: лежат прямо в папке кода языка
-    (src/cpp/x.cpp, src/python/x.py). Вложенные файлы ноды не получают —
-    генератор кода работает с плоскими папками.
-    Возвращает [(language, filename, rel_path)], отсортировано.
-    """
+def node_language(rel: str):
+    ext = os.path.splitext(rel)[1].lower()
+    if ext in SOURCE_EXT:
+        return "cpp"
+    if ext == ".py":
+        return "python"
+    return None
+
+
+def green_files(project_dir: str) -> list:
+    """Все файлы с зелёной отметкой (пути от src/)."""
     from core.layout import ProjectLayout
     layout = ProjectLayout(project_dir)
-    marks = load(project_dir)
-    green = set(marked_files(layout.src, marks, states=(GREEN,)))
-    out = []
-    for lang in languages:
-        ext = ".cpp" if lang == "cpp" else ".py"
-        prefix = norm(os.path.relpath(layout.code_dir(lang), layout.src)) + "/"
-        for rel in sorted(green):
-            if rel.startswith(prefix) and "/" not in rel[len(prefix):] and rel.endswith(ext):
-                out.append((lang, rel[len(prefix):], rel))
-    return out
+    return marked_files(layout.src, load(project_dir), states=(GREEN,))
+
+
+def green_node_files(project_dir: str, languages):
+    """
+    Зелёные файлы → (будут_ноды, пропущены).
+      будут_ноды — [(language, filename, rel)] для .cpp/.cc/.cxx и .py любой папки под src/
+                   (кроме launch/ и __init__.py), язык которых есть в проекте;
+      пропущены  — [(rel, причина)]: заголовки, чужие расширения, язык вне проекта.
+    """
+    nodes, skipped = [], []
+    for rel in green_files(project_dir):
+        lang = node_language(rel)
+        base = os.path.basename(rel)
+        if lang is None:
+            skipped.append((rel, "not_source"))
+        elif rel.startswith("launch/") or base.startswith("__"):
+            skipped.append((rel, "not_source"))
+        elif lang not in languages:
+            skipped.append((rel, "language"))
+        else:
+            nodes.append((lang, base, rel))
+    return nodes, skipped

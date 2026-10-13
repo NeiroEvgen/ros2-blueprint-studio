@@ -36,7 +36,7 @@ class LaunchCompiler:
         if py_nodes:
             code += "    # === PYTHON NODES (Direct Scripts) ===\n"
             for node in py_nodes:
-                path = f"{CONTAINER_PYTHON_DIR}/{node['filename']}"
+                path = os.path.normpath(f"{CONTAINER_PYTHON_DIR}/{node.get('relpath') or node['filename']}").replace(os.sep, "/")
                 code += "    ld.add_action(ExecuteProcess(\n"
                 code += f"        cmd=['python3', '-u', {r(path)}],\n"
                 code += "        output='screen',\n"

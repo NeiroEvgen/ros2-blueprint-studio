@@ -153,20 +153,29 @@ def process_flat_nodes(flat_nodes, target_dir, project_type):
 
         logging.debug(f"[GROUP DEBUG] нода '{visual_name}' namespace='{namespace}' -> group='{container_group}'")
     
-        raw_filename = custom.get('source_file') or ''
-        base_name = os.path.splitext(os.path.basename(raw_filename))[0]
-        if not base_name or base_name.startswith('.'):
-            base_name = re.sub(r'[^a-zA-Z0-9_]', '_', visual_name)
-        filename = base_name + forced_extension
-        if filename in used_names:
-            n = 2
-            while f"{base_name}_{n}{forced_extension}" in used_names:
-                n += 1
-            logging.warning(f"Имя файла '{filename}' уже занято другой нодой — '{visual_name}' "
-                            f"получит '{base_name}_{n}{forced_extension}'")
-            filename = f"{base_name}_{n}{forced_extension}"
-        used_names.add(filename)
-        file_path = os.path.join(target_dir, filename)
+        bound = (custom.get('bound_file') or '').replace('\\', '/').strip('/')
+        if bound:
+            # нода привязана к файлу «на месте» (зелёная отметка): код живёт по этому пути
+            if not bound.endswith(('.cpp', '.cc', '.cxx') if is_cpp_mode else ('.py',)):
+                continue                                  # файл другого языка — не для этого прохода
+            file_path = os.path.normpath(os.path.join(os.path.dirname(target_dir), bound))
+            filename = os.path.basename(bound)
+            used_names.add(bound)
+        else:
+            raw_filename = custom.get('source_file') or ''
+            base_name = os.path.splitext(os.path.basename(raw_filename))[0]
+            if not base_name or base_name.startswith('.'):
+                base_name = re.sub(r'[^a-zA-Z0-9_]', '_', visual_name)
+            filename = base_name + forced_extension
+            if filename in used_names:
+                n = 2
+                while f"{base_name}_{n}{forced_extension}" in used_names:
+                    n += 1
+                logging.warning(f"Имя файла '{filename}' уже занято другой нодой — '{visual_name}' "
+                                f"получит '{base_name}_{n}{forced_extension}'")
+                filename = f"{base_name}_{n}{forced_extension}"
+            used_names.add(filename)
+            file_path = os.path.join(target_dir, filename)
 
         # Сбор данных для Jinja2 шаблона
         node_data = {
@@ -220,12 +229,17 @@ def process_flat_nodes(flat_nodes, target_dir, project_type):
             custom['code_content'] = code_to_write
             custom['code_sync_hash'] = code_hash(code_to_write)
             custom['source_file'] = filename
+            if bound:
+                custom['bound_file'] = bound
 
-            created.append({
+            entry = {
                 'language': 'cpp' if is_cpp_mode else 'python',
                 'filename': filename,
                 'group': container_group,
-            })
+            }
+            if bound:
+                entry['relpath'] = os.path.relpath(file_path, target_dir).replace(os.sep, '/')
+            created.append(entry)
 
             write_needed = True
             if os.path.exists(file_path):
