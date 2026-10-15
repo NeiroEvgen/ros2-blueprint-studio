@@ -27,7 +27,7 @@ class ExportManager:
         deps = set()
         
         # Ищем форматы пакетов с сообщениями: #include "nav_msgs/msg/odometry.hpp" -> nav_msgs
-        pattern_msg = re.compile(r'#include\s+["<]([^/]+)/(msg|srv|action)/[^">]+[">]')
+        pattern_msg = re.compile(r'#include[ \t]+["<]([A-Za-z_][A-Za-z0-9_]*)/(msg|srv|action)/[^">\n]+[">]')
         # Ищем известные хардкорные ROS-либы (например, tf2_ros, cv_bridge)
         pattern_libs = re.compile(r'#include\s+["<](tf2_ros|tf2|tf2_geometry_msgs|image_transport|cv_bridge|opencv2)/[^">]+[">]')
         

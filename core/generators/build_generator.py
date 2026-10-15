@@ -37,7 +37,7 @@ CMAKE_USER_TEMPLATE = (
 BASE_DEPS = ['rclcpp', 'rclcpp_action', 'rclcpp_lifecycle', 'std_msgs',
              'geometry_msgs', 'sensor_msgs']
 
-_PATTERN_MSG = re.compile(r'#include\s+["<]([^/]+)/(msg|srv|action)/[^">]+[">]')
+_PATTERN_MSG = re.compile(r'#include[ \t]+["<]([A-Za-z_][A-Za-z0-9_]*)/(msg|srv|action)/[^">\n]+[">]')
 _PATTERN_LIBS = re.compile(r'#include\s+["<](tf2_ros|tf2|tf2_geometry_msgs|image_transport|cv_bridge|opencv2|rclcpp_lifecycle|rclcpp_components|lifecycle_msgs)/[^">]+[">]')
 _MAIN_RE = re.compile(r'\bint\s+main\s*\(')
 

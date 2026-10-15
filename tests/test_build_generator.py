@@ -221,3 +221,22 @@ class TestExampleInterfacesOptional:
     def test_added_when_the_code_uses_it(self, tmp_path):
         scan = self._scan(tmp_path, '#include "example_interfaces/action/fibonacci.hpp"\nint main(){return 0;}\n')
         assert "example_interfaces" in scan.deps
+
+
+class TestIncludeScanDoesNotSwallowNeighbours:
+    """Регрессия: `#include <string>` + следующая строка `#include <pkg/msg/..>` давали
+    «пакет» 'string>\\n#include <sensor_msgs' и CMake падал на оборванном find_package(...)."""
+
+    def test_std_header_before_msg_include(self, tmp_path):
+        cpp = tmp_path / "cpp"
+        cpp.mkdir()
+        (cpp / "n.cpp").write_text(
+            '#include <string>\n#include <sensor_msgs/msg/joint_state.hpp>\n'
+            '#include <vector>\r\n#include <std_srvs/srv/trigger.hpp>\n'
+            'int main(){return 0;}\n', encoding="utf-8")
+        scan = bg.scan_sources(str(cpp))
+        assert {"sensor_msgs", "std_srvs"} <= scan.deps
+        assert all(d.replace("_", "").isalnum() for d in scan.deps), scan.deps
+        text = bg.render_cmake_auto("p", scan.deps, scan.executables)
+        assert ">" not in text.split("find_package(ament_cmake")[1].split("add_executable")[0]
+        assert "#include" not in text
