@@ -1,0 +1,135 @@
+meta:
+  version: '4.0'
+  merge:
+    cpp_ids:
+    - '0x7fb4e89cd5b0'
+    cpp_dy: 0.0
+    remap: {}
+    py_extra:
+      graph: &id001
+        layout_direction: 0
+        acyclic: false
+        pipe_collision: false
+        pipe_slicing: true
+        pipe_style: 0
+        accept_connection_types: '{}'
+        reject_connection_types: '{}'
+    cpp_extra: {}
+graph:
+  graph: *id001
+  nodes:
+    '0x7fb4e89cd480':
+      type_: ros.py.PyStringPubNode
+      icon: null
+      name: talker
+      color:
+      - 13
+      - 18
+      - 23
+      - 255
+      border_color: &id002
+      - 74
+      - 84
+      - 85
+      - 255
+      text_color: &id003
+      - 255
+      - 255
+      - 255
+      - 180
+      disabled: false
+      selected: false
+      visible: true
+      width: 226.4375
+      height: 125.7
+      pos:
+      - 0.0
+      - 0.0
+      layout_direction: 0
+      port_deletion_allowed: false
+      subgraph_session: {}
+      custom:
+        parent_group_id: ''
+        group_uid: ''
+        container_group: main
+        is_imported: false
+        source_file: talker.py
+        code_content: "import rclpy\nfrom rclpy.node import Node\nfrom std_msgs.msg\
+          \ import String\n\n\nclass Talker(Node):\n    def __init__(self):\n    \
+          \    super().__init__('talker')\n        self.pub = self.create_publisher(String,\
+          \ '/chatter', 10)\n        self.i = 0\n        self.create_timer(1.0, self.tick)\n\
+          \n    def tick(self):\n        msg = String()\n        msg.data = f'Py:\
+          \ {self.i}'\n        self.pub.publish(msg)\n        self.get_logger().info(f'Published:\
+          \ {msg.data}')\n        self.i += 1\n\n\ndef main():\n    rclpy.init()\n\
+          \    node = Talker()\n    try:\n        rclpy.spin(node)\n    except KeyboardInterrupt:\n\
+          \        pass\n    node.destroy_node()\n    rclpy.shutdown()\n\n\nif __name__\
+          \ == '__main__':\n    main()\n"
+        code_sync_hash: 41952e90a068378b91cb92721147e41cf1094aa0
+        saved_ports_config:
+        - type: out
+          name: out
+          color:
+          - 255
+          - 0
+          - 255
+          multi: true
+        node_name: talker
+        topic_name: /chatter
+        template_key: py_string_pub
+    '0x7fb4e89cd5b0':
+      type_: ros.cpp.CppStringSubNode
+      icon: null
+      name: listener
+      color:
+      - 20
+      - 20
+      - 100
+      - 255
+      border_color: *id002
+      text_color: *id003
+      disabled: false
+      selected: true
+      visible: true
+      width: 236.515625
+      height: 125.7
+      pos:
+      - 420.0
+      - 0.0
+      layout_direction: 0
+      port_deletion_allowed: false
+      subgraph_session: {}
+      custom:
+        parent_group_id: ''
+        group_uid: ''
+        container_group: main
+        is_imported: false
+        source_file: listener.cpp
+        code_content: "#include \"rclcpp/rclcpp.hpp\"\n#include \"std_msgs/msg/string.hpp\"\
+          \nusing std::placeholders::_1;\n\nclass listener : public rclcpp::Node {\n\
+          public:\n    listener() : Node(\"listener\") {\n        subscription_ =\
+          \ this->create_subscription<std_msgs::msg::String>(\n            \"/chatter\"\
+          , 10, std::bind(&listener::topic_callback, this, _1));\n    }\nprivate:\n\
+          \    void topic_callback(const std_msgs::msg::String & msg) const {\n  \
+          \      RCLCPP_INFO(this->get_logger(), \"Heard: '%s'\", msg.data.c_str());\n\
+          \    }\n    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_;\n\
+          };\n\nint main(int a, char** b){rclcpp::init(a,b);rclcpp::spin(std::make_shared<listener>());rclcpp::shutdown();return\
+          \ 0;}\n"
+        code_sync_hash: 5076eb2dce52bdecb57dc294bd11b8f5dead7523
+        saved_ports_config:
+        - type: in
+          name: in
+          color:
+          - 255
+          - 0
+          - 255
+          multi: false
+        node_name: listener
+        topic_name: /chatter
+        template_key: cpp_string_sub
+  connections:
+  - out:
+    - '0x7fb4e89cd480'
+    - out
+    in:
+    - '0x7fb4e89cd5b0'
+    - in

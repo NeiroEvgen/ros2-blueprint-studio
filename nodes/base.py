@@ -24,17 +24,15 @@ class RosNodeBase(BaseNode):
             ('container_group', 'main'),
             ('is_imported', False),
             ('source_file', ''),
+            ('bound_file', ''),     # путь от src/: нода привязана к этому файлу на диске (зелёная отметка)
             ('code_content', ''),
+            ('code_sync_hash', ''),
         ):
             if not self.has_property(_prop):
                 self.create_property(_prop, _default)
         if not self.has_property('saved_ports_config'):
             self.create_property('saved_ports_config', value=[], widget_type=0)  
     def _init_template(self, template_key):
-        """
-        Умная загрузка: переводит старые ключи в новые универсальные
-        и выбирает правильный язык.
-        """
         self.create_property('template_key', template_key)
 
         is_cpp_id = 'cpp' in self.type_
@@ -46,6 +44,8 @@ class RosNodeBase(BaseNode):
     
         if "custom" in key_lower:
             final_key = "Custom"
+        elif "lifecycle" in key_lower:
+            final_key = "Lifecycle"
         elif "timer" in key_lower:
             final_key = "Timer"
         elif "pub" in key_lower:

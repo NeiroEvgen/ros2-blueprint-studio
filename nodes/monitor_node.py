@@ -1,5 +1,6 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 from NodeGraphQt import BaseNode, NodeBaseWidget
+from ui.fonts import MONO_CSS
 
 # --- 1. Окно консоли ---
 class NodeLogWindow(QtWidgets.QDialog):
@@ -12,7 +13,7 @@ class NodeLogWindow(QtWidgets.QDialog):
         
         self.text_edit = QtWidgets.QPlainTextEdit()
         self.text_edit.setReadOnly(True)
-        self.text_edit.setStyleSheet("background: #1e1e1e; color: #00ff00; font-family: Consolas, monospace;")
+        self.text_edit.setStyleSheet("background: #1e1e1e; color: #00ff00; font-family: " + MONO_CSS + ";")
         
         btn_clear = QtWidgets.QPushButton("Clear Log")
         btn_clear.clicked.connect(self.text_edit.clear)

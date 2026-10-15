@@ -1,4 +1,6 @@
 from PySide6 import QtWidgets, QtGui, QtCore
+from core.i18n import t
+from ui.fonts import mono_font
 
 # === 1. ПОДСВЕТКА СИНТАКСИСА (Highlighter) ===
 class CodeHighlighter(QtGui.QSyntaxHighlighter):
@@ -20,6 +22,14 @@ class CodeHighlighter(QtGui.QSyntaxHighlighter):
         comment_format = QtGui.QTextCharFormat()
         comment_format.setForeground(QtGui.QColor("#6A9955")) # Зеленый
         
+        # yaml / xml / cmake — отдельные наборы правил (для файлового браузера).
+        # Старые режимы python/cpp ниже не меняются.
+        if mode == 'plain':
+            return
+        if mode in ('yaml', 'xml', 'cmake'):
+            self._setup_extra(mode, keyword_format, string_format, comment_format, class_format)
+            return
+
         # Ключевые слова
         if mode == 'python':
             keywords = [
@@ -52,6 +62,24 @@ class CodeHighlighter(QtGui.QSyntaxHighlighter):
         else:
             self.rules.append((QtCore.QRegularExpression(r'//.*'), comment_format))
 
+    def _setup_extra(self, mode, kw, string, comment, cls):
+        R = QtCore.QRegularExpression
+        if mode == 'yaml':
+            self.rules.append((R(r'^\s*-?\s*[\w.\-/]+(?=\s*:)'), kw))
+            self.rules.append((R(r'\b(true|false|null|True|False|yes|no)\b'), cls))
+            self.rules.append((R(r'"[^"]*"|\'[^\']*\''), string))
+            self.rules.append((R(r'#.*'), comment))
+        elif mode == 'xml':
+            self.rules.append((R(r'</?[\w:\-]+|/?>'), kw))
+            self.rules.append((R(r'\b[\w:\-]+(?==)'), cls))
+            self.rules.append((R(r'"[^"]*"'), string))
+            self.rules.append((R(r'<!--.*-->'), comment))
+        elif mode == 'cmake':
+            self.rules.append((R(r'^\s*\w+(?=\s*\()'), kw))
+            self.rules.append((R(r'\$\{[^}]*\}'), cls))
+            self.rules.append((R(r'"[^"]*"'), string))
+            self.rules.append((R(r'#.*'), comment))
+
     def highlightBlock(self, text):
         for pattern, format in self.rules:
             match_iter = pattern.globalMatch(text)
@@ -82,7 +110,7 @@ class CodeEditor(QtWidgets.QPlainTextEdit):
         self.updateLineNumberAreaWidth(0)
         
         # Шрифт
-        font = QtGui.QFont("Consolas", 11)
+        font = mono_font(11)
         font.setStyleHint(QtGui.QFont.Monospace)
         self.setFont(font)
         
@@ -154,7 +182,7 @@ class CodeEditor(QtWidgets.QPlainTextEdit):
 class AdvancedCodeDialog(QtWidgets.QDialog):
     def __init__(self, code, language='python', parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Code Editor ({language})")
+        self.setWindowTitle(t("ed.title", language=language))
         self.resize(1000, 700)
         
         layout = QtWidgets.QVBoxLayout(self)
@@ -165,12 +193,12 @@ class AdvancedCodeDialog(QtWidgets.QDialog):
         toolbar.setStyleSheet("background: #333; height: 40px;")
         toolbar_layout = QtWidgets.QHBoxLayout(toolbar)
         
-        lbl = QtWidgets.QLabel(f"Editing: {language.upper()}")
+        lbl = QtWidgets.QLabel(t("ed.editing", language=language.upper()))
         lbl.setStyleSheet("color: white; font-weight: bold;")
         toolbar_layout.addWidget(lbl)
         toolbar_layout.addStretch()
         
-        btn_save = QtWidgets.QPushButton("Save & Close")
+        btn_save = QtWidgets.QPushButton(t("ed.save_close"))
         btn_save.setStyleSheet("background: #2e7d32; color: white; padding: 5px 15px; border: none;")
         btn_save.clicked.connect(self.accept)
         toolbar_layout.addWidget(btn_save)
@@ -183,3 +211,19 @@ class AdvancedCodeDialog(QtWidgets.QDialog):
         
     def get_code(self):
         return self.editor.toPlainText()
+
+# === Режим подсветки по имени файла ===
+def mode_for_path(path):
+    name = path.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if name == "cmakelists.txt" or name.endswith(".cmake"):
+        return "cmake"
+    ext = name.rsplit(".", 1)[-1] if "." in name else ""
+    if ext in ("py",):
+        return "python"
+    if ext in ("cpp", "cc", "cxx", "hpp", "hh", "h", "c", "ino"):
+        return "cpp"
+    if ext in ("yaml", "yml"):
+        return "yaml"
+    if ext in ("xml", "urdf", "srdf", "xacro", "launch", "sdf"):
+        return "xml"
+    return "plain"

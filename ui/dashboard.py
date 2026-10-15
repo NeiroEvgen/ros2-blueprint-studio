@@ -2,12 +2,15 @@ import re
 import datetime
 from collections import deque
 from PySide6 import QtWidgets, QtCore, QtGui
+from core.i18n import t
+from ui import icons
+from ui.fonts import MONO_CSS, mono_font
 
 class TerminalLogDialog(QtWidgets.QDialog):
     
     def __init__(self, node_name, history, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Terminal: {node_name}")
+        self.setWindowTitle(t("dash.terminal_title", name=node_name))
         self.resize(800, 500)
         self.setStyleSheet("background-color: #0c0c0c;")
 
@@ -17,7 +20,7 @@ class TerminalLogDialog(QtWidgets.QDialog):
         # Консольное поле
         self.text_view = QtWidgets.QTextEdit()
         self.text_view.setReadOnly(True)
-        self.text_view.setFont(QtGui.QFont("Consolas", 10))
+        self.text_view.setFont(mono_font(10))
         self.text_view.setStyleSheet("""
             QTextEdit {
                 background-color: #0c0c0c;
@@ -34,14 +37,14 @@ class TerminalLogDialog(QtWidgets.QDialog):
         layout.addWidget(self.text_view)
         
         # Кнопка закрытия в стиле терминала
-        btn = QtWidgets.QPushButton("[ CLOSE ]")
+        btn = QtWidgets.QPushButton(t("dash.close"))
         btn.setCursor(QtCore.Qt.PointingHandCursor)
         btn.setStyleSheet("""
             QPushButton {
-                background-color: #0c0c0c; color: #444; border: none; font-family: Consolas; font-weight: bold;
+                background-color: #0c0c0c; color: #444; border: none; font-family: __MONO__; font-weight: bold;
             }
             QPushButton:hover { color: #fff; background-color: #222; }
-        """)
+        """.replace("__MONO__", MONO_CSS))
         btn.clicked.connect(self.accept)
         layout.addWidget(btn)
 
@@ -80,7 +83,7 @@ class ConsoleDashboard(QtWidgets.QWidget):
         self.table.setStyleSheet("""
             QTableWidget {
                 background-color: #0c0c0c; color: #cccccc;
-                font-family: "Consolas", "Courier New", monospace;
+                font-family: __MONO__;
                 font-size: 10pt; border: none; gridline-color: #0c0c0c;
             }
             QHeaderView::section {
@@ -90,7 +93,7 @@ class ConsoleDashboard(QtWidgets.QWidget):
             }
             QTableWidget::item { border-bottom: 1px solid #1a1a1a; padding-left: 5px; }
             QTableWidget::item:selected { background-color: #264f78; color: #ffffff; }
-        """)
+        """.replace("__MONO__", MONO_CSS))
         
         # ==========================================
         # 2. СЫРАЯ КОНСОЛЬ (Raw Terminal)
@@ -100,10 +103,10 @@ class ConsoleDashboard(QtWidgets.QWidget):
         self.raw_console.setStyleSheet("""
             QTextEdit {
                 background-color: #0c0c0c; color: #cccccc;
-                font-family: "Consolas", "Courier New", monospace;
+                font-family: __MONO__;
                 font-size: 10pt; border: none; padding: 5px;
             }
-        """)
+        """.replace("__MONO__", MONO_CSS))
         
         # Добавляем оба виджета в стек
         self.stack.addWidget(self.table)
@@ -196,7 +199,7 @@ class ConsoleDashboard(QtWidgets.QWidget):
             
             item_name = QtWidgets.QTableWidgetItem(name)
             item_name.setForeground(QtGui.QColor("#4ec9b0"))
-            item_name.setFont(QtGui.QFont("Consolas", 10, QtGui.QFont.Bold))
+            item_name.setFont(mono_font(10, bold=True))
             self.table.setItem(row, 0, item_name)
             
             item_msg = QtWidgets.QTableWidgetItem(msg)
@@ -231,10 +234,11 @@ class ConsoleDashboard(QtWidgets.QWidget):
             QMenu::item:selected { background-color: #007acc; }
         """)
         
-        mode_text = "🔄 Switch to Raw Terminal" if not self.is_raw_mode else "🔄 Switch to Smart Dashboard"
-        mode_action = menu.addAction(mode_text)
+        mode_text = t("dash.to_raw") if not self.is_raw_mode else t("dash.to_smart")
+        mode_action = menu.addAction(
+            icons.icon("terminal" if not self.is_raw_mode else "visualize", color="#dddddd"), mode_text)
         menu.addSeparator()
-        clear_action = menu.addAction("🧹 Clear All Logs")
+        clear_action = menu.addAction(icons.icon("clear", color="#dddddd"), t("dash.clear"))
         
         # Получаем глобальные координаты от виджета, по которому кликнули
         sender_widget = self.sender()

@@ -8,14 +8,22 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 # === CORE MODULES ===
 from core.docker_manager import RosContainerManager
+from core.execution_context import resolve_context, ExecutionContext
 from core.project_manager import ProjectManager
 from core.file_watcher import FileWatcher
 from core.export_manager import ExportManager 
 from core.workspace_manager import WorkspaceManager
+from core.i18n import t
+from core import settings
+from ui.scroll import scrollable
+from ui.graph_set import GraphSet
+from core import layout as project_layout
 from core.ros_process import DeployWorker, LogMonitorWorker
 from core.container_config import ContainerConfigStore, safe_group_name, resolved_env
 from core.project_importer import import_ros2_package
 from ui.container_settings import ContainerSettingsPanel
+from core.process_manager import ProcessManager
+
 
 from compilers.graph_compiler import GraphCompiler
 
@@ -48,16 +56,21 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.ui.node_palette.installEventFilter(self._palette_drop)
         self._palette_drop.node_dropped.connect(self._on_node_dropped_to_palette)
         self.dashboard = ConsoleDashboard()
-        
+        self._exec_ctx = ExecutionContext()
+        self._remote = (False, "", "")   # connected, user@host, container
+        self._real_robot = False
+    
+
         # 4. Docker Connect
+        
         self.container_manager = None
         try:
             self.container_manager = RosContainerManager()
         except Exception: 
-            self.system_log("WARNING: Docker not found or not running.")
-
-        self.docker_panel = DockerPanel(self.container_manager) if self.container_manager else QtWidgets.QLabel("Docker not available")
-        self.library_manager = LibraryManager(self.container_manager) if self.container_manager else QtWidgets.QLabel("Docker not available")
+            self.system_log(t("log.docker_missing"))
+        self.process_manager = ProcessManager(self.container_manager)
+        self.docker_panel = DockerPanel(self.container_manager) if self.container_manager else QtWidgets.QLabel(t("dock.unavailable"))
+        self.library_manager = LibraryManager(self.container_manager) if self.container_manager else QtWidgets.QLabel(t("dock.unavailable"))
         
         if hasattr(self.ui, 'console_ros'):
             # Ищем QTabWidget, в котором лежит наша консоль (он может быть не прямым родителем)
@@ -70,18 +83,42 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 if idx != -1:
                     # Убираем старую текстовую консоль и вставляем таблицу
                     tab_widget.removeTab(idx)
-                    tab_widget.insertTab(idx, self.dashboard, "ROS2 Dashboard")
-                    tab_widget.addTab(self.docker_panel, "Docker")
-                    tab_widget.addTab(self.library_manager, "Libraries")
+                    self._console_tab_widget = tab_widget
+                    self._console_tab_keys = {}          # страница вкладки -> ключ заголовка
+
+                    def add_tab(widget, key, at=None):
+                        page = widget if key == "tab.dashboard" else scrollable(widget)
+                        if at is None:
+                            tab_widget.addTab(page, t(key))
+                        else:
+                            tab_widget.insertTab(at, page, t(key))
+                        self._console_tab_keys[page] = key
+                        return page
+
+                    add_tab(self.dashboard, "tab.dashboard", at=idx)
+                    add_tab(self.docker_panel, "tab.docker")
+                    add_tab(self.library_manager, "tab.libraries")
                     self.container_settings = ContainerSettingsPanel(
                         get_docker_manager=lambda: self.container_manager)
-                    tab_widget.addTab(self.container_settings, "Containers")
+                    add_tab(self.container_settings, "tab.containers")
+                    from ui.remote_panel import RemotePanel
+                    from ui.file_browser import FileBrowser
+                    self.remote_panel = RemotePanel()
+                    self.remote_panel.log.connect(self.system_log)
+                    self.remote_panel.connection_changed.connect(self._on_remote_changed)
+                    add_tab(self.remote_panel, "tab.remote")
+                    self.file_browser = FileBrowser()
+                    self.file_browser.log.connect(self.system_log)
+                    self.file_browser.marks_changed.connect(self.sync_green_nodes)
+                    add_tab(self.file_browser, "tab.files")
         # 2. Graph Setup (delegated to ui/graph_setup.py)
         self.graph_py, self.graph_cpp, self.f_py, self.f_cpp = setup_graphs(
-            self.ui.tabs, self.resolve_node_type, self.on_graph_delete
+            self.ui.tabs, self.resolve_node_type, self.on_graph_delete,
+            single=bool(settings.get("single_canvas")),
         )
 
         # 2.1 Properties Window
+        self.graphs = GraphSet(self.graph_py, self.graph_cpp)
         self.properties_win = PropertiesWindow(self.graph_py, self.graph_cpp, self)
         self.properties_win.hide()
 
@@ -93,9 +130,11 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.watcher.file_changed.connect(self.on_file_changed_externally)
 
         # 5. Connect Actions
-        self.connect_actions()       # Навигация
+        self.connect_actions()
+        self.ui.actions['real_robot'].toggled.connect(self.on_real_robot_toggled)
+        self._refresh_context()       # Навигация
         self.current_subgraph = None
-        self.navigation_stack = [{"name": "Root", "node": None}]
+        self.navigation_stack = [{"name": t("ui.root"), "node": None}]
 
         # 6. Init Logic
         if self.current_project_path:
@@ -151,17 +190,17 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                                     and child.get_property('parent_group_id') == gid):
                                 graph.delete_node(child)
                         graph.delete_node(node)
-                        self.system_log(f"Group + contents deleted: {node.name()}")
+                        self.system_log(t("log.group_deleted", name=node.name()))
                     else:
                         # Del: распускаем — дети наружу, терминалы удаляются
                         dissolve_group(graph, node)
                         graph.delete_node(node)
-                        self.system_log(f"Group dissolved: {node.name()}")
+                        self.system_log(t("log.group_dissolved", name=node.name()))
                 else:
                     # обычная нода
                     graph.delete_node(node)
             except Exception as e:
-                self.system_log(f"Delete error: {e}")
+                self.system_log(t("log.delete_error", error=e))
 
         self._refresh_container_counts() if hasattr(self, '_refresh_container_counts') else None
 
@@ -183,7 +222,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 self._set_node_visible(node, False)
         
         #self._refresh_pipe_visibility(graph)  # см. ниже про граф
-        self.system_log(f"Entered subgraph: {name}")
+        self.system_log(t("log.entered_subgraph", name=name))
 
     def exit_subgraph(self):
         if len(self.navigation_stack) <= 1:
@@ -195,7 +234,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         target = self.navigation_stack[-1]
         self.current_subgraph = target["node"]
         
-        graph = self.graph_py if self.ui.tabs.currentIndex() == 0 else self.graph_cpp
+        graph = self.graphs.current(self.ui.tabs.currentIndex())
         
         if self.current_subgraph is None:
             # Мы в Root: показываем только то, что НЕ вложено в группу.
@@ -217,11 +256,11 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 else:
                     node.view.setVisible(False)
             
-        self.system_log("Exited to " + target["name"])
+        self.system_log(t("log.exited_to", name=target["name"]))
 
     def setup_graph_signals(self):
         """Подключает сигналы графа для открытия редактора и настроек"""
-        for graph in [self.graph_py, self.graph_cpp]:
+        for graph in self.graphs.all():
             graph.node_double_clicked.connect(self.on_node_double_clicked)
             self.setup_graph_context_menus(graph)
 
@@ -260,7 +299,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         if ctrl_held:
             self.properties_win.set_node(node)
             self.properties_win.show()
-            self.system_log(f"Opened properties for: {node.name()}")
+            self.system_log(t("log.opened_properties", name=node.name()))
             return
 
         # Обычный двойной клик по группе -> заходим внутрь
@@ -271,12 +310,12 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         # Обычный двойной клик по обычной ноде -> только код
         if node.has_property('code_content'):
             if not self.current_project_path:
-                self.system_log("Открой/сохрани проект перед редактированием кода ноды.")
+                self.system_log(t("log.open_project_first"))
                 return
             
             self.project_manager.open_node_in_editor(node, self.current_project_path)
             self.watcher.start_watching(os.path.join(self.current_project_path, "src"))
-            self.system_log(f"Opened code for: {node.name()}")
+            self.system_log(t("log.opened_code", name=node.name()))
     def connect_actions(self):
         """Восстанавливает связи кнопок управления"""
         self.ui.actions['run'].clicked.connect(self.on_run_project)
@@ -288,6 +327,68 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.ui.actions['visualize'].clicked.connect(self.on_visualize)
         self.ui.actions['export_palette'].clicked.connect(self.on_export_palette)
         self.ui.actions['import_palette'].clicked.connect(self.on_import_palette)
+        # раньше эти две кнопки верхней панели не были подключены и ничего не делали
+        self.ui.actions['save'].clicked.connect(self.on_save_project)
+        self.ui.actions['open'].clicked.connect(self.on_open_project)
+
+    @staticmethod
+    def _save_result(res):
+        """
+        save_project возвращает (True, apt_deps) при успехе и False при неудаче.
+        Приводим к (ok, apt_deps), чтобы вызывающий код не падал на распаковке.
+        """
+        if isinstance(res, tuple):
+            return bool(res[0]), (res[1] if len(res) > 1 else set())
+        return bool(res), set()
+
+    def on_save_project(self):
+        if not self.current_project_path:
+            self.system_log(t("log.no_project"))
+            return
+        ok, _ = self._save_result(self.project_manager.save_project(self.current_project_path))
+        self.system_log(t("log.project_saved") if ok else t("log.save_failed"))
+        self._log_save_warnings()
+
+    def _log_save_warnings(self):
+        """Предупреждения генератора/линтера CMake после Save — в системный лог."""
+        for text in getattr(self.project_manager, "last_warnings", []) or []:
+            self.system_log(t("save.warning", text=text))
+
+    def _offer_layout_migration(self, path):
+        """Старый проект с ROS-файлами вне src/ — предложить перенести (с резервной копией)."""
+        lay = project_layout.ProjectLayout(path)
+        legacy = lay.legacy_items()
+        if not legacy:
+            return False
+        ans = QtWidgets.QMessageBox.question(
+            self, t("layout.legacy_title"), t("layout.legacy_question", count=len(legacy)),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+        if ans != QtWidgets.QMessageBox.Yes:
+            return False
+        report = project_layout.migrate(path)
+        self.system_log(t("layout.migration_done", summary=report.summary()))
+        return True
+
+    def on_open_project(self):
+        """Открыть другой проект с диска (как «Open from Disk…» в стартовом окне)."""
+        if self.current_project_path:
+            ans = QtWidgets.QMessageBox.question(
+                self, t("dlg.open_project_title"),
+                t("dlg.save_before_open"),
+                QtWidgets.QMessageBox.Save | QtWidgets.QMessageBox.Discard
+                | QtWidgets.QMessageBox.Cancel)
+            if ans == QtWidgets.QMessageBox.Cancel:
+                return
+            if ans == QtWidgets.QMessageBox.Save:
+                ok, _ = self._save_result(
+                    self.project_manager.save_project(self.current_project_path))
+                if not ok:
+                    self.system_log(t("log.save_failed_open_cancelled"))
+                    return
+        root = WorkspaceManager.get_workspace_root()
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, t("dlg.open_folder_title"), root)
+        if path:
+            self.on_load_project_init(path)
 
 
 
@@ -296,18 +397,17 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
         if mode.startswith("X11"):
             # Классика: просто напоминание, RViz-нода сама откроет окно при Run
-            self.system_log("X11 mode: убедись, что XLaunch запущен "
-                            "(Multiple windows, Disable access control).")
+            self.system_log(t("log.x11_hint"))
             return
 
         # === Foxglove ===
         if not self.container_manager or not self.container_manager.container:
-            self.system_log("Error: сессия не запущена. Нажми Run, потом Visualize.")
+            self.system_log(t("log.session_not_running"))
             return
         try:
             self.container_manager.start_foxglove_bridge(self.system_log)
         except Exception as e:
-            self.system_log(f"Foxglove bridge error: {e}")
+            self.system_log(t("log.foxglove_error", error=e))
             return
 
         # Открываем Foxglove в браузере с автоподключением к ws://localhost:8765
@@ -315,52 +415,55 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         url = ("https://app.foxglove.dev/?ds=foxglove-websocket"
                "&ds.url=ws%3A%2F%2Flocalhost%3A8765")
         webbrowser.open(url)
-        self.system_log("Foxglove открыт в браузере (подключение к ws://localhost:8765)")
+        self.system_log(t("log.foxglove_opened"))
 
     def on_clear_graph(self):
-        graph = self.graph_py if self.ui.tabs.currentIndex() == 0 else self.graph_cpp
+        graph = self.graphs.current(self.ui.tabs.currentIndex())
         graph.clear_session()
-        self.system_log("Graph cleared.")
+        self.system_log(t("log.graph_cleared"))
 
     def on_run_project(self):
         if not self.current_project_path:
-            self.system_log("Error: No project loaded.")
+            self.system_log(t("log.no_project"))
             return
         if not self.container_manager:
-            self.system_log("Error: Docker is not available. Cannot run.")
+            self.system_log(t("log.docker_unavailable"))
             return
 
         # 1. Сначала компилируем/сохраняем граф в файлы проекта
-        self.system_log("Saving & generating project files...")
-        ok = self.project_manager.save_project(self.current_project_path)
+        self.system_log(t("log.generating"))
+        ok, apt_packages = self._save_result(
+            self.project_manager.save_project(self.current_project_path))
         if not ok:
-            self.system_log("Error: Failed to generate project files. Aborting run.")
+            self.system_log(t("log.generate_failed_abort"))
             return
         self.watcher.start_watching(os.path.join(self.current_project_path, "src"))
 
         self.ui.actions['run'].setEnabled(False)
         self.ui.actions['stop'].setEnabled(True)
-        self.system_log("Starting project...")
+        self.system_log(t("log.starting"))
 
         
         try:
             store = ContainerConfigStore(self.current_project_path)
             self.container_manager.extra_env = resolved_env(store.get("main"))
         except Exception as e:
-            self.system_log(f"WARN: env config skipped: {e}")
+            self.system_log(t("log.env_skipped", error=e))
 
         # 2. Запускаем деплой в отдельном потоке
-        self.deploy_worker = DeployWorker(self.container_manager, self.current_project_path)
+        self.deploy_worker = DeployWorker(self.container_manager, self.current_project_path, extra_apt_packages=apt_packages)
         self.deploy_worker.sys_signal.connect(self.system_log)
         self.deploy_worker.ros_signal.connect(self.ros_log)
         self.deploy_worker.finished_signal.connect(self.on_deploy_finished)
         self.deploy_worker.start()
+        QtCore.QTimer.singleShot(1500, self._refresh_context)
 
     def on_deploy_finished(self):
         """Вызывается, когда DeployWorker завершил работу."""
         self.ui.actions['run'].setEnabled(True)
         self.ui.actions['stop'].setEnabled(False)
-        self.system_log("--- DEPLOY FINISHED ---")
+        self.system_log(t("log.deploy_finished"))
+        self._refresh_context()
 
     def on_stop_project(self):
         # Останавливаем worker и контейнер, если они запущены
@@ -368,32 +471,34 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self.deploy_worker.stop()
         self.ui.actions['run'].setEnabled(True)
         self.ui.actions['stop'].setEnabled(False)
-        self.system_log("Project stopped.")
+        self.system_log(t("log.stopped"))
+        self._refresh_context()
 
     def on_export_docker(self):
         if not self.current_project_path:
-            self.system_log("Error: No project loaded.")
+            self.system_log(t("log.no_project"))
             return
         # Сначала сгенерируем актуальные файлы из графа
-        self.system_log("Generating fresh project files before export...")
+        self.system_log(t("log.export_generating"))
         if not self.project_manager.save_project(self.current_project_path):
-            self.system_log("Error: project generation failed. Export aborted.")
+            self.system_log(t("log.export_generate_failed"))
             return
         try:
-            self.system_log("Exporting portable Docker package...")
+            self.system_log(t("log.export_running"))
             zip_path = ExportManager.export_to_portable_package(self.current_project_path)
-            self.system_log(f"Export complete: {zip_path}")
+            self.system_log(t("log.export_complete", path=zip_path))
             QtWidgets.QMessageBox.information(
-                self, "Export Complete",
-                f"Portable Docker package created:\n{zip_path}"
+                self, t("dlg.export_complete_title"),
+                t("dlg.export_complete_text", path=zip_path)
             )
         except Exception as e:
-            self.system_log(f"Export failed: {e}")
+            self.system_log(t("log.export_failed", error=e))
             traceback.print_exc()
 
     def on_load_project_init(self, path):
         """Логика загрузки проекта с адаптацией интерфейса"""
         self.current_project_path = path
+        self._offer_layout_migration(path)
         p_type = WorkspaceManager.get_project_type(path)
         self.ui.set_visible_graph(p_type)
         self.ui.rebuild_palette(ALL_NODE_CLASSES, p_type)
@@ -401,11 +506,89 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.watcher.start_watching(os.path.join(path, "src"))
         if hasattr(self, 'container_settings'):
             self.container_settings.set_project(path)
+        if hasattr(self, "remote_panel"):
+            self.remote_panel.set_project(path)
+        if hasattr(self.library_manager, "set_project"):
+            self.library_manager.set_project(path)
+        if hasattr(self, "file_browser"):
+            self.file_browser.set_sources(os.path.join(path, "src"), None)
             self._refresh_container_counts()
-        self.system_log(f"Project loaded: {path} ({p_type.upper()})")
+        self.sync_green_nodes()
+        self._load_real_robot_flag()
+        self._refresh_context()
+        self.system_log(t("log.project_loaded", path=path, type=p_type.upper()))
+
+    def retranslate_tabs(self):
+        """Заголовки вкладок нижней панели (Dashboard/Docker/Libraries/Containers/Remote/Files)."""
+        tabs = getattr(self, "_console_tab_widget", None)
+        for page, key in getattr(self, "_console_tab_keys", {}).items():
+            idx = tabs.indexOf(page) if tabs is not None else -1
+            if idx >= 0:
+                tabs.setTabText(idx, t(key))
+        if hasattr(self.ui, "retranslate"):
+            self.ui.retranslate()
 
     def system_log(self, text):
-        self.ui.console_sys.append(text)
+        ctx = getattr(self, "_exec_ctx", None)
+        prefix = ctx.short() + " " if ctx else ""
+        self.ui.console_sys.append(f"{prefix}{text}")
+
+    # ---------- контекст исполнения (где выполняются команды) ----------
+
+    def _project_target(self):
+        if not self.current_project_path:
+            return None
+        try:
+            return ContainerConfigStore(self.current_project_path).get("main").get("target")
+        except Exception:
+            return None
+
+    def _refresh_context(self):
+        connected, rhost, rcontainer = getattr(self, "_remote", (False, "", ""))
+        if connected:
+            # Подключены к удалённой цели: она важнее локального контейнера —
+            # именно туда уходят Sync / Build.
+            self._exec_ctx = resolve_context({"type": "ssh", "host": rhost},
+                                             bool(rcontainer), rcontainer, self._real_robot)
+        else:
+            cm = self.container_manager
+            active = bool(cm and getattr(cm, "container", None) is not None)
+            name = getattr(cm, "container_name", "") if cm else ""
+            self._exec_ctx = resolve_context(self._project_target(), active, name,
+                                             self._real_robot)
+        if hasattr(self.ui, "context_badge"):
+            self.ui.context_badge.set_context(self._exec_ctx)
+        proj = os.path.basename(self.current_project_path) if self.current_project_path else "no project"
+        self.setWindowTitle(f"ROS2 Blueprint Studio — {proj}  ·  [{self._exec_ctx.label()}]")
+
+    def _load_real_robot_flag(self):
+        target = self._project_target() or {}
+        self._real_robot = bool(target.get("real_robot", False))
+        btn = self.ui.actions.get("real_robot")
+        if btn:
+            btn.blockSignals(True); btn.setChecked(self._real_robot); btn.blockSignals(False)
+
+    def _on_remote_changed(self, connected, host, container):
+        self._remote = (connected, host, container)
+        if hasattr(self.library_manager, "set_remote_connected"):
+            self.library_manager.set_remote_connected(connected)
+        self._refresh_context()
+        if hasattr(self, "file_browser") and self.current_project_path:
+            session = self.remote_panel.session if connected else None
+            self.file_browser.set_sources(os.path.join(self.current_project_path, "src"), session)
+
+    def on_real_robot_toggled(self, checked):
+        self._real_robot = bool(checked)
+        if self.current_project_path:
+            try:
+                store = ContainerConfigStore(self.current_project_path)
+                cfg = store.get("main")
+                cfg.setdefault("target", {})["real_robot"] = self._real_robot
+                store.save(cfg)
+            except Exception as e:
+                self.ui.console_sys.append(t("log.real_robot_not_saved", error=e))
+        self._refresh_context()
+        self.system_log(t("log.target_robot") if self._real_robot else t("log.target_sim"))
 
     def ros_log(self, text):
         self.dashboard.process_log(text)
@@ -415,10 +598,10 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         try:
             self.project_manager.sync_node_from_file(
                 path, content, ports,
-                graphs=[self.graph_py, self.graph_cpp],
+                graphs=self.graphs.all(),
                 log_callback=self.system_log)
         except Exception as e:
-            self.system_log(f"Sync error: {e}")
+            self.system_log(t("log.sync_error", error=e))
     # === CORE LOGIC ===
 
     def resolve_node_type(self, code):
@@ -445,7 +628,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             with open(meta_path, 'r', encoding='utf-8') as f:
                 meta = yaml.safe_load(f)
 
-            graph = self.graph_py if self.ui.tabs.currentIndex() == 0 else self.graph_cpp
+            graph = self.graphs.current(self.ui.tabs.currentIndex())
 
             # === ФИКС 2: уникальное имя (Name, Name_1, Name_2...) ===
             base_name = meta['name']
@@ -482,7 +665,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                     elif pdir == 'out' and pname not in have_out:
                         node.add_output(pname, multi_output=True, display_name=True)
                 except Exception as pe:
-                    self.system_log(f"WARN: port '{pname}' skipped: {pe}")
+                    self.system_log(t("log.port_skipped", port=pname, error=pe))
 
             # Восстанавливаем код из файла (Закон удобства)
             ext = ".cpp" if "cpp" in meta['type'].lower() else ".py"
@@ -491,12 +674,28 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 with open(code_path, 'r', encoding='utf-8') as f:
                     node.set_property("code_content", f.read())
 
-            self.system_log(f"Successfully imported user node: {new_name}")
+            self.system_log(t("log.user_node_imported", name=new_name))
         except Exception as e:
-            self.system_log(f"Error importing user node: {e}")
-            
+            self.system_log(t("log.user_node_import_error", error=e))
+
+    def on_restart_selected(self, graph, *args, **kwargs):
+        for node in graph.selected_nodes():
+            is_cpp = "cpp" in node.type_.lower()
+            self.process_manager.restart_node(node.name(), self.system_log, rebuild_cpp=is_cpp)
+
+    def on_freeze_selected(self, graph, target_state, *args, **kwargs):
+        for node in graph.selected_nodes():
+            if self._is_lifecycle_node(node):
+                self.process_manager.set_lifecycle_state(node.name(), target_state, self.system_log)
+            else:
+                self.system_log(t("log.not_lifecycle", name=node.name()))
+
+    def _is_lifecycle_node(self, node):
+        return 'lifecycle' in getattr(node, 'NODE_NAME', '').lower() or \
+               'lifecycle' in node.type_.lower()
+    
     def on_save_node_to_palette(self, node):
-        palette_name, ok = QtWidgets.QInputDialog.getText(self, "Save to Palette", "Enter Palette Name:")
+        palette_name, ok = QtWidgets.QInputDialog.getText(self, t("dlg.save_palette_title"), t("dlg.save_palette_prompt"))
         if not (ok and palette_name): return
 
         node_name = node.name()
@@ -515,7 +714,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         
         import yaml
         with open(os.path.join(base_dir, "node.yaml"), 'w', encoding='utf-8') as f:
-            yaml.dump(meta, f, sort_keys=False)
+            yaml.dump(meta, f, sort_keys=False, allow_unicode=True)
 
         # 2. Сохраняем код в его родном расширении (Закон удобства)
         code = node.get_property("code_content")
@@ -523,18 +722,16 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         with open(os.path.join(base_dir, f"logic{ext}"), 'w', encoding='utf-8') as f:
             f.write(code if code else "")
 
-        self.system_log(f" Node '{node_name}' saved to palette '{palette_name}' as native files.")
+        self.system_log(t("log.node_saved_palette", node=node_name, palette=palette_name))
         # Обновляем UI палитры
         p_type = WorkspaceManager.get_project_type(self.current_project_path) if self.current_project_path else "python"
         self.ui.rebuild_palette(ALL_NODE_CLASSES, p_type)
 
     def _on_node_dropped_to_palette(self, node_id):
         """Нода перетащена Alt+drag'ом на палитру — сохраняем её как кастомную."""
-        for g in (self.graph_py, self.graph_cpp):
-            for n in g.all_nodes():
-                if n.id == node_id:
-                    self.on_save_node_to_palette(n)
-                    return
+        n = self.graphs.find_node(node_id)
+        if n is not None:
+            self.on_save_node_to_palette(n)
                 
     def on_export_palette(self):
         from core.palette_share import export_palette, PALETTES_ROOT
@@ -544,57 +741,57 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             palettes = [d for d in os.listdir(PALETTES_ROOT)
                         if os.path.isdir(os.path.join(PALETTES_ROOT, d))]
         if not palettes:
-            self.system_log("No user palettes to export. Save a node to a palette first.")
+            self.system_log(t("log.no_palettes"))
             return
         name, ok = QtWidgets.QInputDialog.getItem(
-            self, "Export Palette", "Choose palette:", palettes, 0, False)
+            self, t("dlg.export_palette_title"), t("dlg.export_palette_choose"), palettes, 0, False)
         if not (ok and name):
             return
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Export palette as", f"{name}.bppalette",
+            self, t("dlg.export_palette_as"), f"{name}.bppalette",
             "Blueprint Palette (*.bppalette)")
         if not path:
             return
         try:
             out = export_palette(name, path)
-            self.system_log(f"📤 Palette exported: {out}")
+            self.system_log(t("log.palette_exported", path=out))
         except Exception as e:
-            self.system_log(f"Export failed: {e}")
+            self.system_log(t("log.export_failed", error=e))
 
     def on_import_palette(self):
         from core.palette_share import import_palette
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Import palette", "", "Blueprint Palette (*.bppalette *.zip)")
+            self, t("dlg.import_palette_title"), "", "Blueprint Palette (*.bppalette *.zip)")
         if not path:
             return
         try:
             pname, nodes = import_palette(path)
         except FileExistsError as e:
             ans = QtWidgets.QMessageBox.question(
-                self, "Palette exists",
-                f"Palette '{e}' already exists. Overwrite?")
+                self, t("dlg.palette_exists_title"),
+                t("dlg.palette_exists_text", name=e))
             if ans != QtWidgets.QMessageBox.Yes:
                 return
             try:
                 pname, nodes = import_palette(path, overwrite=True)
             except Exception as e2:
-                self.system_log(f"Import failed: {e2}")
+                self.system_log(t("log.import_failed", error=e2))
                 return
         except Exception as e:
-            self.system_log(f"Import failed: {e}")
+            self.system_log(t("log.import_failed", error=e))
             return
 
         # Обновляем палитру в UI
         p_type = WorkspaceManager.get_project_type(self.current_project_path) \
             if self.current_project_path else "python"
         self.ui.rebuild_palette(ALL_NODE_CLASSES, p_type)
-        self.system_log(f"📥 Imported palette '{pname}': {len(nodes)} node(s): {', '.join(nodes)}")
+        self.system_log(t("log.palette_imported", name=pname, count=len(nodes), nodes=", ".join(nodes)))
 
     def on_assign_container(self, graph, *args, **kwargs):
         """Назначает выбранным нодам деплой-группу (свойство container_group)."""
         selected = graph.selected_nodes()
         if not selected:
-            self.system_log("Select node(s) first.")
+            self.system_log(t("log.select_nodes_first"))
             return
 
         existing = ["main"]
@@ -602,8 +799,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             existing = self.container_settings.group_names()
 
         name, ok = QtWidgets.QInputDialog.getItem(
-            self, "Assign to container",
-            "Container group (введи новое имя или выбери):",
+            self, t("dlg.assign_title"),
+            t("dlg.assign_prompt"),
             existing, 0, True)
         if not (ok and name):
             return
@@ -625,14 +822,14 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self.container_settings.refresh_groups()
 
         self._refresh_container_counts()
-        self.system_log(f"Assigned {len(selected)} node(s) -> container '{gname}'")
+        self.system_log(t("log.assigned", count=len(selected), group=gname))
 
     def _refresh_container_counts(self):
         """Счётчик нод по группам в UI (roadmap 2.4)."""
         if not hasattr(self, 'container_settings') or not self.container_settings.store:
             return
         counts = {}
-        for graph in [self.graph_py, self.graph_cpp]:
+        for graph in self.graphs.all():
             for node in graph.all_nodes():
                 g = "main"
                 if node.has_property('container_group'):
@@ -650,25 +847,107 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         'python': 'ros.py.PyStringPubNode',
     }
 
+    @staticmethod
+    def _node_binds(node, lang, filename, rel):
+        """Нода уже привязана к этому файлу (новая — по bound_file, старая — по имени файла)."""
+        if (('cpp' in node.type_) != (lang == 'cpp')):
+            return False
+        bound = node.get_property('bound_file')
+        if bound:
+            return bound == rel
+        return node.get_property('source_file') == filename and "/" not in rel.split("/", 1)[-1]
+
+    def _ensure_file_node(self, path, langs, rel):
+        """Нода-файл для зелёного не-кодового файла (CMakeLists.txt, package.xml, заголовок…). 1 — создана."""
+        from core import build_marks
+        from core.node_sources import code_hash
+        if any(n.has_property('bound_file') and n.get_property('bound_file') == rel
+               and n.type_ == self.project_manager.FILE_NODE_TYPE
+               for g in self.graphs.all() for n in g.all_nodes()):
+            return 0
+        lang = build_marks.node_language(rel)
+        if lang not in langs:
+            lang = "cpp" if "cpp" in langs else "python"
+        graph = self.graphs.for_language(lang)
+        try:
+            with open(os.path.join(path, "src", rel), 'r', encoding='utf-8') as f:
+                code = f.read()
+        except (OSError, UnicodeDecodeError) as e:
+            self.system_log(t("log.node_failed", file=rel, error=e))
+            return 0
+        try:
+            taken = len(graph.all_nodes())
+            node = graph.create_node(self.project_manager.FILE_NODE_TYPE, name=os.path.basename(rel),
+                                     pos=[(taken % 4) * 320, (taken // 4) * 220])
+            for prop, val in (('bound_file', rel), ('code_content', code), ('code_sync_hash', code_hash(code))):
+                if not node.has_property(prop):
+                    node.create_property(prop, val)
+                node.set_property(prop, val)
+            return 1
+        except Exception as e:
+            self.system_log(t("log.node_failed", file=rel, error=e))
+            return 0
+
+    def sync_green_nodes(self):
+        """Файлы с зелёной отметкой (вкладка Files) → ноды на столе, привязанные к файлу на диске.
+        Снятие отметки ноду НЕ удаляет: у неё могут быть провода и настройки."""
+        path = getattr(self, "current_project_path", None)
+        if not path:
+            return 0
+        from core import build_marks, graph_ir
+        from core.node_sources import code_hash
+        from core.workspace_manager import WorkspaceManager
+        langs = graph_ir.project_languages(WorkspaceManager.get_project_type(path))
+        self.project_manager.sync_file_nodes(os.path.join(path, "src"))
+        nodes, plain = build_marks.green_node_files(path, langs)
+        created = 0
+        for lang, filename, rel in nodes:
+            graph = self.graphs.for_language(lang)
+            if any(n.has_property('bound_file') and self._node_binds(n, lang, filename, rel)
+                   for g in self.graphs.all() for n in g.all_nodes()):
+                continue
+            try:
+                full = os.path.join(path, "src", rel)
+                with open(full, 'r', encoding='utf-8') as f:
+                    code = f.read()
+                stem = os.path.splitext(filename)[0]
+                taken = len(graph.all_nodes())
+                node = graph.create_node(self.IMPORT_NODE_TYPES[lang], name=stem,
+                                         pos=[(taken % 4) * 320, (taken // 4) * 220])
+                for prop, val in (('source_file', filename), ('bound_file', rel),
+                                  ('code_content', code), ('code_sync_hash', code_hash(code))):
+                    if not node.has_property(prop):
+                        node.create_property(prop, val)
+                    node.set_property(prop, val)
+                created += 1
+            except Exception as e:
+                self.system_log(t("log.node_failed", file=filename, error=e))
+        for rel in plain:
+            created += self._ensure_file_node(path, langs, rel)
+        if created:
+            self._refresh_container_counts()
+            self.system_log(t("log.green_nodes", count=created))
+        return created
+
     def on_import_foreign_project(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(
-            self, "Import existing ROS 2 package (folder)")
+            self, t("dlg.import_pkg_title"))
         if not path:
             return
         try:
             result = import_ros2_package(path)
         except Exception as e:
-            self.system_log(f"Import failed: {e}")
+            self.system_log(t("log.import_failed", error=e))
             return
 
-        graph = self.graph_py if self.ui.tabs.currentIndex() == 0 else self.graph_cpp
+        graph = self.graphs.current(self.ui.tabs.currentIndex())
 
         # Зависимости — в лог (панель зависимостей можно навесить позже)
         if result['deps']:
-            self.system_log(f"📦 {result['package_name']} depends: "
-                            + ", ".join(result['deps']))
+            self.system_log(t("log.pkg_depends", name=result['package_name'],
+                              deps=", ".join(result['deps'])))
         for w in result['warnings']:
-            self.system_log(f"WARN: {w}")
+            self.system_log(t("log.warn", text=w))
 
         # Раскидываем ноды сеткой
         cols = 4
@@ -696,12 +975,10 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                     node.set_property(prop, val)
                 created += 1
             except Exception as e:
-                self.system_log(f"WARN: node for {entry['filename']} failed: {e}")
+                self.system_log(t("log.node_failed", file=entry['filename'], error=e))
 
         self._refresh_container_counts()
-        self.system_log(
-            f"✅ Imported '{result['package_name']}': {created} file-node(s). "
-            "Связи не восстанавливаются (Level 1) — ноды помечены is_imported.")
+        self.system_log(t("log.pkg_imported", name=result['package_name'], count=created))
 
     def setup_graph_context_menus(self, graph):
         """Adds custom actions (add port, rescan) to right-click menu"""
@@ -713,24 +990,27 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         root_menu.add_separator()
 
         # v0.6.0: деплой-группы
-        root_menu.add_command(" Assign to container...", partial(self.on_assign_container, graph))
+        root_menu.add_command(" " + t("menu.assign_container"), partial(self.on_assign_container, graph))
+        root_menu.add_command(" " + t("menu.restart_node"), partial(self.on_restart_selected, graph))
+        root_menu.add_command(" " + t("menu.freeze"), partial(self.on_freeze_selected, graph, 'deactivate'))
+        root_menu.add_command(" " + t("menu.unfreeze"), partial(self.on_freeze_selected, graph, 'activate'))
         root_menu.add_separator()
 
         # Manual Rescan Action
-        root_menu.add_command(" Rescan Code for Ports", partial(self.on_manual_rescan, graph))
+        root_menu.add_command(" " + t("menu.rescan"), partial(self.on_manual_rescan, graph))
         root_menu.add_separator()
         
         # Add Output Ports
-        out_menu = root_menu.add_menu("Add Custom Output (Publisher)")
+        out_menu = root_menu.add_menu(t("menu.add_output"))
         for name, color in MSG_COLORS.items():
             short_name = name.split('/')[-1]
-            out_menu.add_command(f"Add {short_name}", partial(self.on_add_port_clicked, graph, name, color))
+            out_menu.add_command(t("menu.add_port", name=short_name), partial(self.on_add_port_clicked, graph, name, color))
             
         # Add Input Ports
-        in_menu = root_menu.add_menu("Add Custom Input (Subscriber)")
+        in_menu = root_menu.add_menu(t("menu.add_input"))
         for name, color in MSG_COLORS.items():
             short_name = name.split('/')[-1]
-            in_menu.add_command(f"Add {short_name}", partial(self.on_add_input_clicked, graph, name, color))
+            in_menu.add_command(t("menu.add_port", name=short_name), partial(self.on_add_input_clicked, graph, name, color))
 
     def on_manual_rescan(self, graph, *args, **kwargs):
         selected = graph.selected_nodes()
@@ -744,7 +1024,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                     with open(full_path, 'r', encoding='utf-8') as f: content = f.read()
                     ports = self.watcher._scan_ports(content, full_path)
                     self.on_file_changed_externally(filename, content, ports)
-                    self.system_log(f" Manually rescanned: {filename}")
+                    self.system_log(t("log.rescanned", file=filename))
 
     def on_add_port_clicked(self, graph, port_type, port_color):
         selected_nodes = graph.selected_nodes()

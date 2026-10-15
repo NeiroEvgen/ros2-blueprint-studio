@@ -6,6 +6,9 @@ from qt_material import apply_stylesheet
 # Добавляем корень в путь
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+from core import settings as _settings
+_settings.apply_language()          # сохранённый язык интерфейса — до создания окон
+
 from ui.launcher_dialog import LauncherDialog
 from ui.main_window import RosVisualRunner
 

@@ -3,3 +3,4 @@ NodeGraphQt
 docker
 qt-material
 jinja2
+paramiko
