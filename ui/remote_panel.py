@@ -188,6 +188,8 @@ class RemotePanel(QtWidgets.QWidget):
             self._update_buttons()
 
         def fail(msg):
+            if "paramiko" in msg and "No module named" in msg:
+                msg = t("rp.no_paramiko")
             if "HostKeyChanged" in msg:
                 QtWidgets.QMessageBox.critical(self, t("rp.hostkey_title"), msg)
             self._fail(t("rp.connect_failed", error=msg))

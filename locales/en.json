@@ -226,6 +226,7 @@
   "rp.connected": "Connected: {where}",
   "rp.connected_log": "Connected to {where}",
   "rp.hostkey_title": "Host key changed",
+  "rp.no_paramiko": "The Remote tab needs the 'paramiko' package: run  pip install paramiko  (or  pip install -r requirements.txt) in the environment that runs Studio, then restart it.",
   "rp.connect_failed": "Connection failed: {error}",
   "rp.disconnected_log": "Disconnected from the remote target",
   "rp.sync_running": "Sync…",

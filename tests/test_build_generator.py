@@ -201,3 +201,23 @@ class TestCompanionSources:
         self._w(cpp, "a.cpp", ""); self._w(cpp, "b.cpp", "")
         bg.generate_cpp_build_files(src)
         assert self._exec_line(src, "n") == "cpp/n.cpp cpp/a.cpp cpp/b.cpp"
+
+
+class TestExampleInterfacesOptional:
+    """example_interfaces есть не в каждом образе робота: требуем его, только если код его include'ит."""
+
+    def _scan(self, tmp_path, body):
+        cpp = tmp_path / "cpp"
+        cpp.mkdir()
+        (cpp / "n.cpp").write_text(body, encoding="utf-8")
+        return bg.scan_sources(str(cpp))
+
+    def test_not_required_by_default(self, tmp_path):
+        scan = self._scan(tmp_path, '#include <rclcpp/rclcpp.hpp>\nint main(){return 0;}\n')
+        assert "example_interfaces" not in scan.deps
+        text = bg.render_cmake_auto("p", scan.deps, scan.executables)
+        assert "example_interfaces" not in text
+
+    def test_added_when_the_code_uses_it(self, tmp_path):
+        scan = self._scan(tmp_path, '#include "example_interfaces/action/fibonacci.hpp"\nint main(){return 0;}\n')
+        assert "example_interfaces" in scan.deps

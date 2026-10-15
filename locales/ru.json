@@ -228,6 +228,7 @@
   "rp.connected": "Подключено: {where}",
   "rp.connected_log": "Подключено к {where}",
   "rp.hostkey_title": "Ключ хоста изменился",
+  "rp.no_paramiko": "Для вкладки «Удалённо» нужен пакет paramiko: выполните  pip install paramiko  (или  pip install -r requirements.txt) в окружении, из которого запускается Studio, и перезапустите его.",
   "rp.connect_failed": "Подключение не удалось: {error}",
   "rp.disconnected_log": "Отключено от удалённой цели",
   "rp.sync_running": "Sync…",
