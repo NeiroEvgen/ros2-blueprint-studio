@@ -1,9 +1,9 @@
 """
-Замер длительности этапов цикла «правка → работающий узел» (этап A для горячей замены).
+Timing of the "edit -> running node" cycle stages (groundwork for hot swap).
 
-PhaseTimer.phase("name") — контекст; итог: summary() для лога и record() — строка JSON
-в <проект>/.blueprint/timings.jsonl (по ней видно, что реально съедает время: образ,
-сессия, rosdep, colcon, запуск). Без Qt; ошибки записи не мешают работе.
+PhaseTimer.phase("name") is a context manager; results: summary() for the log and record(), a JSON line
+in <project>/.blueprint/timings.jsonl (shows what really eats the time: image,
+session, rosdep, colcon, launch). No Qt; write errors never get in the way.
 """
 import json
 import os
@@ -26,7 +26,7 @@ class PhaseTimer:
             self.phases.append((name, self._clock() - start))
 
     def mark(self, name):
-        """Время от создания таймера до события (например, первая строка вывода запуска)."""
+        """Time from timer creation to an event (e.g. the first line of launch output)."""
         self.phases.append((name, self._clock() - self._t0))
 
     @property

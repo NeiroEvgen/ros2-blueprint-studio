@@ -1,9 +1,9 @@
 from NodeGraphQt import BaseNode
-# Импортируем словари раздельно
+# import the dictionaries separately
 from .templates import PYTHON_TEMPLATES, CPP_TEMPLATES
 
-# Цвета
-EXEC_COLOR = (255, 255, 255) # Белый для Логики
+# colours
+EXEC_COLOR = (255, 255, 255) # white for logic
 DATA_COLOR = (100, 100, 100)
 
 MSG_COLORS = {
@@ -24,7 +24,7 @@ class RosNodeBase(BaseNode):
             ('container_group', 'main'),
             ('is_imported', False),
             ('source_file', ''),
-            ('bound_file', ''),     # путь от src/: нода привязана к этому файлу на диске (зелёная отметка)
+            ('bound_file', ''),     # path relative to src/: the node is bound to this file on disk (green mark)
             ('code_content', ''),
             ('code_sync_hash', ''),
         ):

@@ -1,9 +1,9 @@
 """
-Характеризационные тесты генератора launch-файлов (LaunchCompiler).
+Characterization tests of the launch file generator (LaunchCompiler).
 
-Пинят ТЕКУЩЕЕ поведение, включая спорные места (помечены "ФИКСИРУЕМ").
-Без Qt, Docker и ROS: сгенерированный файл исполняется на подставных
-модулях launch / launch_ros, которые просто записывают аргументы.
+They pin the CURRENT behaviour, including debatable spots (marked "PINNED").
+No Qt, Docker or ROS: the generated file runs against fake
+launch / launch_ros modules that just record the arguments.
 """
 import ast
 import sys
@@ -26,7 +26,7 @@ def py(name, group="main"):
 
 
 class _Rec:
-    """Подставной launch-объект: запоминает kwargs."""
+    """Fake launch object: remembers its kwargs."""
     kind = "?"
 
     def __init__(self, **kw):
@@ -50,8 +50,8 @@ class FakeLaunchDescription:
 
 
 def run_launch(src):
-    """Исполняет сгенерированный launch-файл на подставных модулях и
-    возвращает список действий (Node / ExecuteProcess)."""
+    """Runs the generated launch file against the fake modules and
+    returns the list of actions (Node / ExecuteProcess)."""
     fake_launch = types.ModuleType("launch")
     fake_launch.LaunchDescription = FakeLaunchDescription
     fake_actions = types.ModuleType("launch.actions")
@@ -100,7 +100,7 @@ class TestCppNodes:
         assert a.kind == "Node"
         assert a.kw["package"] == "demo_stage"
         assert a.kw["executable"] == "planner"
-        assert a.kw["name"] == "planner"            # ФИКСИРУЕМ: имя ноды = имя исполняемого
+        assert a.kw["name"] == "planner"            # PINNED: node name = executable name
         assert a.kw["output"] == "screen"
 
     def test_each_cpp_file_is_one_node(self):
@@ -112,7 +112,7 @@ class TestCppNodes:
         assert a.kw["executable"] == "my.node"
 
     def test_executable_matches_cmake_target(self, tmp_path):
-        """Главный инвариант: executable в launch == add_executable в CMakeLists."""
+        """Main invariant: the executable in launch == add_executable in CMakeLists."""
         from core.project_manager import ProjectManager
         src = tmp_path / "p" / "src"
         (src / "cpp").mkdir(parents=True)
@@ -135,7 +135,7 @@ class TestPythonNodes:
         assert a.kw["cmd"][2].endswith("/python/viewer.py")
 
     def test_python_path_is_hardcoded_container_path(self):
-        # ФИКСИРУЕМ: путь в контейнере зашит; при смене точки монтирования сломается
+        # PINNED: the in-container path is hard-coded; changing the mount point breaks it
         (a,) = run_launch(_compile([py("viewer")]))
         assert a.kw["cmd"][2] == "/root/ros2_ws/src/user_project/python/viewer.py"
 
@@ -153,7 +153,7 @@ class TestInputRobustness:
         ast.parse(_compile([cpp("нода")]))
 
     def test_filename_with_quote_does_not_break_syntax(self):
-        # Апостроф в имени не должен ломать синтаксис сгенерированного файла.
+        # An apostrophe in the name must not break the syntax of the generated file.
         ast.parse(_compile([cpp("a'b")]))
         ast.parse(_compile([py("a'b.py")]))
 

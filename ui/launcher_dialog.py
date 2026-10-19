@@ -2,7 +2,7 @@ import sys
 import shutil
 import subprocess
 import os
-from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6 import QtWidgets, QtCore
 from core.workspace_manager import WorkspaceManager
 from core import i18n, settings
 from core.i18n import t
@@ -15,7 +15,7 @@ class LauncherDialog(QtWidgets.QDialog):
         
         layout = QtWidgets.QHBoxLayout(self)
         
-        # Слева: Список проектов
+        # left: project list
         left_layout = QtWidgets.QVBoxLayout()
         self.lbl_recent = QtWidgets.QLabel()
         left_layout.addWidget(self.lbl_recent)
@@ -24,7 +24,7 @@ class LauncherDialog(QtWidgets.QDialog):
         left_layout.addWidget(self.project_list)
         layout.addLayout(left_layout, stretch=2)
         
-        # Справа: Создание
+        # right: create
         right_layout = QtWidgets.QVBoxLayout()
         self.lbl_create = QtWidgets.QLabel()
         right_layout.addWidget(self.lbl_create)
@@ -32,22 +32,22 @@ class LauncherDialog(QtWidgets.QDialog):
         self.name_input = QtWidgets.QLineEdit()
         right_layout.addWidget(self.name_input)
         
-        # === ВЫБОР ЯЗЫКА ===
+        # === LANGUAGE CHOICE ===
         self.lbl_project_lang = QtWidgets.QLabel()
         right_layout.addWidget(self.lbl_project_lang)
         self.type_combo = QtWidgets.QComboBox()
-        self.type_combo.addItems(["", "", ""])      # тексты — в _retranslate()
+        self.type_combo.addItems(["", "", ""])      # texts are set in _retranslate()
         right_layout.addWidget(self.type_combo)
         # ===================
 
         
         
-        # Правый клик: Open / Show in Explorer / Delete
+        # right click: Open / Show in Explorer / Delete
         self.project_list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.project_list.customContextMenuRequested.connect(self.show_project_menu)
         
 
-        # Кнопки под списком (дублируют меню для наглядности)
+        # buttons under the list (duplicate the menu for visibility)
         btns_row = QtWidgets.QHBoxLayout()
         self.btn_show = btn_show = QtWidgets.QPushButton()
         btn_show.clicked.connect(self.show_selected_in_explorer)
@@ -100,7 +100,7 @@ class LauncherDialog(QtWidgets.QDialog):
             self._retranslate()
 
     def _retranslate(self):
-        """Все тексты окна из словаря; вызывается при создании и при смене языка."""
+        """All window texts from the dictionary; called on creation and on language change."""
         self.setWindowTitle(t("launcher.title"))
         self.lbl_recent.setText(t("launcher.recent"))
         self.lbl_create.setText(t("launcher.create_new"))
@@ -166,7 +166,7 @@ class LauncherDialog(QtWidgets.QDialog):
             return
         name = os.path.basename(path)
 
-        # Защита: удаляем только то, что лежит внутри workspace root
+        # safety: delete only what lies inside the workspace root
         root = os.path.abspath(WorkspaceManager.get_workspace_root())
         target = os.path.abspath(path)
         if not target.startswith(root + os.sep):

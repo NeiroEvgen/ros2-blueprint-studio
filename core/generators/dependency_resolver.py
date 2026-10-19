@@ -8,7 +8,7 @@ the result across the whole graph.
 Generators (Dockerfile / CMakeLists / package.xml) consume the aggregated
 DepSet — they no longer need to know individual libraries by name.
 
-"к какой либе обращаемся — то и тянем": deps come from what the code actually
+Principle: deps come from what the code actually
 uses. Unknown includes go to .unknown so the UI can surface them instead of
 silently producing a broken build. The registry supports a 'local' flag,
 reserved for future in-workspace custom .msg packages.
@@ -55,7 +55,7 @@ class DepSet:
                 self.local.add(name)
 
     def update(self, other):
-        """Объединяет другой DepSet в этот (для проектов на нескольких языках)."""
+        """Merges another DepSet into this one (for multi-language projects)."""
         for f in ("apt", "pip", "cmake_find", "cmake_link", "xml_depend", "local", "unknown"):
             getattr(self, f).update(getattr(other, f))
         return self

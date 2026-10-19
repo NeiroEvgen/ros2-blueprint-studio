@@ -1,10 +1,10 @@
 """
-Save никогда не должен удалять то, что ему не принадлежит.
+Save must never delete what does not belong to it.
 
-Принадлежит генератору: <src>/<cpp|python>/*.(cpp|py) нод графа, файлы
-project_launch.py и <группа>_launch.py, AUTO-зоны CMakeLists/package.xml.
-Всё остальное (lib/, scripts/, python/ у C++-проекта, include/, test/, чужие launch,
-USER-зона CMake) — файлы человека.
+The generator owns: <src>/<cpp|python>/*.(cpp|py) of graph nodes, the files
+project_launch.py and <group>_launch.py, the AUTO zones of CMakeLists/package.xml.
+Everything else (lib/, scripts/, python/ in a C++ project, include/, test/, other launch files,
+the CMake USER zone) belongs to a person.
 """
 import json
 import os
@@ -110,7 +110,7 @@ def test_user_cmake_zone_survives(project):
 
 
 def test_save_writes_only_into_known_places(project):
-    """После Save в корне проекта не появляется ROS-мусор."""
+    """After Save no ROS clutter appears in the project root."""
     save(project, nodes=[cpp_node("a", MAIN)])
     top = set(os.listdir(project))
     assert not top & {"launch", "CMakeLists.txt", "package.xml", "cpp", "include"}
@@ -134,7 +134,7 @@ def test_library_helper_without_main_not_in_launch(project):
     save(project, nodes=[cpp_node("a", MAIN), cpp_node("helper", "void f(){}\n")])
     launch = (project / "src/launch/project_launch.py").read_text(encoding="utf-8")
     assert "executable='a'" in launch and "helper" not in launch
-    assert (project / "src/cpp/helper.cpp").exists()   # файл остаётся, это библиотека
+    assert (project / "src/cpp/helper.cpp").exists()   # the file stays, it is a library
 
 
 def test_lint_warning_reported_for_mixed_link_signature_in_user_block(project):

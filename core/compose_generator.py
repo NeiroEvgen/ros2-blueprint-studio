@@ -1,9 +1,9 @@
 # core/compose_generator.py
-# v0.6.0 — Генерация docker-compose из деплой-групп.
-# Локальные группы -> docker-compose.yml
-# Удалённые таргеты -> docker-compose.remote_<host>.yml + DEPLOY_REMOTE.md
-# Все сервисы получают один ROS_DOMAIN_ID => DDS discovery видит топики
-# между контейнерами.
+# v0.6.0: docker-compose generation from deploy groups.
+# Local groups -> docker-compose.yml
+# Remote targets -> docker-compose.remote_<host>.yml + DEPLOY_REMOTE.md
+# All services share one ROS_DOMAIN_ID, so DDS discovery sees topics
+# across containers.
 
 import os
 import re
@@ -22,7 +22,7 @@ class ComposeGenerator:
     def generate(self, groups):
         """
         groups: {group_name: [ {'language','filename','group'}, ... ]}
-        Возвращает список путей к созданным compose-файлам.
+        Returns the list of created compose file paths.
         """
         local_services = {}
         remote = {}  # host -> {service_name: service_def}
@@ -58,7 +58,7 @@ class ComposeGenerator:
         cmd_parts = ["source /opt/ros/humble/setup.bash"]
         netem = netem_command(cfg)
         if netem:
-            # iproute2 есть в osrf-образах; '|| true' чтобы не падать без tc
+            # iproute2 is in the osrf images; '|| true' so it does not fail without tc
             cmd_parts.append(f"({netem} || echo 'netem skipped')")
         if has_cpp:
             cmd_parts.append(f"cd {ws} && colcon build --symlink-install")
@@ -91,7 +91,7 @@ class ComposeGenerator:
         if res.get("memory"):
             service["mem_limit"] = str(res["memory"])
 
-        # bridge-сети между сервисами должны делить ROS_DOMAIN_ID — он уже в env
+        # bridge networks between services must share ROS_DOMAIN_ID; it is already in env
         return service
 
     # ------------------------------------------------------------------ #
@@ -110,9 +110,9 @@ class ComposeGenerator:
         lines = [
             "# Remote deploy (v0.6.0 MVP)",
             "",
-            "Для каждой удалённой машины сгенерирован отдельный compose-файл.",
-            "Требования: на машине установлен Docker, у тебя SSH-доступ по ключу,",
-            "обе машины в одной сети и используют один ROS_DOMAIN_ID.",
+            "A separate compose file is generated for every remote machine.",
+            "Requirements: Docker is installed on the machine, SSH key access works,",
+            "both machines are on the same network and use the same ROS_DOMAIN_ID.",
             "",
         ]
         for host in remote:
@@ -126,9 +126,9 @@ class ComposeGenerator:
                 "",
             ]
         lines += [
-            "> ⚠ Не отлажено на реальном железе, пока не прогнано на двух машинах",
-            "> (см. roadmap, раздел 4). Грабли: discovery между машинами, фаерволы,",
-            "> SSH-ключи.",
+            "> ⚠ Not yet tested on real hardware with two machines.",
+            "> Known pitfalls: discovery between machines, firewalls,",
+            "> SSH keys.",
         ]
         with open(os.path.join(self.project_path, "DEPLOY_REMOTE.md"), "w", encoding="utf-8") as f:
             f.write("\n".join(lines))

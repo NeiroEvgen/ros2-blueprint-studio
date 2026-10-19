@@ -1,9 +1,9 @@
 """
-1.3 — интеграция apt_safe в docker_manager, без настоящего Docker.
+apt_safe integration in docker_manager, without real Docker.
 
-FakeContainer записывает все exec_run и отвечает заготовками. Сгенерированные
-команды затем реально гоняются в bash с поддельными apt-get/rosdep —
-проверяем, что композиция apt → rosdep работает, а не только собирается.
+FakeContainer records every exec_run and answers with canned replies. The generated
+commands are then really run in bash with fake apt-get/rosdep:
+we check that the apt -> rosdep composition works, not just that it is assembled.
 """
 import os
 import stat
@@ -29,7 +29,7 @@ class FakeContainer:
 
 
 def _manager(container):
-    m = RosContainerManager.__new__(RosContainerManager)   # без подключения к Docker
+    m = RosContainerManager.__new__(RosContainerManager)   # no Docker connection
     m.container = container
     return m
 
@@ -60,7 +60,7 @@ class TestSessionPackages:
         assert "session_setup_done" in text
 
     def test_garbage_from_dpkg_output_ignored(self):
-        """В apt не должно попасть ничего, кроме известных пакетов сессии."""
+        """Nothing but the known session packages may get into apt."""
         c = FakeContainer(missing=b"ros-humble-turtlesim\n; rm -rf /\n")
         installed = _manager(c)._install_session_packages()
         assert installed == ["ros-humble-turtlesim"]
@@ -74,7 +74,7 @@ class TestInstallPackage:
         ok = _manager(c).install_package("foo; rm -rf /", "apt", msgs.append)
         assert ok is False
         assert c.calls == []
-        assert any("недопустимые" in m for m in msgs)
+        assert any("invalid" in m for m in msgs)
 
     def test_valid_name_goes_through_apt_safe(self):
         c = FakeContainer()
@@ -96,7 +96,7 @@ class TestRunProjectLaunchDeps:
         for cmd, _ in c.calls:
             if "rosdep install" in _cmd_text(cmd):
                 return cmd, log
-        raise AssertionError("dep_cmd не найден")
+        raise AssertionError("dep_cmd not found")
 
     def test_dep_cmd_is_argv_list_with_apt_then_rosdep(self):
         cmd, _ = self._dep_cmd(["ros-humble-moveit"])
@@ -110,7 +110,7 @@ class TestRunProjectLaunchDeps:
 
     @requires_posix_shell
     def test_composed_script_really_runs(self, tmp_path):
-        """Гоняем сгенерированный скрипт в bash с поддельными apt-get и rosdep."""
+        """Run the generated script in bash with fake apt-get and rosdep."""
         cmd, _ = self._dep_cmd(["ros-humble-moveit"])
         bindir = tmp_path / "bin"; bindir.mkdir()
         for name, body in {

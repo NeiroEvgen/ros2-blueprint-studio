@@ -1,7 +1,7 @@
 """
-UI: вкладка Libraries (кнопка Install раньше падала: не было project_path и
-класса _RebuildWorker) и кнопка «Терминал» в Remote. Qt offscreen, Docker и
-ssh подменены.
+UI: the Libraries tab (the Install button used to crash: there was no project_path and
+no _RebuildWorker class) and the "Terminal" button in Remote. Qt offscreen, Docker and
+ssh faked.
 """
 import os
 import time
@@ -24,7 +24,7 @@ def spin(app, cond, timeout=10.0):
         if cond():
             return True
         time.sleep(0.02)
-    raise AssertionError("не дождались условия")
+    raise AssertionError("condition was not reached")
 
 
 class FakeDocker:
@@ -44,7 +44,7 @@ def project(tmp_path):
     from core.dockerfile_manager import DockerfileManager
     p = tmp_path / "proj"
     p.mkdir()
-    # Dockerfile создаёт save_project; для теста — минимальный через менеджер
+    # save_project creates the Dockerfile; for the test a minimal one via the manager
     (p / "Dockerfile").write_text("ARG BASE_IMAGE\nFROM ${BASE_IMAGE}\n", encoding="utf-8")
     return str(p)
 
@@ -54,7 +54,7 @@ class TestLibraryInstall:
         from ui.library_manager import LibraryManager
         w = LibraryManager(FakeDocker())
         w.pkg_input.setText("numpy")
-        w.start_install()                      # раньше: AttributeError
+        w.start_install()                      # used to be an AttributeError
         assert "open a project" in w.log_output.toPlainText().lower()
         assert w.install_btn.isEnabled()
 
@@ -65,7 +65,7 @@ class TestLibraryInstall:
         w.set_project(project)
         w.pkg_input.setText("numpy")
         w.type_combo.setCurrentIndex(1)        # pip
-        w.start_install()                      # раньше: NameError _RebuildWorker
+        w.start_install()                      # used to be a NameError _RebuildWorker
         spin(app, lambda: w.install_btn.isEnabled())
         assert d.calls == [project]
         assert "numpy" in open(os.path.join(project, "Dockerfile"), encoding="utf-8").read()
@@ -97,9 +97,9 @@ class TestTerminalButton:
         p = RemotePanel()
         assert not p.btn_terminal.isEnabled()
         p.ed_host.setText("192.168.1.10")
-        assert not p.btn_terminal.isEnabled()          # нет пользователя
+        assert not p.btn_terminal.isEnabled()          # no user
         p.ed_user.setText("robot")
-        assert p.btn_terminal.isEnabled()              # проект и подключение не нужны
+        assert p.btn_terminal.isEnabled()              # neither a project nor a connection is needed
         p.ed_host.setText("a&calc")
         assert not p.btn_terminal.isEnabled()
 
@@ -121,7 +121,7 @@ class TestTerminalButton:
         from core.remote.terminal import TerminalError
 
         def boom(prof):
-            raise TerminalError("ssh.exe не найден")
+            raise TerminalError("ssh.exe not found")
         monkeypatch.setattr(rp, "open_terminal", boom)
         p = rp.RemotePanel()
         p.ed_host.setText("h"); p.ed_user.setText("u")

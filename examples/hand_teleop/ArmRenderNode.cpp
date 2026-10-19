@@ -8,15 +8,15 @@
 
 using namespace std::chrono_literals;
 
-// Рендер 6-осевого манипулятора из углов суставов.
-// Вход:  /arm/joint_cmd  (std_msgs/Float64MultiArray, data[6]:
-//        [0] yaw базы, [1] плечо, [2] локоть, [3] кисть pitch,
-//        [4] кисть roll (пока не рисуем), [5] раскрытие пальцев 0..1)
-// Выход: /arm_viz_markers (MarkerArray, frame 'map')
+// Renders a 6-axis manipulator from joint angles.
+// Input:  /arm/joint_cmd  (std_msgs/Float64MultiArray, data[6]:
+//        [0] base yaw, [1] shoulder, [2] elbow, [3] wrist pitch,
+//        [4] wrist roll (not drawn yet), [5] finger opening 0..1)
+// Output: /arm_viz_markers (MarkerArray, frame 'map')
 class ArmRenderNode : public rclcpp::Node {
 public:
     ArmRenderNode() : Node("arm_render_node") {
-        // Стартовая поза: рука сложена вниз
+        // start pose: arm folded down
         q_ = {0.0, 2.60, 0.20, 0.0, 0.0, 0.5};
 
         sub_ = create_subscription<std_msgs::msg::Float64MultiArray>(
@@ -105,7 +105,7 @@ private:
         P elbow = rot(elbow_l), wrist = rot(wrist_l), hand = rot(hand_l);
 
         visualization_msgs::msg::MarkerArray arr;
-        {   // постамент
+        {   // pedestal
             auto m = base_marker(0, visualization_msgs::msg::Marker::CYLINDER);
             m.pose.position.z = kPedestalH*0.5;
             m.scale.x = m.scale.y = 0.20; m.scale.z = kPedestalH;
@@ -119,7 +119,7 @@ private:
         arr.markers.push_back(sphere(5, wrist, 0.034, 1.0, 0.45, 0.0));
         arr.markers.push_back(link(6, wrist, hand, 0.030, 0.4, 1.0, 0.4));
 
-        // Пальцы: раскрытие по grip (0 = сжаты вдоль ладони, 1 = веером)
+        // fingers: opening by grip (0 = closed along the palm, 1 = fanned out)
         double dirx = std::sin(a3), dirz = std::cos(a3);
         for (int i = -1; i <= 1; i++) {
             double spread = 0.010 + 0.022 * grip;

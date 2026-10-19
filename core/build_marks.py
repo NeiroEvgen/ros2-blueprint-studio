@@ -1,12 +1,12 @@
 """
-Отметки файлов проекта для сборки (вкладка Files).
+Build marks of project files (Files tab).
 
-  yellow — файл (или папка) попадает в CMakeLists.txt
-  green  — то же + файл виден на рабочем столе как нода (этап 2)
+  yellow: the file (or folder) goes into CMakeLists.txt
+  green:  the same + the file is shown on the canvas as a node
 
-Хранятся в <проект>/.blueprint/build_marks.json, пути относительно src/
-(прямые слэши). Отметка на папке действует на всё содержимое.
-Без Qt и docker.
+Stored in <project>/.blueprint/build_marks.json, paths relative to src/
+(forward slashes). A mark on a folder applies to everything inside.
+No Qt, no docker.
 """
 import json
 import os
@@ -51,7 +51,7 @@ def save(project_dir: str, marks: dict) -> None:
 
 
 def next_state(state):
-    """Цикл по клику: нет → жёлтая → зелёная → нет."""
+    """Click cycle: none -> yellow -> green -> none."""
     return {None: YELLOW, YELLOW: GREEN, GREEN: None}[state]
 
 
@@ -67,7 +67,7 @@ def set_mark(project_dir: str, rel: str, state) -> dict:
 
 
 def effective(marks: dict, rel: str):
-    """Состояние файла с учётом отметки на родительской папке (ближайшая побеждает)."""
+    """State of a file, taking marks on parent folders into account (the nearest wins)."""
     rel = norm(rel)
     while True:
         if rel in marks:
@@ -78,7 +78,7 @@ def effective(marks: dict, rel: str):
 
 
 def marked_files(src_dir: str, marks: dict, states=STATES) -> list:
-    """Развернуть отметки в список существующих файлов (пути от src/, отсортирован)."""
+    """Expand marks into a list of existing files (paths relative to src/, sorted)."""
     out = set()
     for rel, st in marks.items():
         if st not in states:
@@ -91,7 +91,7 @@ def marked_files(src_dir: str, marks: dict, states=STATES) -> list:
                 dirs[:] = [d for d in dirs if not d.startswith(".")]
                 for fn in files:
                     r = norm(os.path.relpath(os.path.join(root, fn), src_dir))
-                    # вложенная отметка «нет» перебивает папочную: effective решает
+                    # a nested "none" mark overrides the folder mark: effective() decides
                     if effective(marks, r) in states:
                         out.add(r)
     return sorted(out)
@@ -107,7 +107,7 @@ def node_language(rel: str):
 
 
 def green_files(project_dir: str) -> list:
-    """Все файлы с зелёной отметкой (пути от src/)."""
+    """All green-marked files (paths relative to src/)."""
     from core.layout import ProjectLayout
     layout = ProjectLayout(project_dir)
     return marked_files(layout.src, load(project_dir), states=(GREEN,))
@@ -115,11 +115,11 @@ def green_files(project_dir: str) -> list:
 
 def green_node_files(project_dir: str, languages):
     """
-    Зелёные файлы → (ноды_с_кодом, ноды_файлы).
-      ноды_с_кодом — [(language, filename, rel)]: .cpp/.cc/.cxx и .py любой папки под src/
-                     (кроме launch/ и __init__.py), язык которых есть в проекте;
-      ноды_файлы   — [rel]: всё остальное (CMakeLists.txt, package.xml, заголовки, yaml…) —
-                     такой файл показывается на столе простой нодой-файлом.
+    Green files -> (code_nodes, file_nodes).
+      code_nodes: [(language, filename, rel)]: .cpp/.cc/.cxx and .py in any folder under src/
+                     (except launch/ and __init__.py) whose language the project has;
+      file_nodes: [rel]: everything else (CMakeLists.txt, package.xml, headers, yaml...);
+                     such a file is shown on the canvas as a plain file node.
     """
     code, plain = [], []
     for rel in green_files(project_dir):

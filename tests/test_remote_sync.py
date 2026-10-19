@@ -1,15 +1,15 @@
 """
-2.2 — синхронизация исходников.
+Source sync.
 
-Критерии приёмки из плана:
-- изменённый файл доезжает одной командой
-- неизменённые файлы не пересылаются повторно
-Плюс защита, которой не было в плане, но которая следует из работы на реальном роботе
-(файлы правились прямо на роботе через ssh/sed):
-- правки на удалённой стороне не затираются молча (конфликт)
-- чужие файлы (build/, install/, созданное руками) никогда не трогаются
+Acceptance criteria from the plan:
+- a changed file arrives with one command
+- unchanged files are not sent again
+Plus protection that was not in the plan but follows from work on a real robot
+(files were edited right on the robot via ssh/sed):
+- edits on the remote side are never silently overwritten (conflict)
+- other people's files (build/, install/, things created by hand) are never touched
 
-Удалённая сторона — локальная папка и НАСТОЯЩИЙ sshd.
+The remote side is a local folder and a REAL sshd.
 """
 import json
 import os
@@ -52,8 +52,8 @@ def project(tmp_path):
 
 
 def _w(path, text):
-    """Пишем БАЙТ В БАЙТ: в текстовом режиме Windows превратил бы \n в \r\n,
-    а провайдер работает с байтами — тесты сравнивали бы разное."""
+    """Write BYTE FOR BYTE: in text mode Windows would turn \n into \r\n,
+    while the provider works with bytes, so the tests would compare different things."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as f:
         f.write(text.encode("utf-8"))
@@ -69,7 +69,7 @@ class TestBasics:
         assert r.ok
 
     def test_second_sync_sends_nothing(self, project, remote):
-        """Критерий: неизменённое не пересылается."""
+        """Criterion: unchanged files are not sent again."""
         prov, root = remote
         sync_tree(str(project), prov, root)
         r = sync_tree(str(project), prov, root)
@@ -77,7 +77,7 @@ class TestBasics:
         assert r.unchanged == 3
 
     def test_only_changed_file_is_sent(self, project, remote):
-        """Критерий: изменённый файл доезжает одной командой."""
+        """Criterion: a changed file arrives with one command."""
         prov, root = remote
         sync_tree(str(project), prov, root)
         _w(str(project / "cpp" / "Node.cpp"), "int main(){return 1;}\n")
@@ -131,7 +131,7 @@ class TestExcludes:
 class TestSafety:
 
     def test_remote_only_files_never_touched(self, project, remote):
-        """build/, install/ и созданное на роботе руками — не наше, не трогаем."""
+        """build/, install/ and things created on the robot by hand are not ours: never touched."""
         prov, root = remote
         sync_tree(str(project), prov, root)
         colcon_artifact = prov.join(root, "build", "Node", "CMakeCache.txt")
@@ -146,7 +146,7 @@ class TestSafety:
         assert prov.read_text(hand_made) == "offsets: [0.1]"
 
     def test_remote_edit_kept_when_local_unchanged(self, project, remote):
-        """Правил на роботе, локально не трогал → правка остаётся."""
+        """Edited on the robot, not touched locally -> the edit stays."""
         prov, root = remote
         sync_tree(str(project), prov, root)
         target = prov.join(root, "data", "mission.yaml")
@@ -158,7 +158,7 @@ class TestSafety:
         assert r.uploaded == []
 
     def test_conflict_both_sides_changed_not_overwritten(self, project, remote):
-        """Главная защита: ровно сценарий «правил через sed на роботе»."""
+        """The main protection: exactly the "edited via sed on the robot" scenario."""
         prov, root = remote
         sync_tree(str(project), prov, root)
         target = prov.join(root, "cpp", "Node.cpp")
@@ -205,7 +205,7 @@ class TestSafety:
         assert [c[0] for c in r.conflicts] == ["cpp/Helper.cpp"]
 
     def test_first_sync_into_dir_with_foreign_file(self, project, remote):
-        """Папка на роботе уже есть (как deploy_Iurlasov): чужое не затираем."""
+        """The folder already exists on the robot: do not overwrite someone else's files."""
         prov, root = remote
         prov.write_text(prov.join(root, "cpp", "Node.cpp"), "// copied by hand earlier\n")
 
@@ -220,7 +220,7 @@ class TestSafety:
         r = sync_tree(str(project), prov, root)
         assert "cpp/Node.cpp" not in r.uploaded
         assert r.ok
-        # теперь файл наш: локальная правка поедет штатно
+        # now the file is ours: a local edit goes through normally
         _w(str(project / "cpp" / "Node.cpp"), "int main(){return 2;}\n")
         assert sync_tree(str(project), prov, root).uploaded == ["cpp/Node.cpp"]
 

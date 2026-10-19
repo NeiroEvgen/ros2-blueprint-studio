@@ -114,8 +114,8 @@ class DockerfileManager:
     # ---- writing --------------------------------------------------------
 
     def _compose(self, auto_apt, auto_pip, manual_lines):
-        # ARG позволяет docker_manager подставить студийный образ при сборке,
-        # а без него файл остаётся валидным (дефолт — публичный osrf).
+        # ARG lets docker_manager substitute the studio image at build time,
+        # and without it the file stays valid (default: the public osrf image).
         parts = [f"ARG BASE_IMAGE={self.base_image}", "FROM ${BASE_IMAGE}", ""]
         parts.append(_AUTO_START)
         auto_body = (_apt_block(auto_apt) + _pip_block(auto_pip)).rstrip("\n")

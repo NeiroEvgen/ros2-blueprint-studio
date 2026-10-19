@@ -47,7 +47,7 @@ def test_choice_is_saved(dlg):
 
 def test_saved_language_applied_on_next_start(dlg, app, tmp_path, monkeypatch):
     pick(dlg, "ru")
-    i18n.set_language("en")            # «перезапуск»
+    i18n.set_language("en")            # "restart"
     settings.apply_language()
     from ui.launcher_dialog import LauncherDialog
     d2 = LauncherDialog()

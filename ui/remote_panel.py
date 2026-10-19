@@ -1,15 +1,15 @@
 """
-Вкладка Remote: профиль удалённой цели, подключение, Sync, Build, Cancel.
+Remote tab: remote target profile, connection, Sync, Build, Cancel.
 
-Вся логика — в core/remote/*; здесь только форма и запуск операций в
-фоновых потоках (SSH блокирует, UI не должен замирать).
+All the logic is in core/remote/*; here only the form and running operations in
+background threads (SSH blocks, the UI must not freeze).
 """
 from PySide6 import QtWidgets, QtCore
 
 from core.i18n import t
 from ui import icons
 
-from core.remote.profile import RemoteProfile, ProfileStore, HostKeyChanged
+from core.remote.profile import RemoteProfile, ProfileStore
 from core.remote.session import RemoteSession
 from core.remote.terminal import TerminalError, open_terminal, validate_target
 from ui.qt_worker import TaskHost
@@ -34,7 +34,7 @@ class RemotePanel(QtWidgets.QWidget):
         self._build_ui()
         self._update_buttons()
 
-    # ---------- форма ----------
+    # ---------- form ----------
 
     def _build_ui(self):
         outer = QtWidgets.QVBoxLayout(self)
@@ -125,7 +125,7 @@ class RemotePanel(QtWidgets.QWidget):
             self._fill_form(ProfileStore(path).load())
         self._update_buttons()
 
-    # ---------- состояние ----------
+    # ---------- state ----------
 
     @property
     def connected(self):
@@ -140,7 +140,7 @@ class RemotePanel(QtWidgets.QWidget):
         self.btn_sync.setEnabled(self.connected and not busy)
         self.btn_build.setEnabled(self.connected and not busy)
         self.btn_cancel.setEnabled(self._building)
-        # консоли не нужно ни подключение Studio, ни проект — достаточно хоста и пользователя
+        # the console needs neither a Studio connection nor a project: host and user are enough
         self.btn_terminal.setEnabled(not validate_target(self.profile_from_form()))
 
     def _state(self, text):
@@ -150,9 +150,12 @@ class RemotePanel(QtWidgets.QWidget):
         self.log.emit(f"{msg}")
         self._state(msg)
         self._building = False
+        if self.session and not self.session.connected:
+            self._disconnect()           # the link is dead: Studio must not consider the target connected
+            self._state(msg)
         self._update_buttons()
 
-    # ---------- действия ----------
+    # ---------- actions ----------
 
     def on_save(self):
         try:
@@ -249,6 +252,23 @@ class RemotePanel(QtWidgets.QWidget):
         where = prof.display() + (f" / {prof.container}" if prof.container else "")
         self.log.emit(t("rp.terminal_opened", where=where, shown=shown))
         self.log.emit(t("rp.terminal_password"))
+
+    def shutdown(self, timeout_ms=15000):
+        """Window closing: cancel the build on the target, wait for the threads, disconnect. True if everything stopped."""
+        if self._building and self.session:
+            try:
+                self.session.cancel()
+            except Exception:
+                pass
+        self._tasks.wait_all(timeout_ms)
+        stopped = not self._tasks.busy
+        if stopped and self.session:
+            try:
+                self.session.disconnect()
+            except Exception:
+                pass
+            self.session = None
+        return stopped
 
     def on_cancel(self):
         s = self.session

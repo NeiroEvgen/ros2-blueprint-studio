@@ -1,4 +1,4 @@
-"""Учебные примеры examples/{py,cpp,mixed}_pubsub: валидны, открываются в обоих режимах, без личных путей."""
+"""Tutorial examples examples/{py,cpp,mixed}_pubsub: valid, open in both modes, no personal paths."""
 import ast
 import os
 import re
@@ -54,7 +54,7 @@ def test_no_personal_paths_or_machine_ids(name):
             assert not re.search(r"/home/|/Users/|C:\\\\|C:/Users", text), os.path.join(dp, f)
 
 
-# ---------- открытие в Studio ----------
+# ---------- opening in Studio ----------
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 pytest.importorskip("NodeGraphQt")

@@ -4,21 +4,21 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from ui.fonts import MONO_CSS
 from ui import icons
 
-# === 0. АДАПТИВНАЯ ВЕРХНЯЯ ПАНЕЛЬ ===
+# === 0. ADAPTIVE TOP BAR ===
 class AdaptiveBar(QtWidgets.QFrame):
     """
-    Верхняя панель. Вторичные кнопки (палитры, группа, очистка, экспорт, импорт)
-    сворачиваются в меню «⋯», когда ширины не хватает. Без этого сумма ширин всех
-    кнопок (особенно с русскими подписями) задавала минимальную ширину окна, и его
-    нельзя было сузить.
+    Top bar. Secondary buttons (palettes, group, clear, export, import) collapse
+    into a "⋯" menu when there is not enough width. Without this, the sum of all
+    button widths (especially with long Russian labels) set the window's minimum width,
+    and the window could not be made narrower.
     """
     def __init__(self):
         super().__init__()
-        self.secondary = None      # контейнер со вторичными кнопками
-        self.more = None           # кнопка «⋯» с меню
+        self.secondary = None      # container with the secondary buttons
+        self.more = None           # "⋯" button with the menu
 
     def minimumSizeHint(self):
-        """Минимум не включает вторичную секцию: вместо неё при нехватке места встаёт «⋯»."""
+        """The minimum does not include the secondary section: "⋯" replaces it when space runs out."""
         lay = self.layout()
         size = lay.minimumSize() if lay else QtCore.QSize(0, 0)
         w = size.width()
@@ -36,9 +36,8 @@ class AdaptiveBar(QtWidgets.QFrame):
             return
         lay = self.layout()
         collapsed = self.more.isVisibleTo(self)
-        spacing = lay.spacing()
         base = lay.sizeHint().width()
-        if collapsed:   # сейчас видна «⋯», а не контейнер: считаем, сколько нужно с контейнером
+        if collapsed:   # "⋯" is shown now, not the container: compute the width needed with the container
             need = base - self.more.sizeHint().width() + self.secondary.sizeHint().width()
         else:
             need = base
@@ -48,24 +47,24 @@ class AdaptiveBar(QtWidgets.QFrame):
             self.secondary.setVisible(False); self.more.setVisible(True)
 
 
-# === 1. УМНЫЙ СПИСОК  ===
+# === 1. DRAGGABLE PALETTE LIST ===
 class DraggableListWidget(QtWidgets.QListWidget):
     def startDrag(self, supportedActions):
         item = self.currentItem()
         if not item: return
         
-        # Достаем скрытый ID ноды (например, ros.py.PyStringPubNode)
+        # hidden node id (e.g. ros.py.PyStringPubNode)
         node_id = item.data(QtCore.Qt.UserRole)
         if not node_id: return
 
-        # Упаковываем в MIME данные как обычный текст
+        # pack it into MIME data as plain text
         mime_data = QtCore.QMimeData()
         mime_data.setText(node_id)
         
         drag = QtGui.QDrag(self)
         drag.setMimeData(mime_data)
         
-        # Рисуем "призрак" иконки при перетаскивании (для красоты)
+        # drag pixmap
         pixmap = item.listWidget().viewport().grab(self.visualItemRect(item))
         drag.setPixmap(pixmap)
         drag.setHotSpot(QtCore.QPoint(pixmap.width() // 2, pixmap.height() // 2))
@@ -89,7 +88,7 @@ class PaletteDropFilter(QtCore.QObject):
                 return True
         return super().eventFilter(obj, event)
     
-# === 2. МЕНЕДЖЕР UI ===
+# === 2. UI MANAGER ===
 class UiManager:
     def __init__(self, main_window):
         self.main_window = main_window
@@ -125,21 +124,21 @@ class UiManager:
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # === ВЕРХНЯЯ ПАНЕЛЬ ===
+        # === TOP BAR ===
         top_bar = self.top_bar = AdaptiveBar()
         top_bar.setStyleSheet("background-color: #333; border-bottom: 2px solid #222;")
         top_bar.setFixedHeight(50)
         top_layout = QtWidgets.QHBoxLayout(top_bar)
         top_layout.setContentsMargins(10, 5, 10, 5)
         top_layout.setSpacing(8)
-        top_layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)   # минимум задаёт AdaptiveBar
+        top_layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)   # AdaptiveBar sets the minimum
 
         def add_btn(text, color="#555", icon_name=None, compact=False, into=None):
             btn = QtWidgets.QPushButton(text)
             if icon_name:
                 btn.setIcon(icons.icon(icon_name))
                 btn.setIconSize(QtCore.QSize(18, 18))
-            # compact: только иконка (подпись — в подсказке), чтобы панель не распирала окно
+            # compact: icon only (label in the tooltip) so the bar does not widen the window
             pad = "5px 8px" if compact else "5px 12px"
             btn.setStyleSheet(f"""
                 QPushButton {{ 
@@ -197,7 +196,7 @@ class UiManager:
         self.actions['import_pkg'] = add_btn("", icon_name="package_in", compact=True, into=sec_layout)
         top_layout.addWidget(secondary)
 
-        # Когда места мало — вместо секции кнопок показывается меню «⋯»
+        # when space runs out, a "⋯" menu replaces the button section
         self.more_btn = QtWidgets.QToolButton()
         self.more_btn.setIcon(icons.icon("more"))
         self.more_btn.setIconSize(QtCore.QSize(18, 18))
@@ -215,11 +214,11 @@ class UiManager:
 
         main_layout.addWidget(top_bar)
 
-        # === РАБОЧАЯ ОБЛАСТЬ ===
+        # === WORKSPACE ===
         main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         main_layout.addWidget(main_splitter)
 
-        # ПАЛИТРА
+        # PALETTE
         palette_panel = QtWidgets.QWidget()
         palette_layout = QtWidgets.QVBoxLayout(palette_panel)
         palette_layout.setContentsMargins(0,0,0,0)
@@ -227,7 +226,7 @@ class UiManager:
         lbl.setStyleSheet("background: #222; color: #ddd; padding: 5px; font-weight: bold; border-bottom: 1px solid #444;")
         palette_layout.addWidget(lbl)
         
-        # ИСПОЛЬЗУЕМ НАШ НОВЫЙ КЛАСС DRAGGABLE
+        # draggable list
         self.node_palette = DraggableListWidget()
         self.node_palette.setDragEnabled(True)
         self.node_palette.setStyleSheet("border: none; background: #2b2b2b;")
@@ -235,7 +234,7 @@ class UiManager:
         self.node_palette.setAcceptDrops(True)
         main_splitter.addWidget(palette_panel)
 
-        # === ГРАФЫ ===
+        # === GRAPHS ===
         graph_container = QtWidgets.QWidget()
         graph_vbox = QtWidgets.QVBoxLayout(graph_container)
         graph_vbox.setContentsMargins(0, 0, 0, 0)
@@ -270,7 +269,7 @@ class UiManager:
         
         main_splitter.addWidget(graph_container)
 
-        # КОНСОЛИ
+        # CONSOLES
         console_dock = self.console_dock = QtWidgets.QDockWidget(self.main_window)
         console_widget = QtWidgets.QWidget()
         console_layout = QtWidgets.QVBoxLayout(console_widget)
@@ -296,7 +295,7 @@ class UiManager:
         self.retranslate()
 
     def retranslate(self):
-        """Все тексты панели из словаря; вызывается при построении и при смене языка."""
+        """All bar texts from the dictionary; called on build and on language change."""
         a = self.actions
         self.main_window.setWindowTitle(t("ui.window_title"))
         for key, text_key in (("run", "ui.run"), ("stop", "ui.stop"), ("visualize", "ui.visualize")):
@@ -306,7 +305,7 @@ class UiManager:
                               ("import_palette", "ui.palette_import"),
                               ("group", "ui.group"), ("clear", "ui.clear"),
                               ("export_docker", "ui.export"), ("import_pkg", "ui.import_pkg")):
-            a[key].setText("")                       # только иконка
+            a[key].setText("")                       # icon only
             a[key].setToolTip(t(text_key))
             a[key].setAccessibleName(t(text_key))
         self.more_btn.setToolTip(t("ui.more"))
@@ -327,12 +326,12 @@ class UiManager:
             self.breadcrumb_label.setText(t("ui.root"))
         self.console_dock.setWindowTitle(t("ui.logs_terminal"))
         for widget, key in ((self.console_sys, "ui.log_system"), (self.console_ros, "ui.log_ros")):
-            idx = self.console_tabs.indexOf(widget)     # вкладки могут быть переставлены/заменены
+            idx = self.console_tabs.indexOf(widget)     # tabs may be reordered/replaced
             if idx >= 0:
                 self.console_tabs.setTabText(idx, t(key))
 
     def set_visible_graph(self, mode="python"):
-        if self.tabs.count() < 2:      # режим одного холста: вкладка одна
+        if self.tabs.count() < 2:      # single-canvas mode: one tab
             self.tabs.setCurrentIndex(0)
             return
         if mode == "mixed":
@@ -350,11 +349,11 @@ class UiManager:
         }
         for node_cls in node_classes:
             identifier = node_cls.type_; name = node_cls.NODE_NAME
-            # mixed: показываем всё; в одноязычных проектах — только свой язык
+            # mixed: show everything; single-language projects: only their language
             if project_type == "python" and "ros.cpp" in identifier: continue
             if project_type == "cpp" and (".py" in identifier): continue
             if "internal" in identifier: continue
-            if identifier.endswith(".FileNode"): continue      # создаётся зелёной отметкой, не из палитры
+            if identifier.endswith(".FileNode"): continue      # created by a green mark, not from the palette
 
             item = QtWidgets.QListWidgetItem(name)
             item.setData(QtCore.Qt.UserRole, identifier)
@@ -374,7 +373,8 @@ class UiManager:
             for item in items: self.node_palette.addItem(item)
 
         # --- USER PALETTES (Native Format) ---
-        user_palettes_root = os.path.join("nodes", "user_palettes")
+        from core import palette_share
+        user_palettes_root = palette_share.PALETTES_ROOT
         if os.path.exists(user_palettes_root):
             for palette_name in os.listdir(user_palettes_root):
                 palette_path = os.path.join(user_palettes_root, palette_name)
@@ -389,7 +389,7 @@ class UiManager:
                     node_path = os.path.join(palette_path, node_folder)
                     if os.path.isdir(node_path) and os.path.exists(os.path.join(node_path, "node.yaml")):
                         item = QtWidgets.QListWidgetItem(node_folder)
-                        # Кодируем путь к папке ноды
+                        # encode the node folder path
                         item.setData(QtCore.Qt.UserRole, f"USER_NODE:{palette_name}/{node_folder}")
                         item.setForeground(QtGui.QColor("#00ffaa"))
                         self.node_palette.addItem(item)

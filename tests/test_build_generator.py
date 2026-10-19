@@ -1,6 +1,7 @@
-"""Golden + юнит-тесты build_generator. Golden снят с кода ДО выноса из ProjectManager."""
+"""Golden + unit tests of build_generator. The golden files were taken from the code BEFORE it moved out of ProjectManager."""
 import ast
 import os
+import re
 import xml.dom.minidom
 import pytest
 from core.generators import build_generator as bg
@@ -123,7 +124,7 @@ class TestLinkOnlyLibs:
         assert "find_package(yaml-cpp REQUIRED)" in cm
         assert "target_link_libraries(n yaml-cpp)" in cm
         ament = [l for l in cm.splitlines() if l.startswith("ament_target_dependencies(n")][0]
-        assert "yaml-cpp" not in ament            # yaml-cpp не ament-пакет
+        assert "yaml-cpp" not in ament            # yaml-cpp is not an ament package
         assert "libyaml-cpp-dev" in apt
         assert "<depend>libyaml-cpp-dev</depend>" in _read(os.path.join(src, "package.xml"))
 
@@ -136,7 +137,7 @@ class TestLinkOnlyLibs:
     def test_no_link_line_without_link_only_libs(self, tmp_path):
         src = self._proj(tmp_path, '#include <rclcpp/rclcpp.hpp>\nint main(){}\n')
         bg.generate_cpp_build_files(src)
-        auto = _read(os.path.join(src, "CMakeLists.txt")).split(bg.CMAKE_AUTO_END)[0]  # в USER-шаблоне есть пример
+        auto = _read(os.path.join(src, "CMakeLists.txt")).split(bg.CMAKE_AUTO_END)[0]  # the USER template contains an example
         assert "target_link_libraries" not in auto
 
 
@@ -204,7 +205,7 @@ class TestCompanionSources:
 
 
 class TestExampleInterfacesOptional:
-    """example_interfaces есть не в каждом образе робота: требуем его, только если код его include'ит."""
+    """example_interfaces is not in every robot image: require it only when the code includes it."""
 
     def _scan(self, tmp_path, body):
         cpp = tmp_path / "cpp"
@@ -224,8 +225,8 @@ class TestExampleInterfacesOptional:
 
 
 class TestIncludeScanDoesNotSwallowNeighbours:
-    """Регрессия: `#include <string>` + следующая строка `#include <pkg/msg/..>` давали
-    «пакет» 'string>\\n#include <sensor_msgs' и CMake падал на оборванном find_package(...)."""
+    """Regression: `#include <string>` + the next line `#include <pkg/msg/..>` produced
+    a "package" 'string>\\n#include <sensor_msgs' and CMake broke on a truncated find_package(...)."""
 
     def test_std_header_before_msg_include(self, tmp_path):
         cpp = tmp_path / "cpp"
@@ -240,3 +241,42 @@ class TestIncludeScanDoesNotSwallowNeighbours:
         text = bg.render_cmake_auto("p", scan.deps, scan.executables)
         assert ">" not in text.split("find_package(ament_cmake")[1].split("add_executable")[0]
         assert "#include" not in text
+
+
+class TestProjectNames:
+    """A project folder can have any name; the ROS package name and the Docker tag must stay valid."""
+
+    @pytest.mark.parametrize("folder,expected", [
+        ("my_proj", "my_proj"),            # valid names are unchanged
+        ("My Proj-1", "my_proj_1"),
+        ("2robot", "pkg_2robot"),          # REP 144: starts with a letter
+        ("_tmp", "pkg_tmp"),
+    ])
+    def test_package_name(self, folder, expected):
+        assert bg.package_name_from_dir(f"/x/{folder}") == expected
+
+    def test_cyrillic_folder_gets_stable_valid_name(self):
+        a = bg.package_name_from_dir("/x/Робот")
+        assert re.fullmatch(r"pkg_[0-9a-f]{8}", a)
+        assert a == bg.package_name_from_dir("/y/Робот/")
+        assert a != bg.package_name_from_dir("/x/Манипулятор")
+
+    def test_remote_and_save_use_the_same_rule(self):
+        from core.remote.session import package_name_for
+        assert package_name_for("/x/2robot/") == bg.package_name_from_dir("/x/2robot")
+
+
+class TestDockerImageTag:
+    @pytest.mark.parametrize("folder,tag", [
+        ("my_proj", "blueprint-my_proj:latest"),
+        ("My Robot", "blueprint-my-robot:latest"),
+        ("demo..v2", "blueprint-demo-v2:latest"),
+    ])
+    def test_tag(self, folder, tag):
+        from core.docker_manager import project_image_tag
+        assert project_image_tag(f"/x/{folder}") == tag
+
+    def test_cyrillic_folder(self):
+        from core.docker_manager import project_image_tag
+        tag = project_image_tag("/x/Мой проект")
+        assert re.fullmatch(r"blueprint-project-[0-9a-f]{8}:latest", tag)

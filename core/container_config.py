@@ -1,7 +1,7 @@
 # core/container_config.py
-# v0.6.0 — Модель конфигурации деплой-контейнера + хранилища пресетов.
-# Конфиг = ЧТО внутри контейнера. Таргет = КУДА деплоим. Один YAML-формат
-# служит и деплой-конфигом, и основой системы манифестов (п.7 плана).
+# v0.6.0: deploy container configuration model + preset stores.
+# Config = WHAT is inside the container. Target = WHERE it is deployed. One YAML format
+# serves as the deploy config and as the base of the manifest system.
 
 import os
 import re
@@ -13,18 +13,18 @@ DEFAULT_IMAGE = "osrf/ros:humble-desktop"
 DEFAULT_CONFIG = {
     "name": "main",
     "image": DEFAULT_IMAGE,
-    # Глобальные ROS env (раздел 1.1 roadmap)
+    # Global ROS env
     "env": {
         "ROS_DOMAIN_ID": "0",
         "PYTHONUNBUFFERED": "1",
         "RCUTILS_LOGGING_BUFFERED_STREAM": "0",
     },
-    # DDS (раздел 1.2): vendor -> RMW_IMPLEMENTATION, qos_xml -> монтируемый профиль
+    # DDS: vendor -> RMW_IMPLEMENTATION, qos_xml -> mounted profile
     "dds": {
         "vendor": "default",        # default | fastrtps | cyclonedds
-        "qos_xml": "",              # путь к XML-профилю вендора (опционально)
+        "qos_xml": "",              # path to the vendor XML profile (optional)
     },
-    # Симуляция помех через tc netem (раздел 1.3). Требует NET_ADMIN.
+    # Network impairment simulation via tc netem. Needs NET_ADMIN.
     "netem": {
         "enabled": False,
         "loss_percent": 0.0,
@@ -35,10 +35,10 @@ DEFAULT_CONFIG = {
     "apt_packages": [],
     "pip_packages": [],
     "restart": "no",                # no | always | on-failure | unless-stopped
-    "privileged": True,             # текущее поведение по умолчанию
+    "privileged": True,             # current default behaviour
     "network_mode": "host",         # host | bridge
-    "resources": {"cpus": "", "memory": ""},   # пусто = без лимита
-    # Таргет деплоя (раздел 4): local или ssh://user@host
+    "resources": {"cpus": "", "memory": ""},   # empty = no limit
+    # Deploy target: local or ssh://user@host
     "target": {"type": "local", "host": "", "real_robot": False},
 }
 
@@ -48,11 +48,11 @@ RMW_BY_VENDOR = {
     "cyclonedds": "rmw_cyclonedds_cpp",
 }
 
-# Пресеты из коробки (раздел 3.2)
+# Built-in presets
 BUILTIN_PRESETS = {
     "Local Default": {},
     "GPU Node": {
-        "image": "osrf/ros:humble-desktop",  # замени на свой CUDA-образ
+        "image": "osrf/ros:humble-desktop",  # replace with your CUDA image
         "resources": {"cpus": "", "memory": ""},
         "env": {"NVIDIA_VISIBLE_DEVICES": "all"},
     },
@@ -60,8 +60,8 @@ BUILTIN_PRESETS = {
         "restart": "always",
         "network_mode": "host",
     },
-    "Sandbox (заготовка)": {
-        # ВНИМАНИЕ: это НЕ песочница безопасности, см. roadmap раздел 6.
+    "Sandbox (draft)": {
+        # NOTE: this is NOT a security sandbox.
         "privileged": False,
         "network_mode": "bridge",
         "resources": {"cpus": "1", "memory": "512m"},
@@ -94,7 +94,7 @@ def make_config(name, base_overrides=None):
 
 
 def resolved_env(cfg):
-    """Итоговый словарь env для контейнера с учётом DDS-вендора."""
+    """Final env dict for the container, taking the DDS vendor into account."""
     env = dict(cfg.get("env") or {})
     rmw = RMW_BY_VENDOR.get((cfg.get("dds") or {}).get("vendor", "default"))
     if rmw:
@@ -110,7 +110,7 @@ def resolved_env(cfg):
 
 
 def netem_command(cfg):
-    """Команда tc netem или None, если симуляция выключена."""
+    """tc netem command, or None if the simulation is off."""
     n = cfg.get("netem") or {}
     if not n.get("enabled"):
         return None
@@ -128,7 +128,7 @@ def netem_command(cfg):
 
 
 class ContainerConfigStore:
-    """Конфиги контейнер-групп текущего проекта: <project>/.blueprint/containers/*.yaml"""
+    """Container group configs of the current project: <project>/.blueprint/containers/*.yaml"""
 
     def __init__(self, project_path):
         self.dir = os.path.join(project_path, ".blueprint", "containers")
@@ -170,8 +170,8 @@ class ContainerConfigStore:
 
 
 class GlobalPresetStore:
-    """Глобальные пресеты пользователя (переиспользуются между проектами):
-    ~/.ros_studio/presets/*.yaml + встроенные BUILTIN_PRESETS."""
+    """User's global presets (shared between projects):
+    ~/.ros_studio/presets/*.yaml + the built-in BUILTIN_PRESETS."""
 
     def __init__(self):
         self.dir = os.path.join(os.path.expanduser("~"), ".ros_studio", "presets")

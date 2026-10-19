@@ -1,4 +1,4 @@
-"""Замер этапов деплоя: таймер, запись в timings.jsonl, DeployWorker с поддельным менеджером."""
+"""Deploy stage timing: the timer, writing to timings.jsonl, DeployWorker with a fake manager."""
 import json
 import os
 
@@ -72,7 +72,7 @@ def test_deploy_worker_records_outcome(tmp_path, ret, boom, outcome):
     w = DeployWorker(FakeManager(ret, boom), str(tmp_path))
     msgs = []
     w.sys_signal.connect(msgs.append)
-    w.run()                                       # синхронно, без потока
+    w.run()                                       # synchronously, no thread
     row = json.loads((tmp_path / ".blueprint/timings.jsonl").read_text().splitlines()[-1])
     assert row["outcome"] == outcome and "colcon" in row["phases"] and "image" in row["phases"]
     assert any(m.startswith("Timings:") for m in msgs)

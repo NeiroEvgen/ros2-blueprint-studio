@@ -6,15 +6,15 @@ from rclpy.node import Node
 class {class_name}(Node):
     def __init__(self):
         super().__init__('{node_name}')
-        # [AUTO-GEN-PUBS] - маркер для добавления паблишеров
+        # [AUTO-GEN-PUBS] - marker where publishers are added
         {EXEC_OUT_INIT}
         
-        # [AUTO-GEN-SUBS] - маркер для добавления подписчиков
+        # [AUTO-GEN-SUBS] - marker where subscribers are added
         {EXEC_IN_INIT}
         
         self.get_logger().info('Node {node_name} started')
 
-    # [AUTO-GEN-FIRE] - сюда можно добавлять колбэки
+    # [AUTO-GEN-FIRE] - callbacks can be added here
     {EXEC_FIRE}
 
 def main():
@@ -42,7 +42,7 @@ class {class_name}(Node):
         # [AUTO-GEN-PUBS]
         {EXEC_OUT_INIT}
         
-        # Создаем встроенный триггер для topic_1
+        # built-in trigger on topic_1
         self.trigger_pub = self.create_publisher(String, 'topic_1', 10)
         
         interval = float({interval})
@@ -50,7 +50,7 @@ class {class_name}(Node):
         self.get_logger().info(f'Timer Started: {interval}s')
 
     def timer_callback(self):
-        # 1. Отправляем сигнал
+        # 1. Send the signal
         msg = String()
         msg.data = "tick"
         self.trigger_pub.publish(msg)
@@ -83,13 +83,13 @@ class {class_name}(Node):
         # [AUTO-GEN-PUBS]
         {EXEC_OUT_INIT}
 
-        # Основной паблишер ноды
+        # the node's main publisher
         self.pub = self.create_publisher(String, '{topic_name}', 10)
         
         # [AUTO-GEN-SUBS]
         {EXEC_IN_INIT}
         
-        # Слушаем триггер от таймера
+        # listen to the trigger from the timer
         self.trigger_sub = self.create_subscription(String, 'topic_1', self.trigger_callback, 10)
         self.i = 0
 
@@ -197,9 +197,9 @@ public:
         // [AUTO-GEN-EXEC-OUT]
         {EXEC_OUT_INIT}
 
-        // Конвертация интервала
+        // interval conversion
         long int ms = (long int)({interval} * 1000);
-        if(ms <= 0) ms = 500; // защита от нуля
+        if(ms <= 0) ms = 500; // guard against zero
         
         timer_ = this->create_wall_timer(std::chrono::milliseconds(ms), [this](){
             // [AUTO-GEN-FIRE]
@@ -318,7 +318,7 @@ CPP_TEMPLATES["Lifecycle"] = '#include "rclcpp/rclcpp.hpp"\n#include "rclcpp_lif
 TEMPLATES.update(CPP_TEMPLATES)
 
 def template_name(template_key):
-    """Ключ узла ('cpp_string_pub', 'py_timer'…) → имя шаблона в *_TEMPLATES."""
+    """Node key ('cpp_string_pub', 'py_timer'...) -> template name in *_TEMPLATES."""
     k = (template_key or "").lower()
     for needle, name in (("custom", "Custom"), ("lifecycle", "Lifecycle"), ("timer", "Timer"),
                          ("pub", "Publisher"), ("sub", "Subscriber"), ("action", "ActionClient")):

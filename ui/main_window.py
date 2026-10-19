@@ -1,10 +1,9 @@
+import logging
 import os
 import sys
-import re
-import subprocess
 import traceback
 from functools import partial
-from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6 import QtWidgets, QtCore
 
 # === CORE MODULES ===
 from core.docker_manager import RosContainerManager
@@ -18,31 +17,27 @@ from core import settings
 from ui.scroll import scrollable
 from ui.graph_set import GraphSet
 from core import layout as project_layout
-from core.ros_process import DeployWorker, LogMonitorWorker
+from core.ros_process import DeployWorker
 from core.container_config import ContainerConfigStore, safe_group_name, resolved_env
 from core.project_importer import import_ros2_package
 from ui.container_settings import ContainerSettingsPanel
 from core.process_manager import ProcessManager
-
-
-from compilers.graph_compiler import GraphCompiler
 
 # === UI MODULES ===
 from ui.ui_manager import UiManager
 from ui.dashboard import ConsoleDashboard
 from ui.docker_panel import DockerPanel
 from ui.library_manager import LibraryManager
-from ui.graph_setup import setup_graphs, TYPE_COLORS, ALL_NODE_CLASSES
+from ui.graph_setup import setup_graphs, ALL_NODE_CLASSES
 from ui.properties_window import PropertiesWindow
 # === NODES ===
 from nodes.base import MSG_COLORS
-from nodes.group_logic import toggle_group_visibility
 
 class RosVisualRunner(QtWidgets.QMainWindow):
     def __init__(self, project_path=None):
         super().__init__()
         self.current_project_path = project_path
-        self.auto_route_enabled = False  # По умолчанию выключено
+        self.auto_route_enabled = False  # off by default
         self.route_settings = {
             "color": "#ffffff",
             "msg_type": "std_msgs/msg/String",
@@ -73,7 +68,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.library_manager = LibraryManager(self.container_manager) if self.container_manager else QtWidgets.QLabel(t("dock.unavailable"))
         
         if hasattr(self.ui, 'console_ros'):
-            # Ищем QTabWidget, в котором лежит наша консоль (он может быть не прямым родителем)
+            # find the QTabWidget that holds our console (it may not be the direct parent)
             tab_widget = self.ui.console_ros.parent()
             while tab_widget and not isinstance(tab_widget, QtWidgets.QTabWidget):
                 tab_widget = tab_widget.parent()
@@ -81,10 +76,10 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             if tab_widget:
                 idx = tab_widget.indexOf(self.ui.console_ros)
                 if idx != -1:
-                    # Убираем старую текстовую консоль и вставляем таблицу
+                    # replace the old text console with the table
                     tab_widget.removeTab(idx)
                     self._console_tab_widget = tab_widget
-                    self._console_tab_keys = {}          # страница вкладки -> ключ заголовка
+                    self._console_tab_keys = {}          # tab page -> title key
 
                     def add_tab(widget, key, at=None):
                         page = widget if key == "tab.dashboard" else scrollable(widget)
@@ -132,7 +127,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         # 5. Connect Actions
         self.connect_actions()
         self.ui.actions['real_robot'].toggled.connect(self.on_real_robot_toggled)
-        self._refresh_context()       # Навигация
+        self._refresh_context()
         self.current_subgraph = None
         self.navigation_stack = [{"name": t("ui.root"), "node": None}]
 
@@ -144,33 +139,9 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self.ui.rebuild_palette(ALL_NODE_CLASSES, "python")
             self.ui.set_visible_graph("python")
 
-    def _refresh_pipe_visibility(self, graph):
-        return
-        """Прячет пайпы, у которых хотя бы один конец на невидимой ноде."""
-        try:
-            scene = graph.scene()
-            from NodeGraphQt.qgraphics.pipe import PipeItem
-        except Exception:
-            return
-        for item in scene.items():
-            if not isinstance(item, PipeItem):
-                continue
-            src = getattr(item, 'input_port', None)
-            dst = getattr(item, 'output_port', None)
-            visible = True
-            for port_item in (src, dst):
-                if port_item is None:
-                    continue
-                # у порта есть ссылка на ноду-владельца
-                node_item = getattr(port_item, 'node', None)
-                if node_item is not None and not node_item.isVisible():
-                    visible = False
-                    break
-            item.setVisible(visible)
-
     def on_graph_delete(self, graph, with_contents):
-        """Delete = распустить группу (дети наружу). Ctrl+Delete = удалить с содержимым.
-        Для обычных нод — просто удаляем."""
+        """Delete = dissolve the group (children move out). Ctrl+Delete = delete with contents.
+        Plain nodes are simply deleted."""
         selected = graph.selected_nodes()
         if not selected:
             return
@@ -181,7 +152,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             try:
                 if is_group:
                     if with_contents:
-                        # Ctrl+Del: удаляем детей и терминалы вместе с группой
+                        # Ctrl+Del: delete children and terminals together with the group
                         gid = node.get_property('group_uid')
                         for child in list(graph.all_nodes()):
                             if child == node:
@@ -192,12 +163,12 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                         graph.delete_node(node)
                         self.system_log(t("log.group_deleted", name=node.name()))
                     else:
-                        # Del: распускаем — дети наружу, терминалы удаляются
+                        # Del: dissolve; children move out, terminals are deleted
                         dissolve_group(graph, node)
                         graph.delete_node(node)
                         self.system_log(t("log.group_dissolved", name=node.name()))
                 else:
-                    # обычная нода
+                    # plain node
                     graph.delete_node(node)
             except Exception as e:
                 self.system_log(t("log.delete_error", error=e))
@@ -210,7 +181,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.navigation_stack.append({"name": name, "node": group_node})
         self.ui.update_breadcrumbs(self.navigation_stack)
         
-        # Скрываем всё, кроме детей этой группы
+        # hide everything except this group's children
         gid = group_node.get_property('group_uid')
         graph = group_node.graph
         for node in graph.all_nodes():
@@ -221,7 +192,6 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             else:
                 self._set_node_visible(node, False)
         
-        #self._refresh_pipe_visibility(graph)  # см. ниже про граф
         self.system_log(t("log.entered_subgraph", name=name))
 
     def exit_subgraph(self):
@@ -237,16 +207,16 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         graph = self.graphs.current(self.ui.tabs.currentIndex())
         
         if self.current_subgraph is None:
-            # Мы в Root: показываем только то, что НЕ вложено в группу.
+            # at Root: show only what is NOT nested in a group.
             for node in graph.all_nodes():
-                # Ребёнок группы определяется по parent_group_id, а не по group_uid
-                # (у самой группы group_uid тоже задан — её прятать нельзя).
+                # a group child is recognised by parent_group_id, not by group_uid
+                # (the group itself has group_uid too, and it must not be hidden).
                 parent = node.get_property('parent_group_id') \
                     if node.has_property('parent_group_id') else ""
                 is_child = bool(parent)
                 node.view.setVisible(not is_child)
         else:
-            # Мы вышли в родительский сабграф
+            # exited to the parent subgraph
             parent_gid = self.current_subgraph.get_property('group_uid')
             for node in graph.all_nodes():
                 if node == self.current_subgraph:
@@ -259,19 +229,19 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.system_log(t("log.exited_to", name=target["name"]))
 
     def setup_graph_signals(self):
-        """Подключает сигналы графа для открытия редактора и настроек"""
+        """Connects graph signals for opening the editor and the settings."""
         for graph in self.graphs.all():
             graph.node_double_clicked.connect(self.on_node_double_clicked)
             self.setup_graph_context_menus(graph)
 
     def _set_node_visible(self, node, visible):
-        """Прячет/показывает ноду вместе с её связями."""
+        """Hides/shows a node together with its connections."""
         if hasattr(node, 'view'):
             node.view.setVisible(visible)
         try:
             for port in node.input_ports() + node.output_ports():
                 pv = port.view  # PortItem (QGraphicsItem)
-                # connected_pipes — dict или list в зависимости от версии
+                # connected_pipes is a dict or a list depending on the version
                 pipes = getattr(pv, 'connected_pipes', None)
                 if pipes is None:
                     continue
@@ -279,12 +249,12 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 for pipe in iterable:
                     pipe.setVisible(visible)
         except Exception as e:
-            print(f"pipe visibility skip: {e}")
+            logging.debug(f"pipe visibility skip: {e}")
 
     def on_node_double_clicked(self, node):
         """
-        Двойной клик: группа -> внутрь; обычная нода -> код.
-        Ctrl + двойной клик -> окно свойств.
+        Double click: group -> enter it; plain node -> code.
+        Ctrl + double click -> properties window.
         """
         if not node:
             return
@@ -295,19 +265,19 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         is_group = node.type_ in ('ros.nodes.RosGroup', 'ros.nodes.RosGroupNode') \
             or node.has_property('internal_nodes')
 
-        # Ctrl + двойной клик -> только свойства
+        # Ctrl + double click -> properties only
         if ctrl_held:
             self.properties_win.set_node(node)
             self.properties_win.show()
             self.system_log(t("log.opened_properties", name=node.name()))
             return
 
-        # Обычный двойной клик по группе -> заходим внутрь
+        # plain double click on a group -> enter it
         if is_group:
             self.enter_subgraph(node)
             return
 
-        # Обычный двойной клик по обычной ноде -> только код
+        # plain double click on a plain node -> code only
         if node.has_property('code_content'):
             if not self.current_project_path:
                 self.system_log(t("log.open_project_first"))
@@ -317,7 +287,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self.watcher.start_watching(os.path.join(self.current_project_path, "src"))
             self.system_log(t("log.opened_code", name=node.name()))
     def connect_actions(self):
-        """Восстанавливает связи кнопок управления"""
+        """Connects the toolbar buttons."""
         self.ui.actions['run'].clicked.connect(self.on_run_project)
         self.ui.actions['stop'].clicked.connect(self.on_stop_project)
         self.ui.actions['clear'].clicked.connect(self.on_clear_graph)
@@ -327,35 +297,112 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.ui.actions['visualize'].clicked.connect(self.on_visualize)
         self.ui.actions['export_palette'].clicked.connect(self.on_export_palette)
         self.ui.actions['import_palette'].clicked.connect(self.on_import_palette)
-        # раньше эти две кнопки верхней панели не были подключены и ничего не делали
         self.ui.actions['save'].clicked.connect(self.on_save_project)
         self.ui.actions['open'].clicked.connect(self.on_open_project)
 
     @staticmethod
     def _save_result(res):
         """
-        save_project возвращает (True, apt_deps) при успехе и False при неудаче.
-        Приводим к (ok, apt_deps), чтобы вызывающий код не падал на распаковке.
+        save_project returns (True, apt_deps) on success and False on failure.
+        Normalize to (ok, apt_deps) so callers do not fail on unpacking.
         """
         if isinstance(res, tuple):
             return bool(res[0]), (res[1] if len(res) > 1 else set())
         return bool(res), set()
 
+    def _save_now(self):
+        """Save the current project -> (ok, apt_deps); a successful Save clears "unsaved changes"."""
+        ok, deps = self._save_result(self.project_manager.save_project(self.current_project_path))
+        if ok:
+            self._mark_clean()
+        return ok, deps
+
+    def _mark_clean(self):
+        for g in self.graphs.all():
+            try:
+                g.undo_stack().setClean()
+            except Exception:
+                pass
+
+    def _has_unsaved_changes(self):
+        if not self.current_project_path:
+            return False
+        for g in self.graphs.all():
+            try:
+                if not g.undo_stack().isClean():
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def closeEvent(self, event):
+        """
+        Close: ask about unsaved changes, stop the run and background tasks and wait for
+        their threads; destroying a live QThread aborts the process.
+        """
+        fb = getattr(self, "file_browser", None)
+        if fb is not None and not fb._confirm_discard():
+            event.ignore()
+            return
+        if self._has_unsaved_changes():
+            ans = QtWidgets.QMessageBox.question(
+                self, t("dlg.close_title"), t("dlg.save_before_close"),
+                QtWidgets.QMessageBox.Save | QtWidgets.QMessageBox.Discard
+                | QtWidgets.QMessageBox.Cancel)
+            if ans == QtWidgets.QMessageBox.Cancel:
+                event.ignore()
+                return
+            if ans == QtWidgets.QMessageBox.Save and not self._save_now()[0]:
+                self.system_log(t("log.save_failed_close_cancelled"))
+                event.ignore()
+                return
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        try:
+            leftovers = self.shutdown_background()
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        event.accept()
+        if leftovers:
+            # A thread missed the timeout (e.g. docker pull). A live QThread cannot be destroyed
+            # (abort), and waiting longer hangs the window. The process is exiting anyway.
+            sys.stderr.write(f"[close] background threads still running: {leftovers}; exiting\n")
+            sys.stderr.flush()
+            os._exit(0)
+
+    def shutdown_background(self, timeout_ms=15000):
+        """Stops run/build/sync and waits for the threads. Returns the names of those that did not stop."""
+        leftovers = []
+        worker = getattr(self, "deploy_worker", None)
+        if worker is not None and worker.isRunning():
+            worker.stop()
+            if not worker.wait(timeout_ms):
+                leftovers.append("deploy")
+        bg = getattr(self, "_bg_tasks", None)
+        if bg is not None:
+            bg.wait_all(timeout_ms)
+            if bg.busy:
+                leftovers.append("node commands")
+        for name in ("remote_panel", "file_browser"):
+            panel = getattr(self, name, None)
+            if panel is not None and hasattr(panel, "shutdown") and not panel.shutdown(timeout_ms):
+                leftovers.append(name)
+        return leftovers
+
     def on_save_project(self):
         if not self.current_project_path:
             self.system_log(t("log.no_project"))
             return
-        ok, _ = self._save_result(self.project_manager.save_project(self.current_project_path))
+        ok, _ = self._save_now()
         self.system_log(t("log.project_saved") if ok else t("log.save_failed"))
         self._log_save_warnings()
 
     def _log_save_warnings(self):
-        """Предупреждения генератора/линтера CMake после Save — в системный лог."""
+        """Generator/CMake linter warnings after Save -> system log."""
         for text in getattr(self.project_manager, "last_warnings", []) or []:
             self.system_log(t("save.warning", text=text))
 
     def _offer_layout_migration(self, path):
-        """Старый проект с ROS-файлами вне src/ — предложить перенести (с резервной копией)."""
+        """Old project with ROS files outside src/: offer to move them (with a backup)."""
         lay = project_layout.ProjectLayout(path)
         legacy = lay.legacy_items()
         if not legacy:
@@ -370,7 +417,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         return True
 
     def on_open_project(self):
-        """Открыть другой проект с диска (как «Open from Disk…» в стартовом окне)."""
+        """Open another project from disk (like "Open from Disk..." in the launcher)."""
         if self.current_project_path:
             ans = QtWidgets.QMessageBox.question(
                 self, t("dlg.open_project_title"),
@@ -380,8 +427,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             if ans == QtWidgets.QMessageBox.Cancel:
                 return
             if ans == QtWidgets.QMessageBox.Save:
-                ok, _ = self._save_result(
-                    self.project_manager.save_project(self.current_project_path))
+                ok, _ = self._save_now()
                 if not ok:
                     self.system_log(t("log.save_failed_open_cancelled"))
                     return
@@ -396,7 +442,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         mode = self.ui.actions['viz_mode'].currentText()
 
         if mode.startswith("X11"):
-            # Классика: просто напоминание, RViz-нода сама откроет окно при Run
+            # classic mode: just a reminder, the RViz node opens its window on Run
             self.system_log(t("log.x11_hint"))
             return
 
@@ -410,7 +456,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self.system_log(t("log.foxglove_error", error=e))
             return
 
-        # Открываем Foxglove в браузере с автоподключением к ws://localhost:8765
+        # open Foxglove in the browser, auto-connecting to ws://localhost:8765
         import webbrowser
         url = ("https://app.foxglove.dev/?ds=foxglove-websocket"
                "&ds.url=ws%3A%2F%2Flocalhost%3A8765")
@@ -429,11 +475,14 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         if not self.container_manager:
             self.system_log(t("log.docker_unavailable"))
             return
+        if self._deploy_running():
+            # the previous run is still stopping: a new worker would drop the reference to a live QThread -> abort
+            self.system_log(t("log.deploy_still_stopping"))
+            return
 
-        # 1. Сначала компилируем/сохраняем граф в файлы проекта
+        # 1. Generate/save the graph into the project files first
         self.system_log(t("log.generating"))
-        ok, apt_packages = self._save_result(
-            self.project_manager.save_project(self.current_project_path))
+        ok, apt_packages = self._save_now()
         if not ok:
             self.system_log(t("log.generate_failed_abort"))
             return
@@ -450,7 +499,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         except Exception as e:
             self.system_log(t("log.env_skipped", error=e))
 
-        # 2. Запускаем деплой в отдельном потоке
+        # 2. Deploy in a separate thread
         self.deploy_worker = DeployWorker(self.container_manager, self.current_project_path, extra_apt_packages=apt_packages)
         self.deploy_worker.sys_signal.connect(self.system_log)
         self.deploy_worker.ros_signal.connect(self.ros_log)
@@ -458,18 +507,25 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.deploy_worker.start()
         QtCore.QTimer.singleShot(1500, self._refresh_context)
 
+    def _deploy_running(self):
+        w = getattr(self, "deploy_worker", None)
+        return bool(w is not None and w.isRunning())
+
     def on_deploy_finished(self):
-        """Вызывается, когда DeployWorker завершил работу."""
+        """Called when DeployWorker has finished."""
         self.ui.actions['run'].setEnabled(True)
         self.ui.actions['stop'].setEnabled(False)
         self.system_log(t("log.deploy_finished"))
         self._refresh_context()
 
     def on_stop_project(self):
-        # Останавливаем worker и контейнер, если они запущены
-        if hasattr(self, 'deploy_worker') and self.deploy_worker is not None:
+        # stop the worker and the container if they are running
+        if self._deploy_running():
             self.deploy_worker.stop()
-        self.ui.actions['run'].setEnabled(True)
+            # on_deploy_finished re-enables Run once the worker has really finished
+            self.ui.actions['run'].setEnabled(False)
+        else:
+            self.ui.actions['run'].setEnabled(True)
         self.ui.actions['stop'].setEnabled(False)
         self.system_log(t("log.stopped"))
         self._refresh_context()
@@ -478,9 +534,9 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         if not self.current_project_path:
             self.system_log(t("log.no_project"))
             return
-        # Сначала сгенерируем актуальные файлы из графа
+        # generate up-to-date files from the graph first
         self.system_log(t("log.export_generating"))
-        if not self.project_manager.save_project(self.current_project_path):
+        if not self._save_now()[0]:
             self.system_log(t("log.export_generate_failed"))
             return
         try:
@@ -496,13 +552,15 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             traceback.print_exc()
 
     def on_load_project_init(self, path):
-        """Логика загрузки проекта с адаптацией интерфейса"""
+        """Load a project and adapt the UI to it."""
         self.current_project_path = path
         self._offer_layout_migration(path)
         p_type = WorkspaceManager.get_project_type(path)
         self.ui.set_visible_graph(p_type)
         self.ui.rebuild_palette(ALL_NODE_CLASSES, p_type)
         self.project_manager.load_project(path)
+        if self.project_manager.load_failed_path:
+            self.system_log(t("log.state_unreadable"))
         self.watcher.start_watching(os.path.join(path, "src"))
         if hasattr(self, 'container_settings'):
             self.container_settings.set_project(path)
@@ -516,10 +574,11 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.sync_green_nodes()
         self._load_real_robot_flag()
         self._refresh_context()
+        self._mark_clean()                 # loading and green nodes are not user edits
         self.system_log(t("log.project_loaded", path=path, type=p_type.upper()))
 
     def retranslate_tabs(self):
-        """Заголовки вкладок нижней панели (Dashboard/Docker/Libraries/Containers/Remote/Files)."""
+        """Titles of the bottom panel tabs (Dashboard/Docker/Libraries/Containers/Remote/Files)."""
         tabs = getattr(self, "_console_tab_widget", None)
         for page, key in getattr(self, "_console_tab_keys", {}).items():
             idx = tabs.indexOf(page) if tabs is not None else -1
@@ -533,7 +592,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         prefix = ctx.short() + " " if ctx else ""
         self.ui.console_sys.append(f"{prefix}{text}")
 
-    # ---------- контекст исполнения (где выполняются команды) ----------
+    # ---------- execution context (where commands run) ----------
 
     def _project_target(self):
         if not self.current_project_path:
@@ -546,8 +605,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
     def _refresh_context(self):
         connected, rhost, rcontainer = getattr(self, "_remote", (False, "", ""))
         if connected:
-            # Подключены к удалённой цели: она важнее локального контейнера —
-            # именно туда уходят Sync / Build.
+            # connected to a remote target: it takes priority over the local container,
+            # Sync / Build go there.
             self._exec_ctx = resolve_context({"type": "ssh", "host": rhost},
                                              bool(rcontainer), rcontainer, self._real_robot)
         else:
@@ -594,7 +653,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.dashboard.process_log(text)
 
     def on_file_changed_externally(self, path, content, ports):
-        """Файл ноды изменён снаружи (редактор) — синкаем код и порты в ноду."""
+        """A node file was changed outside (editor): sync code and ports into the node."""
         try:
             self.project_manager.sync_node_from_file(
                 path, content, ports,
@@ -613,13 +672,14 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         return None
 
     def add_user_node_logic(self, code):
-        """Логика восстановления кастомной ноды из палитры"""
+        """Recreates a custom node from a palette."""
         try:
             path_parts = code.replace("USER_NODE:", "").split("/")
             palette_name = path_parts[0]
             node_folder = path_parts[1]
 
-            base_dir = os.path.join("nodes", "user_palettes", palette_name, node_folder)
+            from core import palette_share
+            base_dir = os.path.join(palette_share.PALETTES_ROOT, palette_name, node_folder)
             meta_path = os.path.join(base_dir, "node.yaml")
 
             if not os.path.exists(meta_path): return
@@ -630,7 +690,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
             graph = self.graphs.current(self.ui.tabs.currentIndex())
 
-            # === ФИКС 2: уникальное имя (Name, Name_1, Name_2...) ===
+            # unique name: Name, Name_1, Name_2...
             base_name = meta['name']
             existing = {n.name() for n in graph.all_nodes()}
             new_name = base_name
@@ -641,18 +701,18 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
             node = graph.create_node(meta['type'], name=new_name)
 
-            # Восстанавливаем свойства
+            # properties
             for key, val in meta.get('properties', {}).items():
                 try:
                     node.set_property(key, val)
                 except Exception:
-                    # свойства, которых нет у базового класса, создаём
+                    # properties the base class does not have are created
                     try:
                         node.create_property(key, val)
                     except Exception:
                         pass
 
-            # === ФИКС 1: восстанавливаем кастомные порты ===
+            # custom ports
             have_in = set(node.inputs().keys())
             have_out = set(node.outputs().keys())
             for p in meta.get('ports', []):
@@ -667,7 +727,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 except Exception as pe:
                     self.system_log(t("log.port_skipped", port=pname, error=pe))
 
-            # Восстанавливаем код из файла (Закон удобства)
+            # code from logic.cpp / logic.py
             ext = ".cpp" if "cpp" in meta['type'].lower() else ".py"
             code_path = os.path.join(base_dir, f"logic{ext}")
             if os.path.exists(code_path):
@@ -678,17 +738,60 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         except Exception as e:
             self.system_log(t("log.user_node_import_error", error=e))
 
+    def _node_run_spec(self, node):
+        """How the node is started in the session (same rule as the launch generator)."""
+        from core.process_manager import node_spec
+        from core.remote.session import package_name_for
+        if not self.current_project_path or not node.has_property('source_file'):
+            return None
+        bound = node.get_property('bound_file') if node.has_property('bound_file') else None
+        return node_spec(node.type_, node.get_property('source_file'),
+                         package_name_for(self.current_project_path), bound)
+
+    def _ros_node_name(self, node):
+        """Node name in ROS: launch names a C++ node after its file."""
+        spec = self._node_run_spec(node)
+        return spec["entry"] if spec and spec["language"] == "cpp" else node.name()
+
+    def _background(self, fn):
+        """Docker commands (build, lifecycle) off the UI thread."""
+        if not hasattr(self, "_bg_tasks"):
+            from ui.qt_worker import TaskHost
+            self._bg_tasks = TaskHost()
+        self._bg_tasks.start(fn, on_fail=self.system_log, on_line=self.system_log, parent=self)
+
     def on_restart_selected(self, graph, *args, **kwargs):
+        jobs = []
         for node in graph.selected_nodes():
-            is_cpp = "cpp" in node.type_.lower()
-            self.process_manager.restart_node(node.name(), self.system_log, rebuild_cpp=is_cpp)
+            spec = self._node_run_spec(node)
+            if spec is None:
+                self.system_log(t("log.restart_no_file", name=node.name()))
+                continue
+            jobs.append((node.name(), spec))
+        if not jobs:
+            return
+        pm = self.process_manager
+
+        def work(emit):
+            for name, spec in jobs:
+                pm.restart_node(name, emit, rebuild_cpp=spec["language"] == "cpp", spec=spec)
+        self._background(work)
 
     def on_freeze_selected(self, graph, target_state, *args, **kwargs):
+        names = []
         for node in graph.selected_nodes():
             if self._is_lifecycle_node(node):
-                self.process_manager.set_lifecycle_state(node.name(), target_state, self.system_log)
+                names.append(self._ros_node_name(node))
             else:
                 self.system_log(t("log.not_lifecycle", name=node.name()))
+        if not names:
+            return
+        pm = self.process_manager
+
+        def work(emit):
+            for name in names:
+                pm.set_lifecycle_state(name, target_state, emit)
+        self._background(work)
 
     def _is_lifecycle_node(self, node):
         return 'lifecycle' in getattr(node, 'NODE_NAME', '').lower() or \
@@ -699,11 +802,12 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         if not (ok and palette_name): return
 
         node_name = node.name()
-        # Путь: nodes/user_palettes/ИмяПалитры/ИмяНоды/
-        base_dir = os.path.join("nodes", "user_palettes", palette_name, node_name)
+        # Path: <app>/nodes/user_palettes/PaletteName/NodeName/
+        from core import palette_share
+        base_dir = os.path.join(palette_share.PALETTES_ROOT, palette_name, node_name)
         os.makedirs(base_dir, exist_ok=True)
 
-        # 1. Сохраняем метаданные в YAML (свойства, порты)
+        # 1. Metadata to YAML (properties, ports)
         meta = {
             "name": node_name,
             "type": node.type_,
@@ -716,26 +820,26 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         with open(os.path.join(base_dir, "node.yaml"), 'w', encoding='utf-8') as f:
             yaml.dump(meta, f, sort_keys=False, allow_unicode=True)
 
-        # 2. Сохраняем код в его родном расширении (Закон удобства)
+        # 2. Code into a file with its native extension so it can be opened in an editor
         code = node.get_property("code_content")
         ext = ".cpp" if "cpp" in node.type_.lower() else ".py"
         with open(os.path.join(base_dir, f"logic{ext}"), 'w', encoding='utf-8') as f:
             f.write(code if code else "")
 
         self.system_log(t("log.node_saved_palette", node=node_name, palette=palette_name))
-        # Обновляем UI палитры
+        # refresh the palette UI
         p_type = WorkspaceManager.get_project_type(self.current_project_path) if self.current_project_path else "python"
         self.ui.rebuild_palette(ALL_NODE_CLASSES, p_type)
 
     def _on_node_dropped_to_palette(self, node_id):
-        """Нода перетащена Alt+drag'ом на палитру — сохраняем её как кастомную."""
+        """A node was Alt+dragged onto the palette: save it as a custom node."""
         n = self.graphs.find_node(node_id)
         if n is not None:
             self.on_save_node_to_palette(n)
                 
     def on_export_palette(self):
         from core.palette_share import export_palette, PALETTES_ROOT
-        # Какие палитры есть
+        # available palettes
         palettes = []
         if os.path.isdir(PALETTES_ROOT):
             palettes = [d for d in os.listdir(PALETTES_ROOT)
@@ -781,14 +885,14 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self.system_log(t("log.import_failed", error=e))
             return
 
-        # Обновляем палитру в UI
+        # refresh the palette in the UI
         p_type = WorkspaceManager.get_project_type(self.current_project_path) \
             if self.current_project_path else "python"
         self.ui.rebuild_palette(ALL_NODE_CLASSES, p_type)
         self.system_log(t("log.palette_imported", name=pname, count=len(nodes), nodes=", ".join(nodes)))
 
     def on_assign_container(self, graph, *args, **kwargs):
-        """Назначает выбранным нодам деплой-группу (свойство container_group)."""
+        """Assigns a deploy group (container_group property) to the selected nodes."""
         selected = graph.selected_nodes()
         if not selected:
             self.system_log(t("log.select_nodes_first"))
@@ -814,7 +918,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                     pass
             node.set_property('container_group', gname)
 
-        # Если группа новая — создаём ей дефолтный конфиг
+        # new group: create a default config for it
         if hasattr(self, 'container_settings') and self.container_settings.store \
                 and gname not in self.container_settings.group_names():
             from core.container_config import make_config
@@ -825,7 +929,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.system_log(t("log.assigned", count=len(selected), group=gname))
 
     def _refresh_container_counts(self):
-        """Счётчик нод по группам в UI (roadmap 2.4)."""
+        """Node count per group in the UI."""
         if not hasattr(self, 'container_settings') or not self.container_settings.store:
             return
         counts = {}
@@ -839,9 +943,9 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
     # ================= v0.6.0: FOREIGN PROJECT IMPORT =================
 
-    # Какие типы нод использовать для импортированных файлов.
-    # ⚠ Для python нет generic-ноды — используется StringPub как контейнер кода.
-    #   Если заведёшь PyCustomNode — поменяй идентификатор здесь.
+    # Node types used for imported files.
+    # ⚠ There is no generic Python node: StringPub is used as a code container.
+    #   When PyCustomNode exists, change the identifier here.
     IMPORT_NODE_TYPES = {
         'cpp': 'ros.cpp.CppCustomNode',
         'python': 'ros.py.PyStringPubNode',
@@ -849,7 +953,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
     @staticmethod
     def _node_binds(node, lang, filename, rel):
-        """Нода уже привязана к этому файлу (новая — по bound_file, старая — по имени файла)."""
+        """The node is already bound to this file (new: by bound_file, old: by file name)."""
         if (('cpp' in node.type_) != (lang == 'cpp')):
             return False
         bound = node.get_property('bound_file')
@@ -858,7 +962,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         return node.get_property('source_file') == filename and "/" not in rel.split("/", 1)[-1]
 
     def _ensure_file_node(self, path, langs, rel):
-        """Нода-файл для зелёного не-кодового файла (CMakeLists.txt, package.xml, заголовок…). 1 — создана."""
+        """File node for a green non-code file (CMakeLists.txt, package.xml, header...). Returns 1 if created."""
         from core import build_marks
         from core.node_sources import code_hash
         if any(n.has_property('bound_file') and n.get_property('bound_file') == rel
@@ -889,8 +993,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             return 0
 
     def sync_green_nodes(self):
-        """Файлы с зелёной отметкой (вкладка Files) → ноды на столе, привязанные к файлу на диске.
-        Снятие отметки ноду НЕ удаляет: у неё могут быть провода и настройки."""
+        """Green-marked files (Files tab) -> canvas nodes bound to the file on disk.
+        Removing the mark does NOT delete the node: it may have wires and settings."""
         path = getattr(self, "current_project_path", None)
         if not path:
             return 0
@@ -942,14 +1046,14 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
         graph = self.graphs.current(self.ui.tabs.currentIndex())
 
-        # Зависимости — в лог (панель зависимостей можно навесить позже)
+        # dependencies go to the log
         if result['deps']:
             self.system_log(t("log.pkg_depends", name=result['package_name'],
                               deps=", ".join(result['deps'])))
         for w in result['warnings']:
             self.system_log(t("log.warn", text=w))
 
-        # Раскидываем ноды сеткой
+        # lay the nodes out on a grid
         cols = 4
         spacing_x, spacing_y = 320, 220
         created = 0
@@ -989,7 +1093,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             
         root_menu.add_separator()
 
-        # v0.6.0: деплой-группы
+        # v0.6.0: deploy groups
         root_menu.add_command(" " + t("menu.assign_container"), partial(self.on_assign_container, graph))
         root_menu.add_command(" " + t("menu.restart_node"), partial(self.on_restart_selected, graph))
         root_menu.add_command(" " + t("menu.freeze"), partial(self.on_freeze_selected, graph, 'deactivate'))
@@ -1016,15 +1120,28 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         selected = graph.selected_nodes()
         if not selected: return
         for node in selected:
-            if not node.has_property('source_file'): continue
+            if not node.has_property('source_file') or not self.current_project_path:
+                continue
             filename = node.get_property('source_file')
-            if self.current_project_path:
-                full_path = os.path.join(self.current_project_path, "src", filename)
-                if os.path.exists(full_path):
-                    with open(full_path, 'r', encoding='utf-8') as f: content = f.read()
-                    ports = self.watcher._scan_ports(content, full_path)
-                    self.on_file_changed_externally(filename, content, ports)
-                    self.system_log(t("log.rescanned", file=filename))
+            full_path = self._node_source_path(node)
+            if not full_path:
+                self.system_log(t("log.rescan_not_found", file=filename))
+                continue
+            with open(full_path, 'r', encoding='utf-8') as f: content = f.read()
+            ports = self.watcher._scan_ports(content, full_path)
+            self.on_file_changed_externally(filename, content, ports)
+            self.system_log(t("log.rescanned", file=filename))
+
+    def _node_source_path(self, node):
+        """Node file on disk: bound_file (green mark) or src/cpp|python/<source_file>."""
+        src = os.path.join(self.current_project_path, "src")
+        bound = node.get_property('bound_file') if node.has_property('bound_file') else None
+        filename = node.get_property('source_file') or ""
+        lang = "cpp" if "cpp" in node.type_ else "python"
+        candidates = [os.path.join(src, bound)] if bound else []
+        candidates += [os.path.join(project_layout.ProjectLayout(self.current_project_path).code_dir(lang), filename),
+                       os.path.join(src, filename)]          # old layout: code directly in src/
+        return next((p for p in candidates if filename and os.path.isfile(p)), None)
 
     def on_add_port_clicked(self, graph, port_type, port_color):
         selected_nodes = graph.selected_nodes()
@@ -1054,7 +1171,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self.inject_code_port(node, name, port_type, "sub")
 
     def inject_code_port(self, node, port_name, port_type_ros, mode):
-        """Внедряет код паблишера/сабскрайбера прямо в текст ноды по маркерам"""
+        """Injects publisher/subscriber code into the node text at the markers."""
         if not node.has_property('code_content'): return
         current = node.get_property('code_content')
         parts = port_type_ros.split('/')

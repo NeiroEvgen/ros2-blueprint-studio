@@ -1,4 +1,4 @@
-"""Панели «Container settings» и «Remote»: подписи из словаря, на двух языках."""
+"""Container settings and Remote panels: labels from the dictionary, in two languages."""
 import os
 import pytest
 
@@ -102,7 +102,7 @@ def test_small_panels_follow_language(app):
 
 
 def test_buttons_have_vector_icons_not_emoji(app):
-    """Эмодзи в подписях зависят от шрифтов ОС; кнопки используют векторные иконки."""
+    """Emoji in labels depend on OS fonts; buttons use vector icons."""
     from ui.remote_panel import RemotePanel
     p = RemotePanel()
     for b in (p.btn_save, p.btn_connect, p.btn_sync, p.btn_build, p.btn_cancel, p.btn_terminal):
@@ -111,7 +111,7 @@ def test_buttons_have_vector_icons_not_emoji(app):
 
 
 def test_no_pictographic_emoji_in_ui_strings():
-    """Ни в словарях, ни в коде интерфейса не должно быть эмодзи-пиктограмм (⚠ ↑ ✕ допустимы)."""
+    """Neither the dictionaries nor the UI code may contain emoji pictograms (⚠ ↑ ✕ are allowed)."""
     import glob, json, re
     emo = re.compile("[\U0001F300-\U0001FAFF✅❌⏹▶♻✨⚡✂⇅⛔]")
     root = os.path.dirname(os.path.dirname(__file__))

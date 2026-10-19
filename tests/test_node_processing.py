@@ -1,4 +1,4 @@
-"""Характеризация обработки нод: имена файлов, группы, порты → топики, коллизии."""
+"""Characterization of node processing: file names, groups, ports -> topics, collisions."""
 import pytest
 
 NODE_T = "ros.cpp.CppCustomNode"
@@ -148,7 +148,7 @@ class TestFixedBugs:
         names = [c["filename"] for c in created]
         assert names == ["a_b.cpp", "a_b_2.cpp", "a_b_3.cpp"]
         assert sorted(p.name for p in d.glob("*.cpp")) == sorted(names)
-        # node.custom.source_file обновлён → второй Save даёт те же имена
+        # node.custom.source_file is updated -> the second Save gives the same names
         assert [c["filename"] for c in run(pm, nodes, d)] == names
 
     def test_explicit_distinct_source_files_untouched(self, pm, d):
@@ -192,3 +192,15 @@ class TestFixedBugs:
         i = group("i", "In", ["a"]); i["custom"]["parent_group_id"] = "o"
         created = run(pm, [o, i, node("a", pgid="i")], d)
         assert created[0]["group"] == "rig"
+
+
+def test_flatten_failure_is_logged_not_raised(tmp_path, monkeypatch, caplog):
+    """process_and_save_files called traceback.print_exc() without importing traceback:
+    a broken session crashed Save with NameError instead of logging the error."""
+    from core import node_sources
+
+    def broken(*a, **k):
+        raise KeyError("nodes")
+    monkeypatch.setattr(node_sources, "flatten_nodes", broken)
+    assert node_sources.process_and_save_files({}, str(tmp_path), "python") == []
+    assert "flatten_nodes failed" in caplog.text

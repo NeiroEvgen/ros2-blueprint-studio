@@ -1,20 +1,20 @@
 """
-Векторные иконки интерфейса (SVG, рисуются в QPixmap нужного масштаба).
+Vector UI icons (SVG, rendered into a QPixmap at the needed scale).
 
-Зачем: эмодзи в подписях кнопок зависят от шрифтов ОС (на Linux/macOS/Windows они
-выглядят по-разному или превращаются в «квадратики») и раздувают ширину кнопок.
-SVG одинаков везде, чёткий на HiDPI и перекрашивается под состояние кнопки.
+Why: emoji in button labels depend on OS fonts (they look different on Linux/macOS/Windows
+or turn into "boxes") and make buttons wider.
+SVG looks the same everywhere, is sharp on HiDPI and is recoloured to the button state.
 
     btn.setIcon(icons.icon("save"))
 """
 from PySide6 import QtCore, QtGui
 
-try:                                        # QtSvg входит в обычную сборку PySide6
+try:                                        # QtSvg is part of the regular PySide6 build
     from PySide6 import QtSvg
 except ImportError:                          # pragma: no cover
     QtSvg = None
 
-# Тела иконок: viewBox 24x24, обводка currentColor (подставляется при рисовании).
+# Icon bodies: viewBox 24x24, stroke currentColor (substituted when drawing).
 _BODIES = {
     "open":      '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
     "save":      '<path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/>'
@@ -51,7 +51,7 @@ def names():
 
 
 def svg(name, color="#ffffff", stroke=2.0):
-    """Готовый текст SVG (для тестов и для экспорта)."""
+    """The finished SVG text (for tests and export)."""
     body = _BODIES[name].replace("currentColor", color)
     return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
             f'stroke="{color}" stroke-width="{stroke}" stroke-linecap="round" '
@@ -72,7 +72,7 @@ def _pixmap(name, color, px):
 
 
 def icon(name, color="#ffffff", disabled_color="#666666", size=18):
-    """QIcon: нормальное и неактивное состояние, чёткий на HiDPI (1x/2x/3x)."""
+    """QIcon: normal and disabled state, sharp on HiDPI (1x/2x/3x)."""
     key = (name, color, disabled_color, size)
     if key in _cache:
         return _cache[key]

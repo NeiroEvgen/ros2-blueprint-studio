@@ -1,15 +1,15 @@
 """
-Пользовательские настройки Studio (не проект): язык интерфейса и т.п.
+Studio user settings (not per project): UI language etc.
 
-Файл: <dir>/settings.json, где dir = $STUDIO_SETTINGS_DIR или ~/.ros_blueprint_studio.
-Чтение никогда не бросает исключений (битый/отсутствующий файл → значения по умолчанию);
-запись атомарная. Без Qt.
+File: <dir>/settings.json, where dir = $STUDIO_SETTINGS_DIR or ~/.ros_blueprint_studio.
+Reading never raises (broken/missing file -> defaults);
+writing is atomic. No Qt.
 """
 import json
 import os
 from typing import Any
 
-DEFAULTS = {"language": None, "single_canvas": True}   # None → определить по системе
+DEFAULTS = {"language": None, "single_canvas": True}   # None -> detect from the system
 
 
 def settings_dir() -> str:
@@ -36,8 +36,8 @@ def get(key: str) -> Any:
     return load().get(key, DEFAULTS.get(key))
 
 
-def set(key: str, value: Any) -> bool:      # noqa: A001 — имя API
-    """Сохранить одну настройку. False, если записать не удалось (интерфейс продолжает работать)."""
+def set(key: str, value: Any) -> bool:      # noqa: A001 (API name)
+    """Save one setting. False if it could not be written (the UI keeps working)."""
     if key not in DEFAULTS:
         raise KeyError(key)
     data = load()
@@ -55,7 +55,7 @@ def set(key: str, value: Any) -> bool:      # noqa: A001 — имя API
 
 
 def apply_language() -> str:
-    """Применить сохранённый язык (если он есть и словарь существует). Возвращает текущий язык."""
+    """Apply the saved language (if any and its dictionary exists). Returns the current language."""
     from core import i18n
     saved = get("language")
     if saved:

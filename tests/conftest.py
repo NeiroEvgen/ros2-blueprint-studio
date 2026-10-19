@@ -1,10 +1,10 @@
 """
-Общая инфраструктура тестов.
+Shared test infrastructure.
 
-Тесты гоняют ЧИСТЫЕ функции генераторов — без Qt, без Docker, без ROS.
-ProjectManager создаётся с graph_py=None, graph_cpp=None: методы
+The tests run PURE generator functions: no Qt, no Docker, no ROS.
+ProjectManager is created with graph_py=None, graph_cpp=None: the methods
 _generate_cpp_build_files / _flatten_nodes / _process_and_save_files
-графы не трогают, им нужны только данные сессии и файловая система.
+do not touch the graphs, they only need session data and the file system.
 """
 import os
 import sys
@@ -15,10 +15,10 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 
-# Часть тестов исполняет сгенерированные bash-скрипты с поддельным apt-get.
-# На Windows нет ни bash, ни chmod +x — такие тесты там пропускаются.
+# Some tests execute generated bash scripts with a fake apt-get.
+# Windows has neither bash nor chmod +x, so those tests are skipped there.
 requires_posix_shell = pytest.mark.skipif(
-    os.name == "nt", reason="нужен POSIX-shell (bash); на Windows пропускается")
+    os.name == "nt", reason="needs a POSIX shell (bash); skipped on Windows")
 
 
 @pytest.fixture
@@ -30,9 +30,9 @@ def pm():
 @pytest.fixture
 def cpp_project(tmp_path):
     """
-    Минимальная структура C++ проекта студии:
+    Minimal C++ project structure of Studio:
         <tmp>/my_proj/src/cpp/
-    Возвращает функцию add(filename, code) и путь к src.
+    Returns the function add(filename, code) and the path to src.
     """
     src = tmp_path / "my_proj" / "src"
     (src / "cpp").mkdir(parents=True)
@@ -53,15 +53,15 @@ int main(int argc, char** argv) {
 """
 
 HELPER_CPP = """#include "rclcpp/rclcpp.hpp"
-// хелпер без main: вызывается из другой ноды
+// helper without main: called from another node
 double helper(double x) { return x * 2.0; }
 """
 
 
 # ------------------------------------------------------------------
-# Настоящий SSH-сервер для тестов remote workspace.
-# Если sshd в системе нет (обычная Windows-машина) — тесты с этой
-# фикстурой пропускаются, а не падают.
+# A real SSH server for the remote workspace tests.
+# Without sshd on the system (a typical Windows machine) the tests using this
+# fixture are skipped, not failed.
 # ------------------------------------------------------------------
 import shutil as _shutil
 import socket as _socket
@@ -78,14 +78,14 @@ def _free_port():
 def sshd(tmp_path_factory):
     sshd_bin = _shutil.which("sshd") or ("/usr/sbin/sshd" if os.path.exists("/usr/sbin/sshd") else None)
     if not sshd_bin or os.name == "nt":
-        pytest.skip("sshd недоступен — тесты с реальным SSH пропущены")
+        pytest.skip("sshd not available: tests with real SSH are skipped")
     try:
         import paramiko
     except ImportError:
-        pytest.skip("paramiko не установлен")
+        pytest.skip("paramiko is not installed")
 
     try:
-        os.makedirs("/run/sshd", exist_ok=True)   # privsep dir, иначе sshd молча не стартует
+        os.makedirs("/run/sshd", exist_ok=True)   # privsep dir, otherwise sshd silently does not start
     except OSError:
         pass
     d = tmp_path_factory.mktemp("sshd")
@@ -115,7 +115,7 @@ def sshd(tmp_path_factory):
             _time.sleep(0.1)
     else:
         proc.kill()
-        pytest.skip("sshd не поднялся")
+        pytest.skip("sshd did not start")
 
     info = {"host": "127.0.0.1", "port": port, "user": user,
             "key": str(client_key), "host_key_pub": (d / "host_key.pub").read_text(),
@@ -130,7 +130,7 @@ def sshd(tmp_path_factory):
 
 @pytest.fixture(autouse=True)
 def _english_ui():
-    """Тесты проверяют английские тексты; системная локаль разработчика не должна влиять."""
+    """Tests check English texts; the developer's system locale must not matter."""
     from core import i18n
     i18n.set_language("en")
     yield
@@ -139,8 +139,8 @@ def _english_ui():
 
 @pytest.fixture(autouse=True)
 def _isolated_settings(tmp_path, monkeypatch):
-    """Тесты не читают и не пишут настоящий ~/.ros_blueprint_studio."""
+    """Tests never read or write the real ~/.ros_blueprint_studio."""
     monkeypatch.setenv("STUDIO_SETTINGS_DIR", str(tmp_path / "_settings"))
-    # Большинство тестов описывают режим двух вкладок; единый холст включают явно.
+    # Most tests describe the two-tab mode; the single canvas is enabled explicitly.
     from core import settings
     settings.set("single_canvas", False)

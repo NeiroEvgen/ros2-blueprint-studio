@@ -1,30 +1,8 @@
+import threading
 import traceback
-import re
 from PySide6 import QtCore
 from core.i18n import t
 from core.phase_timer import PhaseTimer
-
-class LogMonitorWorker(QtCore.QThread):
-    new_log_line = QtCore.Signal(str)
-    
-    def __init__(self, manager):
-        super().__init__()
-        self.manager = manager
-        self.is_running = True
-
-    def run(self):
-        if not self.manager or not self.manager.container: return
-        try:
-            # Читаем логи потоком
-            for chunk in self.manager.container.logs(stream=True, follow=True):
-                if not self.is_running: break
-                text = chunk.decode('utf-8', errors='replace')
-                self.new_log_line.emit(text)
-        except Exception: 
-            pass
-
-    def stop(self): 
-        self.is_running = False
 
 class DeployWorker(QtCore.QThread):
     sys_signal = QtCore.Signal(str)
@@ -68,8 +46,23 @@ class DeployWorker(QtCore.QThread):
                                    total=f"{self.timer.total:.1f}"))
             self.finished_signal.emit()
 
+    STOP_TIMEOUT = 5      # seconds, then SIGKILL; enough for ROS nodes to shut down cleanly
+
     def stop(self):
+        """
+        Does not block the UI: docker stop runs in its own thread. The worker finishes by itself
+        when the output stream of the stopped container ends.
+        """
         self.is_running = False
-        try:
-            self.manager.container.stop()
-        except: pass
+        container = getattr(self.manager, "container", None)
+        if container is None:
+            return None
+
+        def _stop():
+            try:
+                container.stop(timeout=self.STOP_TIMEOUT)
+            except Exception as e:
+                self.sys_signal.emit(f"stop: {e}")
+        th = threading.Thread(target=_stop, name="docker-stop", daemon=True)
+        th.start()
+        return th

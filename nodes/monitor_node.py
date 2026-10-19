@@ -2,7 +2,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from NodeGraphQt import BaseNode, NodeBaseWidget
 from ui.fonts import MONO_CSS
 
-# --- 1. Окно консоли ---
+# --- 1. Console window ---
 class NodeLogWindow(QtWidgets.QDialog):
     def __init__(self, node_name, parent=None):
         super().__init__(parent)
@@ -26,7 +26,7 @@ class NodeLogWindow(QtWidgets.QDialog):
         self.text_edit.insertPlainText(str(data) + "\n")
         self.text_edit.moveCursor(QtGui.QTextCursor.End)
 
-# --- 2. Виджет (UI) ---
+# --- 2. Widget (UI) ---
 class MonitorWidgetUI(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -48,7 +48,7 @@ class MonitorWidgetUI(QtWidgets.QWidget):
         layout.addWidget(self.lbl_value)
         layout.addWidget(self.btn_open)
 
-# --- 3. Обертка (ИСПРАВЛЕНИЕ ОШИБКИ) ---
+# --- 3. Wrapper ---
 class MonitorNodeWidget(NodeBaseWidget):
     def __init__(self, parent=None):
         super(MonitorNodeWidget, self).__init__(parent)
@@ -57,14 +57,14 @@ class MonitorNodeWidget(NodeBaseWidget):
         self._ui = MonitorWidgetUI()
         self.set_custom_widget(self._ui)
 
-    # !!! ВАЖНО: Эти методы обязательны для сохранения/загрузки графа !!!
+    # IMPORTANT: these methods are required for saving/loading the graph
     def get_value(self):
         return self._ui.lbl_value.text()
 
     def set_value(self, value):
         self._ui.lbl_value.setText(str(value))
 
-# --- 4. Сама Нода ---
+# --- 4. The node ---
 class MonitorNode(BaseNode):
     __identifier__ = 'nodes.utility'
     NODE_NAME = 'MonitorNode'
@@ -76,7 +76,7 @@ class MonitorNode(BaseNode):
         self.log_window = NodeLogWindow(self.name())
         self.monitor_widget_wrapper = MonitorNodeWidget(self.view)
         
-        # Теперь добавление пройдет без ошибок
+        # adding the widget now works without errors
         self.add_custom_widget(self.monitor_widget_wrapper, tab='widgets')
 
         ui = self.monitor_widget_wrapper.get_custom_widget()

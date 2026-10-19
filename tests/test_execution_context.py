@@ -1,10 +1,10 @@
 """
-2.1 — индикация контекста.
+Context indication.
 
-Критерии приёмки:
-- смена профиля/состояния меняет метку
-- в логе видно, где выполнена команда (короткая метка на каждой строке)
-- режим «реальный робот» отличается однозначно: цвет + ТЕКСТ, не только цвет
+Acceptance criteria:
+- changing the profile/state changes the label
+- the log shows where a command ran (a short label on every line)
+- the "real robot" mode is unmistakable: colour + TEXT, not colour alone
 """
 import pytest
 
@@ -40,7 +40,7 @@ class TestResolve:
         assert resolve_context(None).kind is ContextKind.LOCAL
 
     def test_state_change_changes_label(self):
-        """Критерий: переключение меняет метку."""
+        """Criterion: switching changes the label."""
         labels = {
             resolve_context(LOCAL_TARGET, False).label(),
             resolve_context(SSH_TARGET, False).label(),
@@ -75,12 +75,12 @@ class TestRealRobot:
         (SSH_TARGET, True, "demo_run"),
     ])
     def test_real_robot_marked_in_text_not_only_color(self, kind_args):
-        """Критерий: не только цвет — дальтоник и скриншот в ч/б тоже поймут."""
+        """Criterion: not colour alone, so colour-blind users and b/w screenshots get it too."""
         target, active, name = kind_args
         ctx = resolve_context(target, active, name, real_robot=True)
         assert "REAL ROBOT" in ctx.label()
         assert "ROBOT" in ctx.short()
-        assert "РЕАЛЬНЫЙ РОБОТ" in ctx.describe()
+        assert "REAL ROBOT" in ctx.describe()
 
     def test_real_robot_color_differs_from_every_normal_state(self):
         robot_bg = resolve_context(SSH_TARGET, True, "c", real_robot=True).palette()[0]

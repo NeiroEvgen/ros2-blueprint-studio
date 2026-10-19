@@ -1,4 +1,4 @@
-"""Повторный Run переиспользует контейнер того же проекта (в том числе остановленный) — зависимости не теряются."""
+"""A repeated Run reuses the container of the same project (a stopped one too): dependencies are not lost."""
 import os
 import types
 
@@ -97,3 +97,49 @@ def test_new_container_is_labeled_with_project(tmp_path):
     m, proj, src = start(tmp_path, None)
     m.start_session(proj)
     assert m.client.created[1]["labels"] == {PROJECT_LABEL: src}
+
+
+def test_new_session_container_runs_with_init(tmp_path):
+    """Without docker-init, PID 1 = sleep ignores SIGTERM, and every Stop waits 10 s."""
+    m, proj, src = start(tmp_path, None)
+    m.start_session(proj)
+    assert m.client.created[1].get("init") is True
+
+
+def test_deploy_worker_stop_does_not_block_caller():
+    """Stop is called from the UI thread: docker stop must not hold it."""
+    import threading
+    import time
+    from core.ros_process import DeployWorker
+    calls, release = [], threading.Event()
+
+    class Container:
+        def stop(self, timeout=None):
+            calls.append(timeout)
+            release.wait(5)
+
+    w = DeployWorker(types.SimpleNamespace(container=Container()), "/p")
+    t0 = time.monotonic()
+    th = w.stop()
+    assert time.monotonic() - t0 < 0.5
+    release.set()
+    th.join(2)
+    assert calls == [DeployWorker.STOP_TIMEOUT] and not w.is_running
+
+
+def test_deploy_worker_stop_without_container_is_noop():
+    from core.ros_process import DeployWorker
+    assert DeployWorker(types.SimpleNamespace(container=None), "/p").stop() is None
+
+
+def test_invalid_project_image_reference_does_not_break_run(tmp_path):
+    """Docker answers 400 (APIError), not ImageNotFound: the session still starts on the base image."""
+    m, proj, src = start(tmp_path, None)
+
+    def bad_ref(tag):
+        raise docker.errors.APIError("400 Client Error: invalid reference format")
+    m.client.images = types.SimpleNamespace(get=bad_ref)
+    logs = []
+    m.start_session(proj, logs.append)
+    assert m.client.created[0] == "img:1"
+    assert any("WARN" in l for l in logs)

@@ -1,13 +1,13 @@
 """
-state.yaml проекта: чтение любой версии, запись v4.
+Project state.yaml: reading any version, writing v4.
 
   v3.6: {"meta": {"version": "3.6"}, "graphs": {"python": <session>, "cpp": <session>}}
-  v4.0: {"meta": {"version": "4.0", "merge": <meta для обратного split>},
-         "graph": <одна общая session>}
+  v4.0: {"meta": {"version": "4.0", "merge": <meta for splitting back>},
+         "graph": <one shared session>}
 
-Чтение v3.6 не меняет файл. Запись v4 поверх v3.6 сначала сохраняет копию
-state.v3.6.yaml.bak (один раз), так что вернуться на старую версию Studio можно.
-Без Qt.
+Reading v3.6 does not change the file. Writing v4 over v3.6 first keeps a copy
+state.v3.6.yaml.bak (once), so going back to an older Studio is possible.
+No Qt.
 """
 import os
 import shutil
@@ -21,8 +21,8 @@ from core import graph_ir
 V36, V4 = "3.6", "4.0"
 
 
-# Кортежи (цвета, позиции) пишем как обычные списки и читаем обратно кортежами —
-# те же правила, что в ProjectManager.
+# Tuples (colours, positions) are written as plain lists and read back as tuples:
+# the same rules as in ProjectManager.
 def _tuple_representer(dumper, data):
     return dumper.represent_sequence('tag:yaml.org,2002:seq', data)
 
@@ -38,9 +38,9 @@ yaml.add_constructor('tag:yaml.org,2002:python/tuple', _tuple_constructor, Loade
 @dataclass
 class ProjectState:
     version: str
-    py: dict            # сессия «python»-части (для старого UI с двумя вкладками)
-    cpp: dict           # сессия «cpp»-части
-    merged: dict        # общий граф (v4) — для единого холста
+    py: dict            # session of the "python" part (for the old two-tab UI)
+    cpp: dict           # session of the "cpp" part
+    merged: dict        # shared graph (v4) for the single canvas
     merge_meta: dict
 
 
@@ -49,9 +49,9 @@ def _version(doc: dict) -> str:
 
 
 def parse_state(doc: dict) -> ProjectState:
-    """dict из state.yaml → ProjectState (любая поддерживаемая версия)."""
+    """dict from state.yaml -> ProjectState (any supported version)."""
     if not isinstance(doc, dict):
-        raise ValueError("state.yaml: ожидался словарь")
+        raise ValueError("state.yaml: a mapping was expected")
     ver = _version(doc)
     if "graph" in doc:                                   # v4+
         merged = doc["graph"] or {"nodes": {}, "connections": []}

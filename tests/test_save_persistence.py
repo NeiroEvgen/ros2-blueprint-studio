@@ -1,13 +1,13 @@
 """
-0.2 — Регрессионный тест на first-save race.
+Regression test for the first-save race.
 
-Баг был: код ноды не сохранялся с первого раза / перезаписывался
-версией из графа, если файл уже правили снаружи (в редакторе).
-Фикс: в _process_and_save_files диск — источник истины. Если файл на
-диске существует и не пуст, он побеждает code_content из графа.
+The bug: a node's code was not saved the first time / was overwritten
+by the graph version if the file had already been edited outside (in an editor).
+Fix: in _process_and_save_files the disk is the source of truth. If the file
+exists on disk and is not empty, it wins over code_content from the graph.
 
-Проверка регрессии: закомментируй блок «disk re-read» в
-_process_and_save_files — тест test_disk_wins_over_graph_code покраснеет.
+Regression check: comment out the "disk re-read" block in
+_process_and_save_files and test_disk_wins_over_graph_code turns red.
 """
 import os
 import pytest
@@ -55,7 +55,7 @@ class TestFirstSave:
             "// from graph\nint main(){return 0;}\n"
 
     def test_disk_wins_over_graph_code(self, pm, code_dir):
-        """Главный регрессионный сценарий."""
+        """The main regression scenario."""
         (code_dir / "Edited.cpp").write_text("// edited in external editor\n",
                                              encoding="utf-8")
         node = _cpp_node("Edited", code="// stale graph version\n",
@@ -76,7 +76,7 @@ class TestFirstSave:
         assert (code_dir / "Blank.cpp").read_text(encoding="utf-8") == "// real code\n"
 
     def test_save_then_reload_roundtrip(self, pm, code_dir):
-        """create → save → reload: код совпадает с тем, что было в графе."""
+        """create -> save -> reload: the code matches what was in the graph."""
         code = "// roundtrip\nint main(){return 0;}\n"
         pm._process_and_save_files(_session(_cpp_node("Rt", code=code)),
                                    str(code_dir), "cpp")

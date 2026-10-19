@@ -1,11 +1,11 @@
 """
-Пересобирает учебные примеры examples/{py,cpp,mixed}_pubsub средствами самой Studio
-(offscreen Qt), чтобы формат проекта всегда совпадал с текущей версией.
+Rebuilds the tutorial examples examples/{py,cpp,mixed}_pubsub with Studio itself
+(offscreen Qt), so the project format always matches the current version.
 
   python -m tools.make_examples [--out examples]
 
-Каждый пример: издатель std_msgs/String на /chatter и подписчик, соединённые проводом.
-mixed_pubsub — Python-издатель и C++-подписчик на одном холсте.
+Each example: a std_msgs/String publisher on /chatter and a subscriber connected by a wire.
+mixed_pubsub: a Python publisher and a C++ subscriber on one canvas.
 """
 import argparse
 import os
@@ -15,8 +15,8 @@ import tempfile
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-# Шаблон Python-издателя из палитры ждёт триггер от ноды-таймера; для самодостаточного
-# примера издатель получает собственный код с таймером.
+# The palette Python publisher template waits for a trigger from a timer node; for a
+# self-contained example the publisher gets its own code with a timer.
 PY_TALKER = """import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -53,7 +53,7 @@ if __name__ == '__main__':
 """
 
 EXAMPLES = {
-    # имя: (тип проекта, (тип издателя, тип подписчика))
+    # name: (project type, (publisher type, subscriber type))
     "py_pubsub": ("python", ("ros.py.PyStringPubNode", "ros.py.PyStringSubNode")),
     "cpp_pubsub": ("cpp", ("ros.cpp.CppStringPubNode", "ros.cpp.CppStringSubNode")),
     "mixed_pubsub": ("mixed", ("ros.py.PyStringPubNode", "ros.cpp.CppStringSubNode")),
@@ -92,7 +92,7 @@ def build(out_dir: str) -> list:
         pub.outputs()["out"].connect_to(sub.inputs()["in"])
         res = win.project_manager.save_project(path)
         if not (res and res[0]):
-            raise RuntimeError(f"не удалось сохранить пример {name}")
+            raise RuntimeError(f"could not save example {name}")
         win.close()
         win.deleteLater()
         made.append(path)

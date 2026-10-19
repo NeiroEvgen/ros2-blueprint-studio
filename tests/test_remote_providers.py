@@ -1,15 +1,15 @@
 """
-2.4 (backend) — контрактные тесты FileProvider.
+FileProvider contract tests.
 
-Один и тот же набор гоняется против каждой реализации:
-  local — LocalProvider на tmp-папке
-  ssh   — SSHProvider через НАСТОЯЩИЙ sshd (SFTP)
-  exec  — SSHExecProvider через настоящий sshd: тот же код, что у
-          SSHContainerProvider, только без префикса docker exec
-          (Docker-демона в тестовой среде нет; сам префикс проверен
-          отдельным юнит-тестом ниже)
+The same set runs against every implementation:
+  local — LocalProvider on a tmp folder
+  ssh   — SSHProvider over a REAL sshd (SFTP)
+  exec  — SSHExecProvider over a real sshd: the same code as
+          SSHContainerProvider, just without the docker exec prefix
+          (there is no Docker daemon in the test environment; the prefix itself
+          is checked by a separate unit test below)
 
-Если sshd недоступен (обычная Windows-машина) — ssh/exec пропускаются.
+Without sshd (a typical Windows machine) ssh/exec are skipped.
 """
 import hashlib
 import os
@@ -38,7 +38,7 @@ def ssh_client(sshd):
 
 @pytest.fixture(params=["local", "ssh", "exec"])
 def prov(request, tmp_path):
-    """(provider, root) — root уже существует и пуст."""
+    """(provider, root): root already exists and is empty."""
     if request.param == "local":
         root = str(tmp_path / "root")
         os.makedirs(root)
@@ -62,7 +62,7 @@ class TestContract:
         assert p.read_text(path) == "Привет, робот — 🦾\n"
 
     def test_cyrillic_and_space_in_names(self, prov):
-        """Именно на таких путях ломался scp весь прошлую неделю."""
+        """Exactly the kind of path that kept breaking scp for a whole week."""
         p, root = prov
         path = p.join(root, "Евгений проект", "мой файл.cpp")
         p.write_text(path, "int main(){}\n")
@@ -133,7 +133,7 @@ class TestContract:
 
 
 class FakeSSH:
-    """Записывает команды, которые ушли бы на удалённую сторону."""
+    """Records the commands that would go to the remote side."""
     def __init__(self):
         self.commands = []
 
@@ -157,11 +157,11 @@ class TestContainerProvider:
         ssh = FakeSSH()
         SSHContainerProvider(ssh, "c").exists("/tmp/it's here.cpp")
         cmd = ssh.commands[0]
-        # команда должна пережить путь с апострофом, не разорвав кавычки
+        # the command must survive a path with an apostrophe without breaking the quoting
         import shlex
         argv = shlex.split(cmd)
         assert argv[:5] == ["docker", "exec", "-i", "c", "sh"]
-        # второй уровень: sh -c внутри контейнера распакует путь дословно
+        # second level: sh -c inside the container unpacks the path verbatim
         assert shlex.split(argv[-1]) == ["test", "-e", "/tmp/it's here.cpp"]
 
     def test_container_required(self):
@@ -171,10 +171,10 @@ class TestContainerProvider:
 
 class TestConcurrency:
     """
-    UI гоняет дерево файлов, открытие файла и Sync в разных потоках через
-    ОДИН SSH-провайдер. SFTP-канал paramiko не потокобезопасен — без
-    сериализации сессия падает с 'Server connection dropped'.
-    Нашёл это UI-тест, однопоточные тесты выше поймать не могли.
+    The UI runs the file tree, file opening and Sync in different threads through
+    ONE SSH provider. The paramiko SFTP channel is not thread-safe: without
+    serialization the session fails with 'Server connection dropped'.
+    A UI test found this; the single-threaded tests above could not.
     """
 
     def test_parallel_ops_on_one_sftp_provider(self, ssh_client):

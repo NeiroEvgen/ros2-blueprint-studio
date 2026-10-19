@@ -1,16 +1,16 @@
 """
-Генерация CMakeLists.txt и package.xml для C++-проекта.
+CMakeLists.txt and package.xml generation for a C++ project.
 
-Разделение:
-  scan_sources()          — читает исходники, ищет зависимости и executable (единственное чтение ФС кода)
-  render_cmake_auto()     — чистая: AUTO-зона CMake
-  render_cmake()          — чистая: AUTO + USER + ament_package()
-  render_package_xml()    — чистая
-  resolve_user_block()    — читает старый CMakeLists, сохраняет USER-зону / мигрирует ручные правки
-  write_if_changed()      — запись только при изменении
-  generate_cpp_build_files() — оркестратор (то, что раньше было ProjectManager._generate_cpp_build_files)
+Split:
+  scan_sources()          — reads the sources, finds dependencies and executables (the only filesystem read of the code)
+  render_cmake_auto()     — pure: CMake AUTO zone
+  render_cmake()          — pure: AUTO + USER + ament_package()
+  render_package_xml()    — pure
+  resolve_user_block()    — reads the old CMakeLists, keeps the USER zone / migrates hand edits
+  write_if_changed()      — writes only when the content changed
+  generate_cpp_build_files() — orchestrator (ProjectManager delegates here)
 
-Без Qt, без docker.
+No Qt, no docker.
 """
 import logging
 import os
@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import Set, List
 
 # ==========================================
-#   CMakeLists.txt: зоны владения
+#   CMakeLists.txt: ownership zones
 # ==========================================
 CMAKE_AUTO_BEGIN = "# === BLUEPRINT AUTO BEGIN — regenerated on every Save, do not edit ==="
 CMAKE_AUTO_END   = "# === BLUEPRINT AUTO END ==="
@@ -28,7 +28,7 @@ CMAKE_USER_BEGIN = "# === BLUEPRINT USER BEGIN — never touched by the generato
 CMAKE_USER_END   = "# === BLUEPRINT USER END ==="
 
 CMAKE_USER_TEMPLATE = (
-    "# Сюда пиши всё, что генератор не знает сам. Примеры:\n"
+    "# Put here everything the generator does not know about. Examples:\n"
     "#   target_sources(MyNode PRIVATE cpp/kinematics_lib/trajectory_solver.cpp)\n"
     "#   find_package(yaml-cpp REQUIRED)\n"
     "#   target_link_libraries(MyNode yaml-cpp)\n"
@@ -43,8 +43,17 @@ _MAIN_RE = re.compile(r'\bint\s+main\s*\(')
 
 
 def package_name_from_dir(project_dir: str) -> str:
-    """Имя ROS-пакета из имени папки проекта: a-z, 0-9, _."""
-    return re.sub(r'[^a-z0-9_]', '_', os.path.basename(project_dir).lower())
+    """
+    ROS package name from the project folder name: a-z, 0-9, _, starts with a letter (REP 144).
+    The only place of this rule: the generator, Save and Remote all use it.
+    Valid names are unchanged; "2robot" -> "pkg_2robot", a non-Latin name -> "pkg_<hash>".
+    """
+    base = os.path.basename(os.path.normpath(project_dir))
+    name = re.sub(r'[^a-z0-9_]', '_', base.lower())
+    if not name.strip('_'):
+        import hashlib
+        return "pkg_" + hashlib.sha1(base.encode("utf-8")).hexdigest()[:8]
+    return name if name[0].isalpha() else "pkg_" + name.lstrip('_')
 
 
 @dataclass
@@ -52,22 +61,22 @@ class SourceScan:
     deps: Set[str] = field(default_factory=lambda: set(BASE_DEPS))
     apt: Set[str] = field(default_factory=set)
     unresolved: Set[str] = field(default_factory=set)
-    executables: List[str] = field(default_factory=list)   # имена файлов .cpp с main(), отсортированы
-    # библиотеки, которые НЕ ament-пакеты (yaml-cpp): find_package + plain target_link_libraries
+    executables: List[str] = field(default_factory=list)   # .cpp file names with main(), sorted
+    # libraries that are NOT ament packages (yaml-cpp): find_package + plain target_link_libraries
     find_only: Set[str] = field(default_factory=set)
     link_libs: Set[str] = field(default_factory=set)
     xml_extra: Set[str] = field(default_factory=set)
-    # exec-файл → доп. исходники (.cpp соседей локальных заголовков), пути от cpp_dir
+    # executable file -> extra sources (.cpp next to local headers), paths relative to cpp_dir
     companions: dict = field(default_factory=dict)
-    # отмеченные пользователем файлы (пути от src/)
-    extra_sources: List[str] = field(default_factory=list)   # в каждый executable
-    marked_execs: List[str] = field(default_factory=list)    # отдельные executable (есть main)
+    # files marked by the user (paths relative to src/)
+    extra_sources: List[str] = field(default_factory=list)   # added to every executable
+    marked_execs: List[str] = field(default_factory=list)    # separate executables (have main)
     include_dirs: List[str] = field(default_factory=list)    # → include_directories
 
 
 def _canon(dep: str) -> str:
-    """Каноническое имя зависимости: реестр отдаёт 'OpenCV' (cmake), regex — 'opencv'.
-    Храним одно ('opencv'), а в CMake рендерим как OpenCV — иначе дубли."""
+    """Canonical dependency name: the registry returns 'OpenCV' (cmake), the regex 'opencv'.
+    We keep one ('opencv') and render it as OpenCV in CMake, otherwise there are duplicates."""
     return "opencv" if dep == "OpenCV" else dep
 
 
@@ -76,8 +85,8 @@ def _scan_text(content: str, scan: "SourceScan", resolver) -> None:
         scan.deps.add(match[0])
     for match in _PATTERN_LIBS.findall(content):
         scan.deps.add("opencv" if match == "opencv2" else match)
-    # apt-имя пакета часто НЕ совпадает с именем для find_package —
-    # реестр знает оба.
+    # the apt package name often differs from the find_package name;
+    # the registry knows both.
     for inc in resolver.scan_includes(content, "cpp"):
         entry = resolver.resolve_include(inc)
         if entry:
@@ -94,12 +103,12 @@ def _scan_text(content: str, scan: "SourceScan", resolver) -> None:
 
 def scan_sources(cpp_dir: str, marked=(), explicit=None) -> SourceScan:
     """
-    marked — файлы, отмеченные пользователем во вкладке Files (пути от src/).
-    .cpp без main() дописываются в каждый executable, .cpp с main() становятся
-    отдельным executable, папки заголовков уходят в include_directories.
-    explicit — пути, отмеченные именно как файлы (а не через отметку папки); None = все.
-    Файл, попавший под отметку папки, НЕ становится executable (так папка test/ или scripts/
-    не плодит бинарники) и, лежа прямо в cpp/, не дублируется: его и так ведёт сканер.
+    marked: files marked by the user in the Files tab (paths relative to src/).
+    .cpp without main() is added to every executable, .cpp with main() becomes
+    a separate executable, header folders go to include_directories.
+    explicit: paths marked as files (not via a folder mark); None = all of them.
+    A file covered by a folder mark does NOT become an executable (so test/ or scripts/
+    do not spawn binaries) and, if it lies directly in cpp/, is not duplicated: the scanner already handles it.
     """
     from core.generators.dependency_resolver import DependencyResolver
     resolver = DependencyResolver()
@@ -114,7 +123,7 @@ def scan_sources(cpp_dir: str, marked=(), explicit=None) -> SourceScan:
             with open(os.path.join(cpp_dir, file), 'r', encoding='utf-8') as f:
                 _scan_text(f.read(), scan, resolver)
 
-    # Executable только из файлов с int main(): остальные .cpp — библиотечные хелперы.
+    # Executables only from files with int main(): other .cpp files are library helpers.
     for file in sorted(listing):
         if file.endswith('.cpp'):
             with open(os.path.join(cpp_dir, file), 'r', encoding='utf-8') as f:
@@ -144,7 +153,7 @@ def _apply_marked(scan, src_dir, marked, resolver, explicit=None) -> None:
             continue
         _scan_text(text, scan, resolver)
         d = os.path.dirname(rel)
-        if d and d not in scan.include_dirs and d != "include":      # include/ уже в списке
+        if d and d not in scan.include_dirs and d != "include":      # include/ is already listed
             scan.include_dirs.append(d)
         if ext in (".hpp", ".h", ".hh") or rel in top:
             continue
@@ -153,7 +162,7 @@ def _apply_marked(scan, src_dir, marked, resolver, explicit=None) -> None:
             if not by_folder:
                 scan.marked_execs.append(rel)
         elif by_folder and os.path.dirname(rel) == "cpp":
-            continue                     # хелпер прямо в cpp/: сканер уже подключает его по #include
+            continue                     # helper directly in cpp/: the scanner already adds it via #include
         else:
             scan.extra_sources.append(rel)
     scan.include_dirs.sort()
@@ -165,8 +174,8 @@ _LOCAL_INC_RE = re.compile(r'#include\s*"([^"]+)"')
 
 def _companions(cpp_dir: str, exec_file: str, exec_set) -> List[str]:
     """
-    Соседние .cpp локальных заголовков (solver.hpp → solver.cpp), транзитивно.
-    Файлы с main() в companions не попадают — иначе два main() в одном бинарнике.
+    .cpp files next to local headers (solver.hpp -> solver.cpp), transitively.
+    Files with main() never become companions, otherwise one binary gets two main().
     """
     found, seen, work = [], set(), [exec_file]
     while work:
@@ -227,7 +236,7 @@ def render_cmake_auto(pkg_name: str, deps, executables, find_only=(), link_libs=
         auto += f"add_executable({exec_name} {sources})\n"
         auto += f"ament_target_dependencies({exec_name} {deps_str})\n"
         if link_libs:
-            # plain-сигнатура, как и у ament_target_dependencies (смешивать с PUBLIC нельзя)
+            # plain signature, like ament_target_dependencies (cannot be mixed with PUBLIC)
             auto += f"target_link_libraries({exec_name} {' '.join(sorted(link_libs))})\n"
         auto += f"install(TARGETS {exec_name} DESTINATION lib/${{PROJECT_NAME}})\n\n"
 
@@ -236,7 +245,7 @@ def render_cmake_auto(pkg_name: str, deps, executables, find_only=(), link_libs=
 
 
 def render_cmake(auto: str, user_body: str) -> str:
-    # ament_package() стоит после USER-блока: он обязан быть последним.
+    # ament_package() goes after the USER block: it must be last.
     return (
         f"{CMAKE_AUTO_BEGIN}\n{auto}{CMAKE_AUTO_END}\n\n"
         f"{CMAKE_USER_BEGIN}\n{user_body}{CMAKE_USER_END}\n\n"
@@ -257,26 +266,60 @@ def render_package_xml(pkg_name: str, deps) -> str:
     return x
 
 
+def _read_text_any(path: str):
+    """
+    (text, encoding). A CMakeLists edited in Windows Notepad may be cp1251:
+    reading it only as UTF-8 failed, and the USER block was silently replaced by the template.
+    """
+    with open(path, 'rb') as f:
+        raw = f.read()
+    for enc in ("utf-8", "cp1251"):
+        try:
+            return raw.decode(enc), enc
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("latin-1"), "latin-1"      # single-byte: decodes anything
+
+
+def _backup(path: str):
+    """Copy path to the first free .bak / .bakN. Returns the copy's path or None."""
+    bak = path + ".bak"
+    n = 1
+    while os.path.exists(bak):
+        bak = f"{path}.bak{n}"
+        n += 1
+    try:
+        shutil.copy2(path, bak)
+        return bak
+    except OSError as e:
+        logging.warning(f"CMake: backup failed: {e}")
+        return None
+
+
 def resolve_user_block(cmake_path: str, new_auto: str) -> str:
     """
-    Возвращает тело USER-блока для записи.
+    Returns the USER block body to write.
 
-    - Файла нет                → шаблон с примерами.
-    - Есть USER-блок           → его содержимое как есть, дословно.
-    - Старый файл без маркеров → одноразовая миграция: строки, которых
-      нет в новом AUTO (т.е. дописанные человеком), переносятся в
-      USER-блок ЗАКОММЕНТИРОВАННЫМИ, а оригинал сохраняется в .bak.
-      Закомментированными — потому что среди них могут оказаться
-      устаревшие add_executable на удалённые файлы, которые молча
-      сломали бы сборку. Человек раскомментирует нужное сам.
+    - No file                     -> template with examples.
+    - Has a USER block            -> its content verbatim.
+    - Old file without markers    -> one-time migration: lines that are not
+      in the new AUTO zone (i.e. added by a person) are moved into the
+      USER block COMMENTED OUT, and the original is kept as .bak.
+      Commented out because they may include stale add_executable lines
+      for deleted files, which would silently break the build.
+      The person uncomments what is needed.
     """
     if not os.path.exists(cmake_path):
         return CMAKE_USER_TEMPLATE
     try:
-        with open(cmake_path, 'r', encoding='utf-8') as f:
-            old = f.read()
-    except Exception:
+        old, encoding = _read_text_any(cmake_path)
+    except OSError:
         return CMAKE_USER_TEMPLATE
+    if encoding != "utf-8":
+        # the file is rewritten as UTF-8: original bytes go to .bak, hand edits are kept
+        bak = _backup(cmake_path)
+        logging.warning(f"CMakeLists.txt was {encoding}, not UTF-8: "
+                        f"re-encoded, original: {os.path.basename(bak or '')}")
 
     m = re.search(re.escape(CMAKE_USER_BEGIN) + r"\n(.*?)" + re.escape(CMAKE_USER_END),
                   old, re.S)
@@ -295,29 +338,21 @@ def resolve_user_block(cmake_path: str, new_auto: str) -> str:
     if not extra:
         return CMAKE_USER_TEMPLATE
 
-    bak = cmake_path + ".bak"
-    n = 1
-    while os.path.exists(bak):
-        bak = f"{cmake_path}.bak{n}"
-        n += 1
-    try:
-        shutil.copy2(cmake_path, bak)
-    except Exception as e:
-        logging.warning(f"CMake migration: backup failed: {e}")
+    bak = _backup(cmake_path) or cmake_path + ".bak"
 
     logging.warning(
-        f"CMakeLists.txt: найдены ручные правки без USER-блока "
-        f"({len(extra)} строк). Перенесены в USER-блок закомментированными, "
-        f"оригинал: {os.path.basename(bak)}. Раскомментируй нужное.")
+        f"CMakeLists.txt: hand edits found without a USER block "
+        f"({len(extra)} lines). Moved into the USER block commented out, "
+        f"original: {os.path.basename(bak)}. Uncomment what you need.")
 
     body = CMAKE_USER_TEMPLATE
-    body += "#\n# --- перенесено из старого CMakeLists.txt, проверь и раскомментируй ---\n"
+    body += "#\n# --- migrated from the old CMakeLists.txt: review and uncomment ---\n"
     body += "".join(f"# {l}\n" for l in extra)
     return body
 
 
 def write_if_changed(path: str, content: str) -> bool:
-    """Пишет файл только если содержимое отличается. True — если записали."""
+    """Writes the file only if the content differs. True if it was written."""
     if os.path.exists(path):
         try:
             with open(path, 'r', encoding='utf-8') as f:
@@ -332,8 +367,8 @@ def write_if_changed(path: str, content: str) -> bool:
 
 def generate_cpp_build_files(src_dir: str, created_files=None):
     """
-    Пишет src/CMakeLists.txt и src/package.xml.
-    Возвращает (apt_packages: set, executable_names: set).
+    Writes src/CMakeLists.txt and src/package.xml.
+    Returns (apt_packages: set, executable_names: set).
     """
     pkg_name = package_name_from_dir(os.path.dirname(src_dir))
     from core import build_marks
@@ -353,13 +388,13 @@ def generate_cpp_build_files(src_dir: str, created_files=None):
                              scan.find_only, scan.link_libs, scan.companions,
                              scan.extra_sources, scan.marked_execs, scan.include_dirs)
     cmake = render_cmake(auto, resolve_user_block(cmake_path, auto))
-    logging.info("CMakeLists.txt сгенерирован/обновлен" if write_if_changed(cmake_path, cmake)
-                 else "⏭ CMakeLists.txt пропущен (нет изменений)")
+    logging.info("CMakeLists.txt generated/updated" if write_if_changed(cmake_path, cmake)
+                 else "⏭ CMakeLists.txt skipped (no changes)")
 
     pkg_path = os.path.join(src_dir, "package.xml")
-    logging.info("package.xml сгенерирован/обновлен"
+    logging.info("package.xml generated/updated"
                  if write_if_changed(pkg_path, render_package_xml(pkg_name, scan.deps | scan.xml_extra))
-                 else "⏭ package.xml пропущен (нет изменений)")
+                 else "⏭ package.xml skipped (no changes)")
 
     names = {os.path.splitext(f)[0] for f in scan.executables}
     names |= {os.path.splitext(os.path.basename(f))[0] for f in scan.marked_execs}

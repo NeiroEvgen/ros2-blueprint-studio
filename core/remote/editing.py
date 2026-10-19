@@ -1,12 +1,14 @@
 """
-Буфер редактирования файла из любого FileProvider.
+Edit buffer for a file from any FileProvider.
 
-Save не затирает молча чужую правку: при открытии запоминаем sha1, при
-сохранении сверяем с текущим содержимым. Изменилось на той стороне (кто-то
-правил на роботе) → FileChangedExternally, UI спрашивает, перезаписывать ли.
-Тот же принцип, что у синхронизации.
+Save never silently overwrites someone else's edit: on open we remember the sha1, on
+save we compare it with the current content. Changed on the other side (someone
+edited it on the robot) -> FileChangedExternally, and the UI asks whether to overwrite.
+Same principle as the sync.
 """
 import hashlib
+
+from core.i18n import t
 
 MAX_EDIT_BYTES = 2 * 1024 * 1024
 
@@ -33,13 +35,13 @@ class EditBuffer:
     def open(self):
         data = self.provider.read_bytes(self.path)
         if len(data) > MAX_EDIT_BYTES:
-            raise NotEditable(f"файл больше {MAX_EDIT_BYTES // 1024 // 1024} МБ")
+            raise NotEditable(t("fb.too_big", mb=MAX_EDIT_BYTES // 1024 // 1024))
         if b"\0" in data:
-            raise NotEditable("двоичный файл")
+            raise NotEditable(t("fb.binary"))
         try:
             self.text = data.decode("utf-8")
         except UnicodeDecodeError:
-            raise NotEditable("файл не в UTF-8")
+            raise NotEditable(t("fb.not_utf8"))
         self.base_sha = _sha(data)
         return self.text
 
@@ -51,7 +53,7 @@ class EditBuffer:
             now = _sha(self.provider.read_bytes(self.path))
             if now != self.base_sha:
                 raise FileChangedExternally(
-                    f"{self.path} изменён на той стороне после открытия")
+                    t("fb.changed_remotely", path=self.path))
         data = new_text.encode("utf-8")
         self.provider.write_bytes(self.path, data)
         self.base_sha = _sha(data)

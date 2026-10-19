@@ -1,10 +1,10 @@
 """
-2.2 — профиль удалённой цели.
+Remote target profile.
 
-Критерии приёмки:
-- профиль сохраняется в проекте, пароль — нигде
-- ключ хоста запоминается при первом подключении (TOFU)
-- при смене ключа хоста подключение ОТКАЗЫВАЕТ (защита от подмены машины)
+Acceptance criteria:
+- the profile is stored in the project, the password nowhere
+- the host key is remembered on the first connection (TOFU)
+- if the host key changes, the connection is REFUSED (protection against a substituted machine)
 """
 import os
 import subprocess
@@ -43,7 +43,7 @@ class TestProfileStore:
         assert not any("pass" in k.lower() for k in data)
 
     def test_password_in_yaml_is_ignored(self, tmp_path):
-        """Даже если кто-то вписал пароль руками — профиль его не подхватит."""
+        """Even if someone typed a password into it by hand, the profile does not pick it up."""
         path = tmp_path / PROFILE_REL
         path.parent.mkdir(parents=True)
         path.write_text(yaml.safe_dump({"host": "h", "user": "u",
@@ -56,12 +56,12 @@ class TestProfileStore:
         assert not p.enabled
 
     @pytest.mark.parametrize("kw,fragment", [
-        ({"host": ""}, "хост"),
-        ({"user": ""}, "пользователь"),
+        ({"host": ""}, "host"),
+        ({"user": ""}, "user"),
         ({"remote_workspace": ""}, "remote_workspace"),
-        ({"remote_workspace": "blueprint_ws"}, "абсолютным"),
-        ({"port": 0}, "порт"),
-        ({"container": "c", "container_workspace": "rel/path"}, "абсолютным"),
+        ({"remote_workspace": "blueprint_ws"}, "absolute"),
+        ({"port": 0}, "port"),
+        ({"container": "c", "container_workspace": "rel/path"}, "absolute"),
     ])
     def test_validation(self, tmp_path, kw, fragment):
         with pytest.raises(ValueError, match=fragment):
@@ -70,7 +70,7 @@ class TestProfileStore:
     def test_build_dir(self):
         assert _valid().build_dir == "/home/robot/blueprint_ws/mpd"
         assert _valid(container="c", container_workspace="/host_src/mpd").build_dir == "/host_src/mpd"
-        # контейнер без отдельного пути: считаем, что смонтирован тем же путём
+        # container without a separate path: assume it is mounted at the same path
         assert _valid(container="c").build_dir == "/home/robot/blueprint_ws/mpd"
 
 
@@ -95,7 +95,7 @@ class TestConnectTOFU:
         assert open(kh).read() == before
 
     def test_changed_host_key_is_rejected(self, sshd, tmp_path):
-        """Критерий безопасности: подменённая машина не проходит."""
+        """Security criterion: a substituted machine does not get through."""
         other = tmp_path / "impostor"
         subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(other)],
                        check=True)
@@ -103,7 +103,7 @@ class TestConnectTOFU:
         kh = tmp_path / "known_hosts"
         kh.write_text(f"[{sshd['host']}]:{sshd['port']} {alg} {key}\n")
 
-        with pytest.raises(HostKeyChanged, match="изменился"):
+        with pytest.raises(HostKeyChanged, match="has changed"):
             connect(self._profile(sshd), known_hosts=str(kh))
 
     def test_invalid_profile_does_not_connect(self, tmp_path):

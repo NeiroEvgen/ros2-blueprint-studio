@@ -1,20 +1,20 @@
 """
-FileProvider — единый интерфейс к файлам, где бы они ни лежали.
+FileProvider: one interface to files wherever they are.
 
-Реализации:
-  LocalProvider         — файлы на машине со студией
-  SSHProvider           — файлы на удалённом хосте (SFTP)
-  SSHContainerProvider  — файлы внутри контейнера на удалённом хосте
-                          (docker exec через SSH-канал; ровно случай
-                          my_container на роботе)
+Implementations:
+  LocalProvider         — files on the Studio machine
+  SSHProvider           — files on a remote host (SFTP)
+  SSHContainerProvider  — files inside a container on a remote host
+                          (docker exec over the SSH channel; exactly the case
+                          of my_container on the robot)
 
-Отдельного провайдера для ЛОКАЛЬНОГО контейнера нет намеренно: контейнер
-сессии студии монтирует src проекта (bind mount), его файлы — это и есть
-локальные файлы, LocalProvider их покрывает.
+There is deliberately no provider for a LOCAL container: the Studio session
+container bind-mounts the project src, so its files are the
+local files, and LocalProvider covers them.
 
-Запись везде атомарная: сначала во временный файл рядом, потом rename.
-Оборвалась связь посреди сохранения — на роботе останется старая версия
-файла, а не половина новой.
+Writes are atomic everywhere: first to a temporary file next to it, then rename.
+If the link drops in the middle of a save, the robot keeps the old version
+of the file, not half of the new one.
 """
 import hashlib
 import os
@@ -130,15 +130,15 @@ class LocalProvider(FileProvider):
 
 
 # ======================================================================
-#  SSH (SFTP до хоста)
+#  SSH (SFTP to the host)
 # ======================================================================
 
 class SSHProvider(FileProvider):
     """
-    SFTP-канал paramiko НЕ потокобезопасен: UI одновременно гоняет дерево
-    файлов, открытие файла и Sync в разных потоках — без блокировки сессия
-    виснет или падает с 'Server connection dropped'. Поэтому все SFTP-операции
-    сериализуются. sha1 идёт через exec_command (свой канал), блокировка не нужна.
+    The paramiko SFTP channel is NOT thread-safe: the UI runs the file tree,
+    file opening and Sync in different threads at once; without a lock the session
+    hangs or fails with 'Server connection dropped'. So all SFTP operations are
+    serialized. sha1 goes through exec_command (its own channel) and needs no lock.
     """
     kind = "ssh"
 
@@ -173,7 +173,7 @@ class SSHProvider(FileProvider):
             try:
                 self.sftp.posix_rename(tmp, path)
             except IOError:
-                # сервер без posix-rename@openssh.com: удаляем цель и переименовываем
+                # server without posix-rename@openssh.com: remove the target, then rename
                 try:
                     self.sftp.remove(path)
                 except IOError:
@@ -208,7 +208,7 @@ class SSHProvider(FileProvider):
                 pass
 
     def sha1(self, path):
-        # считаем на удалённой стороне: не гоняем файл по сети ради хэша
+        # computed on the remote side: do not send the file over the network just to hash it
         rc, out, _ = exec_remote(self.ssh, f"sha1sum {shlex.quote(path)}")
         if rc == 0 and out:
             return out.split()[0].decode()
@@ -223,11 +223,11 @@ class SSHProvider(FileProvider):
 
 
 # ======================================================================
-#  Контейнер на удалённом хосте (docker exec через SSH)
+#  Container on a remote host (docker exec over SSH)
 # ======================================================================
 
 def exec_remote(ssh, command, stdin_data=None, timeout=60):
-    """Выполнить команду на удалённой стороне: (rc, stdout, stderr)."""
+    """Run a command on the remote side: (rc, stdout, stderr)."""
     stdin, stdout, stderr = ssh.exec_command(command, timeout=timeout)
     if stdin_data is not None:
         stdin.write(stdin_data)
@@ -244,8 +244,8 @@ class RemoteCommandError(RuntimeError):
 
 class SSHExecProvider(FileProvider):
     """
-    Файлы через shell-команды на удалённой стороне. prefix — чем обернуть
-    команду: [] = прямо на хосте, ["docker","exec","-i",name] = в контейнере.
+    Files through shell commands on the remote side. prefix: what to wrap the
+    command in: [] = directly on the host, ["docker","exec","-i",name] = in the container.
     """
     kind = "exec"
 
@@ -273,8 +273,8 @@ class SSHExecProvider(FileProvider):
 
     def list_dir(self, path):
         q = shlex.quote(path)
-        # Разделитель — NUL в конце записи и TAB внутри: имена с пробелами
-        # и даже с переводом строки не ломают разбор.
+        # Separator: NUL at the end of a record and TAB inside it: names with spaces
+        # and even newlines do not break parsing.
         out = self._check(
             f"find {q} -mindepth 1 -maxdepth 1 -printf '%y\\t%s\\t%T@\\t%f\\0'")
         entries = []
@@ -315,7 +315,7 @@ class SSHContainerProvider(SSHExecProvider):
 
     def __init__(self, ssh_client, container, label=""):
         if not container:
-            raise ValueError("не указан контейнер")
+            raise ValueError("container is not set")
         super().__init__(ssh_client, ["docker", "exec", "-i", container],
                          label or f"{container}")
         self.container = container

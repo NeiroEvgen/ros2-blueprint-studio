@@ -1,4 +1,4 @@
-"""colcon: команда сборки и разбор вывода (фикстуры — по реальным логам Studio)."""
+"""colcon: build command and output parsing (fixtures taken from real Studio logs)."""
 import re
 import pytest
 from core import colcon
@@ -88,7 +88,7 @@ def test_summary_limit():
     assert "and 6 more" in s
 
 
-# ── run_project_launch: упавшая сборка не должна приводить к запуску ──
+# ── run_project_launch: a failed build must not lead to a launch ──
 class _Res:
     def __init__(self, code=0, out=()):
         self.exit_code, self.output = code, iter(out)

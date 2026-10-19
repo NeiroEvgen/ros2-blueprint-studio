@@ -1,6 +1,6 @@
 """
-2.4 — сохранение из редактора не затирает чужие правки.
-Гоняется на локальной папке и через настоящий sshd.
+Saving from the editor never overwrites someone else's edits.
+Runs on a local folder and through a real sshd.
 """
 import os
 import shutil
@@ -47,7 +47,7 @@ def test_dirty_tracking(prov):
 
 
 def test_external_change_blocks_save(prov):
-    """Открыл в браузере, а на роботе тем временем поправили через ssh."""
+    """Opened in the browser, and meanwhile someone edited it on the robot via ssh."""
     p, root = prov
     path = p.join(root, "mission.yaml"); p.write_text(path, "goal: 1\n")
     b = EditBuffer(p, path); b.open()
@@ -68,7 +68,7 @@ def test_force_overwrites(prov):
 
 
 def test_consecutive_saves_ok(prov):
-    """После своего же сохранения следующее не должно считаться конфликтом."""
+    """After our own save, the next one must not count as a conflict."""
     p, root = prov
     path = p.join(root, "f.txt"); p.write_text(path, "1")
     b = EditBuffer(p, path); b.open()
@@ -79,7 +79,7 @@ def test_consecutive_saves_ok(prov):
 def test_binary_refused(prov):
     p, root = prov
     path = p.join(root, "blob"); p.write_bytes(path, b"ab\0cd")
-    with pytest.raises(NotEditable, match="двоичный"):
+    with pytest.raises(NotEditable, match="binary"):
         EditBuffer(p, path).open()
 
 

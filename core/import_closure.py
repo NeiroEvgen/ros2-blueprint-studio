@@ -1,13 +1,13 @@
 """
-Замыкание импортов Python от точки входа: какие файлы проекта реально нужны узлу.
+Python import closure from an entry point: which project files a node really needs.
 
-Статический разбор через ast, без выполнения кода и без Qt. Результат:
-  local        — файлы внутри корней поиска, достижимые от точки входа (включая __init__.py пакетов);
-  third_party  — верхнеуровневые имена не из stdlib и не из корней (кандидаты в requirements/apt);
-  stdlib       — имена стандартной библиотеки;
-  optional     — импорты внутри try/except ImportError (их отсутствие не ломает запуск);
-  dynamic      — importlib.import_module / __import__ с нелитеральным аргументом (статически не видно);
-  unresolved   — относительные импорты, которые не удалось найти на диске.
+Static analysis via ast, no code execution, no Qt. Result:
+  local        — files inside the search roots reachable from the entry point (including package __init__.py);
+  third_party  — top-level names that are neither stdlib nor in the roots (candidates for requirements/apt);
+  stdlib       — standard library names;
+  optional     — imports inside try/except ImportError (their absence does not break the run);
+  dynamic      — importlib.import_module / __import__ with a non-literal argument (invisible statically);
+  unresolved   — relative imports that could not be found on disk.
 """
 import ast
 import os
@@ -27,11 +27,11 @@ class Closure:
     optional: Set[str] = field(default_factory=set)
     dynamic: List[str] = field(default_factory=list)       # "file:line"
     unresolved: List[str] = field(default_factory=list)    # "file:line: .name"
-    errors: List[str] = field(default_factory=list)        # файлы, которые не удалось разобрать
+    errors: List[str] = field(default_factory=list)        # files that could not be parsed
 
 
 def _find_module(parts: List[str], roots: List[str]) -> Optional[str]:
-    """Файл модуля a.b.c в одном из корней: a/b/c.py или a/b/c/__init__.py."""
+    """Module file a.b.c in one of the roots: a/b/c.py or a/b/c/__init__.py."""
     for root in roots:
         base = os.path.join(root, *parts)
         if os.path.isfile(base + ".py"):
@@ -43,7 +43,7 @@ def _find_module(parts: List[str], roots: List[str]) -> Optional[str]:
 
 
 def _package_inits(parts: List[str], roots: List[str]) -> List[str]:
-    """__init__.py всех родительских пакетов: import a.b.c выполняет a/__init__ и a/b/__init__."""
+    """__init__.py of every parent package: import a.b.c runs a/__init__ and a/b/__init__."""
     out = []
     for i in range(1, len(parts)):
         for root in roots:
@@ -103,11 +103,11 @@ class _Visitor(ast.NodeVisitor):
 
 
 def compute(entry: str, roots: Optional[List[str]] = None) -> Closure:
-    """entry — путь к .py; roots — корни поиска (по умолчанию каталог точки входа)."""
+    """entry: path to a .py file; roots: search roots (the entry point's folder by default)."""
     entry = os.path.abspath(entry)
     roots = [os.path.abspath(r) for r in (roots or [os.path.dirname(entry)])]
     if os.path.dirname(entry) not in roots:
-        roots.append(os.path.dirname(entry))        # как sys.path[0] при запуске скрипта
+        roots.append(os.path.dirname(entry))        # like sys.path[0] when running a script
 
     res = Closure(entry=entry)
     seen: Dict[str, None] = {}
@@ -135,7 +135,7 @@ def compute(entry: str, roots: Optional[List[str]] = None) -> Closure:
         res.dynamic += [f"{rel(cur)}:{ln}" for ln in v.dynamic]
 
         for kind, module, names, level, lineno, optional in v.imports:
-            if level:                                           # относительный импорт
+            if level:                                           # relative import
                 pkg = os.path.dirname(cur)
                 for _ in range(level - 1):
                     pkg = os.path.dirname(pkg)

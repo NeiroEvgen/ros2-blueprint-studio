@@ -1,10 +1,10 @@
 """
-Подстановка полей в НЕИЗМЕНЁННЫЙ шаблон ноды палитры ({class_name}, {node_name}, {topic_name}…).
+Fills the fields of an UNCHANGED palette node template ({class_name}, {node_name}, {topic_name}...).
 
-Шаблон кладётся в code_content «сырым» (имя ноды ещё могут поменять). Перед записью файла
-его надо заполнить, иначе в .cpp/.py попадает `class {class_name}`. Если пользователь уже
-правил код — файл не трогаем: в его коде `{node_name}` может быть обычной f-строкой.
-Нетривиальные exec-порты ({EXEC_*}) здесь превращаются в пустоту.
+The template goes into code_content "raw" (the node name may still change). It has to be
+filled before the file is written, otherwise `class {class_name}` lands in the .cpp/.py. If the user
+has already edited the code, the file is left alone: `{node_name}` may be a normal f-string there.
+Non-trivial exec ports ({EXEC_*}) are turned into nothing here.
 """
 import re
 

@@ -1,4 +1,4 @@
-"""Бейдж текущего контекста исполнения в верхней панели."""
+"""Badge of the current execution context in the top bar."""
 from PySide6 import QtWidgets, QtCore
 
 from core.execution_context import ExecutionContext
@@ -8,10 +8,10 @@ class ContextBadge(QtWidgets.QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAlignment(QtCore.Qt.AlignCenter)
-        # Явный минимум: подпись («CONTAINER: имя @ user@host» бывает очень длинной) не должна
-        # распирать верхнюю панель и мешать сужать окно; при нехватке места бейдж сжимается
-        # (полный текст — в подсказке). Политику Ignored не использовать: раскладка с ней
-        # наезжает соседними кнопками на бейдж.
+        # Explicit minimum: the label ("CONTAINER: name @ user@host" can be very long) must not
+        # widen the top bar and prevent shrinking the window; when space runs out the badge shrinks
+        # (full text in the tooltip). Do not use the Ignored policy: with it the layout
+        # overlaps neighbouring buttons with the badge.
         self.setMinimumWidth(110)
         self.set_context(ExecutionContext())
 

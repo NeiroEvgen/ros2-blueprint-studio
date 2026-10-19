@@ -1,5 +1,5 @@
 """
-CLI: какие файлы нужны точке входа.
+CLI: which files an entry point needs.
 
   python -m tools.import_closure path/to/node.py [--root DIR ...] [--json]
 """

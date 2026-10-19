@@ -1,15 +1,15 @@
 """
-Локализация Studio: словари в locales/<код>.json, добавить язык = положить файл.
+Studio localization: dictionaries in locales/<code>.json; to add a language, add a file.
 
     from core.i18n import t, set_language
     t("colcon.build_failed", packages="demo_stage")   # → "Build FAILED: demo_stage"
 
-Правила:
-  * ключ ищется в текущем языке → в en → иначе возвращается сам ключ (интерфейс не падает);
-  * подстановка {name}; недостающий параметр остаётся как есть, лишние игнорируются;
-  * множественные числа: t_plural("k", n) берёт k.one / k.few / k.many / k.other по правилам языка;
-  * файл языка может содержать "_meta": {"name": "Русский"} для списка в настройках.
-Без Qt.
+Rules:
+  * a key is looked up in the current language -> in en -> otherwise the key itself is returned (the UI never fails);
+  * {name} substitution; a missing parameter stays as is, extra ones are ignored;
+  * plurals: t_plural("k", n) picks k.one / k.few / k.many / k.other by the language rules;
+  * a language file may contain "_meta": {"name": "Deutsch"} for the list in the settings.
+No Qt.
 """
 import json
 import locale
@@ -23,10 +23,10 @@ FALLBACK = "en"
 
 _lock = threading.RLock()
 _cache: Dict[str, Dict[str, str]] = {}
-_current = None            # None → определить при первом обращении
+_current = None            # None -> detect on first use
 
 
-# ------------------------------------------------------------------ загрузка
+# ------------------------------------------------------------------ loading
 def _load(lang: str) -> Dict[str, str]:
     with _lock:
         if lang in _cache:
@@ -45,13 +45,13 @@ def _load(lang: str) -> Dict[str, str]:
 
 
 def reload() -> None:
-    """Сбросить кэш (после правки файлов словаря)."""
+    """Reset the cache (after editing the dictionary files)."""
     with _lock:
         _cache.clear()
 
 
 def available_languages() -> List[Dict[str, str]]:
-    """[{'code': 'ru', 'name': 'Русский'}, ...] по файлам в locales/."""
+    """[{'code': 'ru', 'name': '...'}, ...] from the files in locales/."""
     out = []
     try:
         for fn in sorted(os.listdir(LOCALES_DIR)):
@@ -63,7 +63,7 @@ def available_languages() -> List[Dict[str, str]]:
     return out
 
 
-# ------------------------------------------------------------------ текущий язык
+# ------------------------------------------------------------------ current language
 def detect_system_language() -> str:
     env = os.environ.get("STUDIO_LANG")
     if env:
@@ -85,7 +85,7 @@ def get_language() -> str:
 
 
 def set_language(code: str) -> bool:
-    """Переключить язык. False, если словаря нет (язык не меняется)."""
+    """Switch the language. False if there is no dictionary (the language stays)."""
     global _current
     code = (code or "").split("_")[0].split("-")[0].lower()
     if not _load(code):
@@ -94,7 +94,7 @@ def set_language(code: str) -> bool:
     return True
 
 
-# ------------------------------------------------------------------ перевод
+# ------------------------------------------------------------------ translation
 class _Safe(dict):
     def __missing__(self, key):
         return "{" + key + "}"

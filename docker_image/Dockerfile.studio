@@ -1,14 +1,14 @@
-# blueprint-studio:humble — базовый образ ROS 2 Blueprint Studio.
+# blueprint-studio:humble: base image of ROS 2 Blueprint Studio.
 #
-# Зачем: пакеты, поставленные через apt в РАБОТАЮЩЕМ контейнере, исчезают
-# при его пересоздании. На реальном проекте это случалось трижды: заново ставились
-# ros2_control, controllers, moveit. Здесь всё запечено один раз.
+# Why: packages installed via apt in a RUNNING container disappear
+# when it is recreated. On a real project this happened three times: ros2_control,
+# controllers and moveit were installed again and again. Here everything is baked in once.
 #
-# Сборка:  docker_image/build_studio_image.sh   (Linux/macOS)
+# Build:  docker_image/build_studio_image.sh   (Linux/macOS)
 #          docker_image\build_studio_image.bat  (Windows)
 #
-# Студия подхватывает этот образ автоматически, если он есть локально.
-# Проектные образы (вкладка Library) наследуются от него через ARG BASE_IMAGE.
+# Studio picks this image up automatically if it exists locally.
+# Project images (Library tab) inherit from it via ARG BASE_IMAGE.
 
 FROM osrf/ros:humble-desktop
 
@@ -30,8 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# Кэш rosdep внутри образа: rosdep install в рантайме не лезет за индексом.
+# rosdep cache inside the image: rosdep install at runtime does not fetch the index.
 RUN rosdep update --rosdistro humble || true
 
-# Маркер, по которому студия понимает, что пакеты сессии уже на месте.
+# marker that tells Studio the session packages are already present.
 RUN touch /etc/blueprint-studio-image

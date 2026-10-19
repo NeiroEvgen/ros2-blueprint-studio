@@ -1,15 +1,15 @@
 """
-Graph IR: язык-нейтральный слой над сериализованным графом NodeGraphQt.
+Graph IR: a language-neutral layer over the serialized NodeGraphQt graph.
 
-Идея: узел НЕ привязан к «своему» холсту. Язык (cpp / python) определяется по типу узла
-(ros.cpp.* / ros.py.*) или явному custom.language; нейтральные узлы (группы, заметки,
-монитор) языка не имеют и идут туда, куда их позовёт контекст. Это позволяет:
-  * генерировать один проект сразу на C++ и Python (общий граф);
-  * хранить один граф вместо двух (state v4) и мигрировать старые проекты (v3.6)
-    без потерь — вперёд (merge) и назад (split).
+Idea: a node is NOT tied to "its" canvas. The language (cpp / python) comes from the node type
+(ros.cpp.* / ros.py.*) or an explicit custom.language; neutral nodes (groups, notes,
+monitor) have no language and go wherever the context puts them. This allows:
+  * generating one project in C++ and Python at once (shared graph);
+  * storing one graph instead of two (state v4) and migrating old projects (v3.6)
+    losslessly, forward (merge) and back (split).
 
-Всё — чистые функции над dict-ами; сырые данные узлов не теряются (round-trip).
-Без Qt и NodeGraphQt.
+Everything is pure functions over dicts; raw node data is never lost (round-trip).
+No Qt and no NodeGraphQt.
 """
 import copy
 from typing import Dict, List, Optional, Tuple
@@ -21,13 +21,13 @@ _GROUP_TYPES = ("ros.nodes.RosGroup", "ros.nodes.RosGroupNode")
 _INTERNAL_PREFIX = "ros.nodes.internal."
 
 
-# ---------------------------------------------------------------- классификация узлов
+# ---------------------------------------------------------------- node classification
 def node_type(node: dict) -> str:
     return node.get("type_") or node.get("type") or ""
 
 
 def language_of(node: dict) -> Optional[str]:
-    """'cpp' | 'python' | None (нейтральный узел)."""
+    """'cpp' | 'python' | None (neutral node)."""
     explicit = (node.get("custom") or {}).get("language")
     if explicit in LANGUAGES:
         return explicit
@@ -49,9 +49,8 @@ def is_internal(node: dict) -> bool:
 
 def partition_by_language(flat_nodes: List[dict], default: str) -> Dict[str, List[dict]]:
     """
-    flat_nodes — результат node_sources.flatten_nodes ([{'node':..., 'namespace':..., ...}]).
-    Нейтральные/неизвестные узлы получают язык `default` (язык проекта) — как и раньше
-    в одноязычных проектах.
+    flat_nodes: the result of node_sources.flatten_nodes ([{'node':..., 'namespace':..., ...}]).
+    Neutral/unknown nodes get the `default` language (the project language).
     """
     out = {CPP: [], PYTHON: []}
     for entry in flat_nodes:
@@ -71,9 +70,9 @@ def default_language(project_type: str) -> str:
     return CPP if project_type in (CPP, "mixed") else PYTHON
 
 
-# ---------------------------------------------------------------- доступ к сессии
+# ---------------------------------------------------------------- session access
 def nodes_as_dict(session: dict) -> Dict[str, dict]:
-    """{id: node} независимо от того, список в сессии или словарь."""
+    """{id: node} whether the session holds a list or a dict."""
     nodes = session.get("nodes", {})
     if isinstance(nodes, dict):
         return nodes
@@ -105,22 +104,22 @@ def _bbox_top(session: dict) -> Optional[float]:
     return min(ys) if ys else None
 
 
-GAP = 500.0   # вертикальный зазор между раскладками python и cpp при слиянии
+GAP = 500.0   # vertical gap between the python and cpp layouts when merging
 
 
 def merge_sessions(py: dict, cpp: dict) -> Tuple[dict, dict]:
     """
-    Склеивает две сессии (две вкладки v3.6) в одну.
-    Возвращает (merged_session, merge_meta). merge_meta нужен split_session для точного
-    обратного разделения: id узлов cpp, сдвиг раскладки, переименования id.
-    Узлы cpp сдвигаются вниз, чтобы не налезать на python.
+    Merges two sessions (two v3.6 tabs) into one.
+    Returns (merged_session, merge_meta). split_session needs merge_meta to split it back
+    exactly: cpp node ids, layout offset, id renames.
+    cpp nodes are moved down so they do not overlap the python ones.
     """
     py = copy.deepcopy(py or {})
     cpp = copy.deepcopy(cpp or {})
     py_items, cpp_items = _node_items(py), _node_items(cpp)
     py_ids = {i for i, _ in py_items}
 
-    # конфликт id → переименовать узел cpp (и все ссылки на него)
+    # id clash -> rename the cpp node (and every reference to it)
     remap: Dict[str, str] = {}
     used = set(py_ids)
     for nid, _ in cpp_items:
@@ -180,7 +179,7 @@ def _apply_remap(session: dict, remap: Dict[str, str]) -> None:
 
 
 def split_session(merged: dict, meta: dict) -> Tuple[dict, dict]:
-    """Обратная операция к merge_sessions: (py_session, cpp_session)."""
+    """Inverse of merge_sessions: (py_session, cpp_session)."""
     merged = copy.deepcopy(merged)
     cpp_ids = set(meta.get("cpp_ids", []))
     dy = float(meta.get("cpp_dy", 0.0))
@@ -202,7 +201,7 @@ def split_session(merged: dict, meta: dict) -> Tuple[dict, dict]:
     for c in merged.get("connections", []):
         src, dst = c.get("out", [None])[0], c.get("in", [None])[0]
         if (src in cpp_ids) != (dst in cpp_ids):
-            continue            # связь между вкладками: в двух графах её не выразить (см. cross_links)
+            continue            # link between tabs: cannot be expressed with two graphs (see cross_links)
         (cpp_conn if src in cpp_ids else py_conn).append(c)
 
     py = {**meta.get("py_extra", {}), "nodes": py_nodes, "connections": py_conn}
@@ -214,10 +213,10 @@ def split_session(merged: dict, meta: dict) -> Tuple[dict, dict]:
 
 def single_meta(merged: dict) -> dict:
     """
-    merge_meta для графа, который изначально ОДИН (одно-холстовый режим): по нему
-    split_session делит граф на python/cpp-части для режима двух вкладок.
-    Язык узла — по его типу; группа идёт туда же, куда все её дети (иначе при делении
-    группа и содержимое окажутся на разных вкладках). Сдвига раскладки нет.
+    merge_meta for a graph that is ONE from the start (single-canvas mode): split_session
+    uses it to split the graph into python/cpp parts for the two-tab mode.
+    A node's language comes from its type; a group goes wherever all its children go (otherwise
+    the group and its content end up on different tabs). No layout offset.
     """
     items = _node_items(merged)
     lang_of = {nid: language_of(n) for nid, n in items}
@@ -227,7 +226,7 @@ def single_meta(merged: dict) -> dict:
         parent = (n.get("custom") or {}).get("parent_group_id")
         if parent:
             kids.setdefault(parent, []).append(nid)
-    for _ in range(len(items) + 1):                        # вложенные группы: до неподвижной точки
+    for _ in range(len(items) + 1):                        # nested groups: until a fixed point
         changed = False
         for nid, g_uid in uid.items():
             if lang_of.get(nid) is not None or not g_uid:
@@ -245,7 +244,7 @@ def single_meta(merged: dict) -> dict:
 
 
 def cross_links(merged: dict, meta: dict) -> List[dict]:
-    """Связи между «python-частью» и «cpp-частью» — теряются при split_session."""
+    """Links between the "python part" and the "cpp part": lost by split_session."""
     cpp_ids = set(meta.get("cpp_ids", []))
     return [c for c in merged.get("connections", [])
             if (c.get("out", [None])[0] in cpp_ids) != (c.get("in", [None])[0] in cpp_ids)]

@@ -9,8 +9,8 @@
 
 using namespace std::chrono_literals;
 
-// Приём позы руки с хоста по UDP (порт 9877) -> /hand/pose
-// Пакет: 4 x double little-endian: [x 0..1, y 0..1, tilt рад, grip 0..1]
+// Receives the hand pose from the host over UDP (port 9877) -> /hand/pose
+// Packet: 4 x double little-endian: [x 0..1, y 0..1, tilt rad, grip 0..1]
 class HandUdpReceiverNode : public rclcpp::Node {
 public:
     HandUdpReceiverNode() : Node("hand_udp_receiver") {
@@ -27,10 +27,10 @@ public:
         addr.sin_addr.s_addr = INADDR_ANY;
         addr.sin_port = htons(9877);
         if (bind(sock_, (sockaddr*)&addr, sizeof(addr)) < 0) {
-            RCLCPP_FATAL(get_logger(), "bind(9877) failed — порт занят?");
+            RCLCPP_FATAL(get_logger(), "bind(9877) failed: port in use?");
             return;
         }
-        fcntl(sock_, F_SETFL, O_NONBLOCK);   // не блокируем executor
+        fcntl(sock_, F_SETFL, O_NONBLOCK);   // do not block the executor
 
         pub_ = create_publisher<std_msgs::msg::Float64MultiArray>("/hand/pose", 10);
         timer_ = create_wall_timer(10ms, std::bind(&HandUdpReceiverNode::poll, this));
@@ -44,7 +44,7 @@ public:
 private:
     void poll() {
         double buf[4];
-        // выгребаем всё накопившееся, публикуем самый свежий пакет
+        // drain everything that has piled up, publish the freshest packet
         bool got = false;
         while (true) {
             ssize_t n = recv(sock_, buf, sizeof(buf), 0);

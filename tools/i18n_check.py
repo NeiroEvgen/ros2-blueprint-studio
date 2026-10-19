@@ -1,11 +1,11 @@
 """
-Проверка словарей локализации.  python -m tools.i18n_check
+Localization dictionary check.  python -m tools.i18n_check
 
-  * в каждом языке те же ключи, что в en (нет пропущенных / лишних);
-  * плейсхолдеры {name} в переводе совпадают с оригиналом;
-  * каждый ключ, использованный в коде как t("...") / t_plural("..."), есть в en;
-  * для t_plural есть форма .other.
-Код возврата 1, если есть проблемы.
+  * every language has the same keys as en (nothing missing / extra);
+  * {name} placeholders in a translation match the original;
+  * every key used in code as t("...") / t_plural("...") exists in en;
+  * t_plural has an .other form.
+Exit code 1 if there are problems.
 """
 import ast
 import json
@@ -37,7 +37,7 @@ def placeholders(text: str) -> Set[str]:
 
 
 def used_keys(root: str = ROOT):
-    """(plain_keys, plural_keys) — литералы из вызовов t(...) / t_plural(...)."""
+    """(plain_keys, plural_keys): literals from t(...) / t_plural(...) calls."""
     plain, plural = {}, {}
     for dp, dns, fns in os.walk(root):
         dns[:] = [d for d in dns if d not in SKIP_DIRS and not d.startswith(".")]
@@ -67,26 +67,26 @@ def check() -> List[str]:
     loc = load_locales()
     en = loc.get("en")
     if en is None:
-        return ["locales/en.json отсутствует"]
+        return ["locales/en.json is missing"]
     for code, d in loc.items():
         if code == "en":
             continue
         for k in sorted(set(en) - set(d)):
             if not _is_plural_variant_ok(k, d, code):
-                problems.append(f"[{code}] нет перевода: {k}")
+                problems.append(f"[{code}] missing translation: {k}")
         for k in sorted(set(d) - set(en)):
             if not _is_plural_extra_ok(k, en):
-                problems.append(f"[{code}] лишний ключ (нет в en): {k}")
+                problems.append(f"[{code}] extra key (not in en): {k}")
         for k in sorted(set(d) & set(en)):
             if placeholders(d[k]) != placeholders(en[k]):
-                problems.append(f"[{code}] плейсхолдеры {k}: {sorted(placeholders(d[k]))} != {sorted(placeholders(en[k]))}")
+                problems.append(f"[{code}] placeholders {k}: {sorted(placeholders(d[k]))} != {sorted(placeholders(en[k]))}")
     plain, plural = used_keys()
     for k, where in sorted(plain.items()):
         if k not in en:
-            problems.append(f"{where}: ключ t('{k}') не определён в en.json")
+            problems.append(f"{where}: key t('{k}') is not defined in en.json")
     for k, where in sorted(plural.items()):
         if f"{k}.other" not in en:
-            problems.append(f"{where}: для t_plural('{k}') нужен ключ {k}.other в en.json")
+            problems.append(f"{where}: t_plural('{k}') needs a key {k}.other in en.json")
     return problems
 
 
@@ -94,13 +94,13 @@ _PLURAL_SUFFIXES = (".one", ".few", ".many", ".other")
 
 
 def _is_plural_variant_ok(key: str, d: dict, code: str) -> bool:
-    """en имеет .one/.other; в ru могут быть .few/.many — отсутствие .few в en не ошибка, и наоборот
-    у языка без нужной формы (напр. ja имеет только .other) пропуск допустим."""
+    """en has .one/.other; ru may have .few/.many: a .few missing in en is not an error, and conversely
+    a language without a form (e.g. ja has only .other) may skip it."""
     return key.endswith(_PLURAL_SUFFIXES[:2]) and code in ("ja", "zh", "ko", "vi") and key.endswith(".one")
 
 
 def _is_plural_extra_ok(key: str, en: dict) -> bool:
-    """Формы .few/.many есть только у части языков — их нет в en, и это нормально."""
+    """The .few/.many forms exist only in some languages: they are not in en, and that is fine."""
     return key.endswith((".few", ".many")) and f"{key.rsplit('.', 1)[0]}.other" in en
 
 

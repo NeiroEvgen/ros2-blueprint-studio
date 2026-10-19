@@ -1,16 +1,16 @@
 """
-Вкладка Files: дерево файлов + редактор для любого источника.
+Files tab: file tree + editor for any source.
 
-Источники: проект (локально), удалённый хост, контейнер на удалённом хосте.
-Всё удалённое читается/пишется в фоне. Save не затирает правку, сделанную
-на той стороне после открытия файла (core/remote/editing.py).
+Sources: the project (local), a remote host, a container on a remote host.
+Everything remote is read/written in the background. Save never overwrites an edit made
+on the other side after the file was opened (core/remote/editing.py).
 """
 import os
 
 from PySide6 import QtWidgets, QtCore, QtGui
 
 from core.remote.providers import LocalProvider
-from core.remote.editing import EditBuffer, FileChangedExternally, NotEditable
+from core.remote.editing import EditBuffer
 from ui.code_editor import CodeEditor, CodeHighlighter, mode_for_path
 from ui.qt_worker import TaskHost
 from ui import icons
@@ -20,13 +20,13 @@ from core import build_marks
 _PLACEHOLDER = "__loading__"
 ROLE_PATH = QtCore.Qt.UserRole
 ROLE_DIR = QtCore.Qt.UserRole + 1
-ROLE_MARK = QtCore.Qt.UserRole + 2     # (состояние, унаследовано?) — рисует MarkDelegate
+ROLE_MARK = QtCore.Qt.UserRole + 2     # (state, inherited?): drawn by MarkDelegate
 COL_MARK = 2
 _MARK_COLORS = {build_marks.YELLOW: "#e6c200", build_marks.GREEN: "#4caf50"}
 
 
 class MarkDelegate(QtWidgets.QStyledItemDelegate):
-    """Рисует кружок отметки сам: цвет не зависит от стилей приложения (текст мог выходить белым)."""
+    """Draws the mark circle itself: its colour does not depend on the app stylesheet (text could come out white)."""
 
     def paint(self, painter, option, index):
         mark = index.data(ROLE_MARK)
@@ -68,8 +68,9 @@ class FileBrowser(QtWidgets.QWidget):
         self._buffer = None
         self._loading_text = False
         self._current_idx = -1
-        self._orphan_path = None     # файл, чей источник пропал (связь оборвалась)
-        self._local_root = None      # src/ проекта; отметки сборки только для него
+        self._orphan_path = None     # file whose source disappeared (link dropped)
+        self._tree_gen = 0           # grows on every reload_tree: answers for the old tree are dropped
+        self._local_root = None      # project src/; build marks only apply to it
         self._marks = {}
         self._build_ui()
         self.set_sources(None, None)
@@ -127,14 +128,14 @@ class FileBrowser(QtWidgets.QWidget):
         QtGui.QShortcut(QtGui.QKeySequence.Save, self, activated=self.save_current)
         self._update_title()
 
-    # ---------- источники ----------
+    # ---------- sources ----------
 
     def set_sources(self, local_root, session):
         """
-        Перестроить список источников: проект + (хост, контейнер), если подключены.
-        Вызывается программно (подключение/отключение), поэтому БЕЗ модальных
-        вопросов: если источник открытого файла исчез (связь оборвалась), правки
-        не выбрасываются — текст остаётся в редакторе с пометкой «не сохранено».
+        Rebuild the source list: project + (host, container) when connected.
+        Called programmatically (connect/disconnect), so WITHOUT modal
+        questions: if the source of the open file disappears (link dropped), edits
+        are not thrown away; the text stays in the editor marked "not saved".
         """
         old_provider = self._provider
         self._sources = []
@@ -158,7 +159,7 @@ class FileBrowser(QtWidgets.QWidget):
         self.cmb_source.blockSignals(False)
 
         if keep >= 0:
-            # источник открытого файла на месте — ничего не трогаем
+            # the open file's source is still there: touch nothing
             self.cmb_source.blockSignals(True)
             self.cmb_source.setCurrentIndex(keep)
             self.cmb_source.blockSignals(False)
@@ -182,13 +183,13 @@ class FileBrowser(QtWidgets.QWidget):
         self.reload_tree()
         self._update_title()
 
-    # ---------- отметки сборки ----------
+    # ---------- build marks ----------
 
     def _project_dir(self):
         return os.path.dirname(os.path.normpath(self._local_root)) if self._local_root else None
 
     def _marks_active(self):
-        """Отметки есть только у локального проекта (источник №0 — проект)."""
+        """Only the local project has marks (source #0 is the project)."""
         return bool(self._local_root) and self._current_idx == 0 and bool(self._sources) \
             and self._sources[0][2] == self._local_root
 
@@ -231,9 +232,9 @@ class FileBrowser(QtWidgets.QWidget):
             walk(self.tree.topLevelItem(i))
 
     def _on_source_changed(self, idx):
-        """Смену источника инициировал пользователь в комбобоксе."""
+        """The user changed the source in the combo box."""
         if not self._confirm_discard():
-            # отказался выбрасывать правки → комбобокс обратно, интерфейс не врёт
+            # the user refused to discard edits -> restore the combo box so the UI does not lie
             self.cmb_source.blockSignals(True)
             self.cmb_source.setCurrentIndex(self._current_idx)
             self.cmb_source.blockSignals(False)
@@ -246,9 +247,10 @@ class FileBrowser(QtWidgets.QWidget):
         idx = self.cmb_source.currentIndex()
         return self._sources[idx][2] if 0 <= idx < len(self._sources) else None
 
-    # ---------- дерево ----------
+    # ---------- tree ----------
 
     def reload_tree(self):
+        self._tree_gen += 1
         self.tree.clear()
         self.tree.setColumnHidden(COL_MARK, not self._marks_active())
         root = self._current_root()
@@ -266,8 +268,11 @@ class FileBrowser(QtWidgets.QWidget):
             return
         prov, path = self._provider, item.data(0, ROLE_PATH)
         item.child(0).setText(0, t("fb.loading"))
+        gen = self._tree_gen
 
         def done(entries):
+            if gen != self._tree_gen:
+                return                   # the tree was rebuilt while loading: item is already deleted
             item.takeChildren()
             for e in entries:
                 child = QtWidgets.QTreeWidgetItem(
@@ -282,12 +287,14 @@ class FileBrowser(QtWidgets.QWidget):
                 self._paint_mark(child)
 
         def fail(msg):
+            if gen != self._tree_gen:
+                return
             item.takeChildren()
             item.addChild(QtWidgets.QTreeWidgetItem([f"⚠ {msg}"]))
 
         self._tasks.start(lambda emit: prov.list_dir(path), done, fail, parent=self)
 
-    # ---------- файл ----------
+    # ---------- file ----------
 
     def _on_open(self, item, _col):
         if item.data(0, ROLE_DIR) or not item.data(0, ROLE_PATH):
@@ -342,6 +349,11 @@ class FileBrowser(QtWidgets.QWidget):
         dirty = self.is_dirty()
         self.lbl_file.setText(("● " if dirty else "") + self._buffer.path)
         self.btn_save.setEnabled(dirty)
+
+    def shutdown(self, timeout_ms=15000):
+        """Window closing: wait for file reads/writes. True if no threads are left."""
+        self._tasks.wait_all(timeout_ms)
+        return not self._tasks.busy
 
     def _confirm_discard(self):
         if self._orphan_path:

@@ -1,8 +1,8 @@
 # ui/container_settings.py
-# v0.6.0 — Вкладка настроек деплой-контейнеров.
-# Слева список групп проекта, справа форма: образ, таргет, restart,
-# ресурсы, env-таблица, DDS (вендор/QoS XML), netem-симуляция помех.
-# Пресеты: встроенные + глобальные пользователя (Save as preset).
+# v0.6.0: deploy container settings tab.
+# Left: the project's groups; right: the form: image, target, restart,
+# resources, env table, DDS (vendor/QoS XML), netem impairment simulation.
+# Presets: built-in + the user's global ones (Save as preset).
 
 from PySide6 import QtWidgets, QtCore
 
@@ -14,11 +14,11 @@ from core.container_config import (ContainerConfigStore, GlobalPresetStore,
 
 
 class ContainerSettingsPanel(QtWidgets.QWidget):
-    config_saved = QtCore.Signal(str)   # имя сохранённой группы
+    config_saved = QtCore.Signal(str)   # name of the saved group
 
     def __init__(self, get_docker_manager=None, parent=None):
         super().__init__(parent)
-        self.store = None                    # ContainerConfigStore (после set_project)
+        self.store = None                    # ContainerConfigStore (after set_project)
         self.presets = GlobalPresetStore()
         self.get_docker_manager = get_docker_manager or (lambda: None)
         self._current_name = None
@@ -32,7 +32,7 @@ class ContainerSettingsPanel(QtWidgets.QWidget):
         self.refresh_groups()
 
     def refresh_groups(self, node_counts=None):
-        """node_counts: {group: int} — счётчик нод (раздел 2.4 roadmap)."""
+        """node_counts: {group: int}: node count per group."""
         if not self.store:
             return
         self.group_list.blockSignals(True)
@@ -45,7 +45,7 @@ class ContainerSettingsPanel(QtWidgets.QWidget):
             item.setData(QtCore.Qt.UserRole, n)
             self.group_list.addItem(item)
         self.group_list.blockSignals(False)
-        # мягкое предупреждение про оверхед
+        # soft warning about the overhead
         self.overhead_hint.setVisible(len(names) > 5)
         if names:
             self.group_list.setCurrentRow(0)
@@ -58,7 +58,7 @@ class ContainerSettingsPanel(QtWidgets.QWidget):
     def _build_ui(self):
         root = QtWidgets.QHBoxLayout(self)
 
-        # === ЛЕВО: группы ===
+        # === LEFT: groups ===
         left = QtWidgets.QVBoxLayout()
         left.addWidget(QtWidgets.QLabel(t("cs.groups")))
         self.group_list = QtWidgets.QListWidget()
@@ -80,7 +80,7 @@ class ContainerSettingsPanel(QtWidgets.QWidget):
         left.addWidget(self.overhead_hint)
         root.addLayout(left, 1)
 
-        # === ПРАВО: форма ===
+        # === RIGHT: form ===
         right = QtWidgets.QVBoxLayout()
 
         preset_row = QtWidgets.QHBoxLayout()
@@ -102,7 +102,7 @@ class ContainerSettingsPanel(QtWidgets.QWidget):
         self.ed_image = QtWidgets.QLineEdit()
         form.addRow(t("cs.image"), self.ed_image)
 
-        # Таргет
+        # target
         trow = QtWidgets.QHBoxLayout()
         self.cb_target = QtWidgets.QComboBox(); self.cb_target.addItems(["local", "ssh"])
         self.ed_host = QtWidgets.QLineEdit(); self.ed_host.setPlaceholderText("ssh://user@192.168.1.50")
@@ -128,7 +128,7 @@ class ContainerSettingsPanel(QtWidgets.QWidget):
         w = QtWidgets.QWidget(); w.setLayout(rrow)
         form.addRow(t("cs.resources"), w)
 
-        # ENV таблица
+        # ENV table
         self.env_table = QtWidgets.QTableWidget(0, 2)
         self.env_table.setHorizontalHeaderLabels([t("cs.env_key"), t("cs.env_value")])
         self.env_table.horizontalHeader().setStretchLastSection(True)

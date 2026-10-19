@@ -1,6 +1,6 @@
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, 
-                             QPushButton, QListWidget, QLabel, QComboBox, QTextEdit)
+                             QPushButton, QLabel, QComboBox, QTextEdit)
 from core.i18n import t
 from ui.fonts import MONO_CSS
 
@@ -28,7 +28,7 @@ class _InstallWorker(QThread):
             self.done.emit(False)
 
 class _RebuildWorker(QThread):
-    """Пересобирает образ проекта (после правки Dockerfile) в фоне."""
+    """Rebuilds the project image (after editing the Dockerfile) in the background."""
     log = Signal(str)
     done = Signal(bool)
 
@@ -51,7 +51,7 @@ class LibraryManager(QWidget):
     def __init__(self, docker_manager):
         super().__init__()
         self.docker_manager = docker_manager
-        self.project_path = None      # задаётся из главного окна при открытии проекта
+        self.project_path = None      # set by the main window when a project opens
         self.remote_connected = False
         self._worker = None
         self.init_ui()
@@ -60,18 +60,18 @@ class LibraryManager(QWidget):
         self.project_path = path
 
     def set_remote_connected(self, connected):
-        """При подключении к удалённой цели установка всё равно идёт ЛОКАЛЬНО."""
+        """When connected to a remote target, installation still happens LOCALLY."""
         self.remote_connected = bool(connected)
 
     def init_ui(self):
         layout = QVBoxLayout(self)
         
-        # Заголовок
+        # title
         header = QLabel(t("lib.header"))
         header.setStyleSheet("font-weight: bold; font-size: 14px;")
         layout.addWidget(header)
         
-        # Поле ввода и выбор типа
+        # input field and type choice
         input_layout = QHBoxLayout()
         
         self.pkg_input = QLineEdit()
@@ -88,14 +88,14 @@ class LibraryManager(QWidget):
         input_layout.addWidget(self.install_btn)
         layout.addLayout(input_layout)
         
-        # Лог установки
+        # install log
         layout.addWidget(QLabel(t("lib.output")))
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
         self.log_output.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: " + MONO_CSS + ";")
         layout.addWidget(self.log_output)
         
-        # Быстрые пресеты
+        # quick presets
         presets_layout = QHBoxLayout()
         presets_layout.addWidget(QLabel(t("lib.common")))
         
@@ -116,7 +116,7 @@ class LibraryManager(QWidget):
 
     def append_log(self, text):
         self.log_output.append(text)
-        # Прокрутка вниз
+        # scroll down
         self.log_output.verticalScrollBar().setValue(self.log_output.verticalScrollBar().maximum())
 
     def quick_install(self, name, p_type):

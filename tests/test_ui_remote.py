@@ -1,8 +1,8 @@
 """
-UI-сценарий remote workspace на настоящем главном окне (offscreen) и
-настоящем sshd: форма → Save → Connect → Sync → Build → Files: открыть,
-поправить, сохранить → конфликт → Disconnect. Кнопки нажимаются как
-пользователем. Пропускается без PySide6/sshd.
+UI scenario of the remote workspace on the real main window (offscreen) and
+a real sshd: form -> Save -> Connect -> Sync -> Build -> Files: open,
+edit, save -> conflict -> Disconnect. Buttons are clicked as
+a user would. Skipped without PySide6/sshd.
 """
 import os
 import stat
@@ -34,12 +34,12 @@ def wait_for(cond, timeout=15.0):
         if cond():
             return True
         time.sleep(0.02)
-    raise AssertionError("не дождались условия")
+    raise AssertionError("condition was not reached")
 
 
 @pytest.fixture
 def window(app, sshd, tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))   # known_hosts в изоляции
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))   # isolated known_hosts
     import importlib
     import core.remote.profile as prof
     monkeypatch.setattr(prof, "DEFAULT_KNOWN_HOSTS", str(tmp_path / "kh"))
@@ -68,7 +68,7 @@ def window(app, sshd, tmp_path, monkeypatch):
     rp.ed_ws.setText(str(ws)); rp.ed_ros.setText(str(setup))
     def _unexpected(kind):
         def f(*a, **k):
-            raise AssertionError(f"неожиданный модальный QMessageBox.{kind}: {a[1:3]}")
+            raise AssertionError(f"unexpected modal QMessageBox.{kind}: {a[1:3]}")
         return staticmethod(f)
     for kind in ("question", "warning", "information", "critical"):
         monkeypatch.setattr(QtWidgets.QMessageBox, kind, _unexpected(kind))
@@ -76,6 +76,10 @@ def window(app, sshd, tmp_path, monkeypatch):
     yield w, project, ws
     if rp.session:
         rp.session.disconnect()
+    # this test is not about "save before closing" (a file open from a disconnected target)
+    w.file_browser._orphan_path = None
+    w.file_browser._buffer = None
+    w._mark_clean()
     w.close()
 
 
@@ -90,7 +94,7 @@ def test_full_ui_flow(window, monkeypatch):
     assert w.ui.context_badge.text() == "LOCAL"
     assert not rp.btn_sync.isEnabled()
 
-    # Save: профиль в проекте, без пароля
+    # Save: profile in the project, no password
     rp.ed_pass.setText("secret-should-not-be-saved")
     rp.btn_save.click()
     saved = (project / ".blueprint" / "remote.yaml").read_text()
@@ -101,7 +105,7 @@ def test_full_ui_flow(window, monkeypatch):
     wait_for(lambda: rp.connected)
     wait_for(lambda: rp.btn_sync.isEnabled())
     assert "SSH:" in w.ui.context_badge.text()
-    assert rp.ed_pass.text() == ""          # пароль не висит в поле после подключения
+    assert rp.ed_pass.text() == ""          # the password does not stay in the field after connecting
 
     # Sync
     rp.btn_sync.click()
@@ -114,7 +118,7 @@ def test_full_ui_flow(window, monkeypatch):
     assert "Finished <<< demoproj" in _log(w)
     assert "rc=0" in _log(w)
 
-    # Files: источник «Host», открыть файл, поправить, сохранить
+    # Files: "Host" source, open a file, edit, save
     labels = [fb.cmb_source.itemText(i) for i in range(fb.cmb_source.count())]
     host_idx = next(i for i, t in enumerate(labels) if t.startswith("Host"))
     fb.cmb_source.setCurrentIndex(host_idx)
@@ -130,7 +134,7 @@ def test_full_ui_flow(window, monkeypatch):
     assert open(remote_file).read() == "int main(){ return 0; }\n"
     assert not fb.lbl_file.text().startswith("● ")
 
-    # Конфликт: на «роботе» поправили после открытия → отказываемся перезаписывать
+    # conflict: edited on the "robot" after opening -> refuse to overwrite
     with open(remote_file, "w") as f:
         f.write("// hotfix on robot\n")
     monkeypatch.setattr(QtWidgets.QMessageBox, "warning",
@@ -140,8 +144,8 @@ def test_full_ui_flow(window, monkeypatch):
     time.sleep(0.5); QtWidgets.QApplication.instance().processEvents()
     assert open(remote_file).read() == "// hotfix on robot\n"
 
-    # Disconnect с несохранёнными правками: без модального вопроса,
-    # текст остаётся в редакторе с явной пометкой «NOT saved»
+    # Disconnect with unsaved edits: no modal question,
+    # the text stays in the editor clearly marked "NOT saved"
     assert fb.editor.toPlainText() == "// my version\n"
     rp.btn_connect.click()
     wait_for(lambda: not rp.connected)
@@ -152,7 +156,7 @@ def test_full_ui_flow(window, monkeypatch):
     assert w.ui.context_badge.text() == "LOCAL"
     labels = [fb.cmb_source.itemText(i) for i in range(fb.cmb_source.count())]
     assert not any(t.startswith("Host") for t in labels)
-    # у каждой строки лога есть метка контекста
+    # every log line has a context label
     assert all(l.startswith("[") for l in _log(w).splitlines() if l.strip())
 
 
@@ -162,11 +166,11 @@ def test_invalid_profile_does_not_connect(window):
     rp.ed_ws.setText("relative/path")
     rp.btn_connect.click()
     assert not rp.connected
-    assert "абсолютным" in rp.lbl_state.text()
+    assert "absolute" in rp.lbl_state.text()
 
 
 def test_user_says_no_combo_reverts(window, monkeypatch):
-    """Отказался выбрасывать правки — комбобокс возвращается, файл остаётся открытым."""
+    """Refused to discard edits: the combo box goes back, the file stays open."""
     w, project, ws = window
     fb = w.file_browser
     (project / "src" / "extra").mkdir()
@@ -174,10 +178,10 @@ def test_user_says_no_combo_reverts(window, monkeypatch):
     fb.open_path(str(project / "src" / "cpp" / "Node.cpp"))
     wait_for(lambda: fb._buffer is not None)
     fb.editor.setPlainText("// dirty\n")
-    # добавим второй источник, чтобы было куда переключаться
+    # add a second source so there is something to switch to
     from core.remote.providers import LocalProvider
-    fb._sources.append(("Второй", LocalProvider(), str(project / "src" / "extra")))
-    fb.cmb_source.blockSignals(True); fb.cmb_source.addItem("Второй"); fb.cmb_source.blockSignals(False)
+    fb._sources.append(("Second", LocalProvider(), str(project / "src" / "extra")))
+    fb.cmb_source.blockSignals(True); fb.cmb_source.addItem("Second"); fb.cmb_source.blockSignals(False)
 
     monkeypatch.setattr(QtWidgets.QMessageBox, "question",
                         staticmethod(lambda *a, **k: QtWidgets.QMessageBox.No))
@@ -185,3 +189,18 @@ def test_user_says_no_combo_reverts(window, monkeypatch):
 
     assert fb.cmb_source.currentIndex() == 0
     assert fb._buffer is not None and fb.editor.toPlainText() == "// dirty\n"
+
+
+def test_failure_on_dead_connection_marks_panel_disconnected(app):
+    """The link died mid-build -> the panel and the main window must not consider the target connected."""
+    from ui.remote_panel import RemotePanel
+    panel = RemotePanel()
+    changes, disconnected = [], []
+    panel.connection_changed.connect(lambda *a: changes.append(a))
+    panel.session = type("S", (), {"connected": False,
+                                   "disconnect": lambda self: disconnected.append(1)})()
+    panel._building = True
+    panel._fail("connection lost")
+    assert panel.session is None and disconnected == [1]
+    assert changes == [(False, "", "")]
+    assert panel.lbl_state.text() == "connection lost" and not panel.btn_build.isEnabled()

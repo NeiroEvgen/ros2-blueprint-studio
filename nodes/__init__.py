@@ -1,8 +1,8 @@
-# Экспортируем шаблоны и цвета для использования извне
+# export templates and colours for external use
 from .templates import TEMPLATES
 from .base import MSG_COLORS
 
-# Импортируем классы нод
+# node classes
 from nodes.library.py_basic import PyStringPubNode, PyStringSubNode
 from nodes.library.cpp_basic import CppStringPubNode, CppStringSubNode, CppCustomNode
 from nodes.library.py_logic import PyTimerNode, PyPrintNode

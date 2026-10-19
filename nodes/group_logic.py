@@ -1,7 +1,8 @@
+import logging
 import uuid
 from NodeGraphQt import BaseNode
 
-# === 1. КЛАСС ГРУППЫ (Proxy Node) ===
+# === 1. GROUP CLASS (proxy node) ===
 class RosGroupNode(BaseNode):
     __identifier__ = 'ros.nodes'
     NODE_NAME = 'RosGroup'
@@ -11,25 +12,25 @@ class RosGroupNode(BaseNode):
         self.set_color(40, 40, 40)
         self.add_text_input('node_name', 'Group Name', text='MySubGraph')
         
-        # ID для связи при сохранении/загрузке
+        # id used to link things on save/load
         self.create_property('group_uid', '') 
         
-        # ID родительской группы (для вложенности)
+        # parent group id (for nesting)
         self.create_property('parent_group_id', '')
         
-        # Список ID внутренних нод
+        # list of inner node ids
         self.create_property('internal_nodes', [])
         
-        # Карта связей для компилятора
+        # connection map for the compiler
         self.create_property('port_links', {})
         
         self.create_property('is_expanded', False)
         
-        # Уровень вложенности (для предупреждений)
+        # nesting level (for warnings)
         self.create_property('depth_level', 0)
 
     def on_mouse_double_clicked(self, pos):
-        """Вход в сабграф при двойном клике"""
+        """Enter the subgraph on double click."""
         graph = self.graph
         viewer = graph.viewer()
         main_win = None
@@ -47,9 +48,9 @@ class RosGroupNode(BaseNode):
     def get_template_data(self):
         return None 
 
-# === 1.1. КЛАССЫ ТЕРМИНАЛОВ (Border Ports) ===
+# === 1.1. TERMINAL CLASSES (border ports) ===
 class SubGraphInputNode(BaseNode):
-    """Внутренний терминал для ВХОДЯЩИХ данных в сабграф"""
+    """Inner terminal for data COMING INTO the subgraph."""
     __identifier__ = 'ros.nodes.internal'
     NODE_NAME = 'Input Terminal'
 
@@ -62,7 +63,7 @@ class SubGraphInputNode(BaseNode):
         self.create_property('parent_group_id', '')
 
 class SubGraphOutputNode(BaseNode):
-    """Внутренний терминал для ИСХОДЯЩИХ данных из сабграфа"""
+    """Inner terminal for data GOING OUT of the subgraph."""
     __identifier__ = 'ros.nodes.internal'
     NODE_NAME = 'Output Terminal'
 
@@ -73,13 +74,13 @@ class SubGraphOutputNode(BaseNode):
         self.create_property('linked_port', '')
         self.create_property('group_uid', '')
         self.create_property('parent_group_id', '')
-# === 2. СОЗДАНИЕ ГРУППЫ ===
+# === 2. CREATING A GROUP ===
 def create_group_from_selection(graph, name="SubGraph", color=(50, 50, 50)):
     selected_nodes = graph.selected_nodes()
     if not selected_nodes:
         return None, "Select nodes first!"
 
-    # 1. Центр и создание
+    # 1. Centre and creation
     xs = [n.pos()[0] for n in selected_nodes]
     ys = [n.pos()[1] for n in selected_nodes]
     cx = sum(xs) / len(selected_nodes)
@@ -116,13 +117,13 @@ def create_group_from_selection(graph, name="SubGraph", color=(50, 50, 50)):
     group_node.set_property('depth_level', depth)
 
     if depth > 3:
-        print(f"WARNING: Subgraph depth is {depth}. Deep nesting may affect performance.")
+        logging.warning(f"Subgraph depth is {depth}. Deep nesting may affect performance.")
 
     internal_ids = []
     for n in selected_nodes:
         internal_ids.append(n.id)
-        # Ребёнок ссылается на группу через parent_group_id.
-        # group_uid у ребёнка НЕ трогаем — это поле «я сам группа с таким id».
+        # The child refers to the group via parent_group_id.
+        # The child's group_uid is NOT touched: that field means "I am a group with this id".
         if not n.has_property('parent_group_id'):
             try:
                 n.create_property('parent_group_id', gid)
@@ -130,10 +131,10 @@ def create_group_from_selection(graph, name="SubGraph", color=(50, 50, 50)):
                 pass
         n.set_property('parent_group_id', gid)
 
-    # 3. ПЕРЕПОДКЛЮЧЕНИЕ (REWIRING) С ТЕРМИНАЛАМИ
+    # 3. REWIRING WITH TERMINALS
     port_links = {} 
 
-    # --- ВХОДЯЩИЕ (External -> Internal) ---
+    # --- INCOMING (External -> Internal) ---
     for node in selected_nodes:
         for in_port in node.input_ports():
             connected = list(in_port.connected_ports())
@@ -144,7 +145,7 @@ def create_group_from_selection(graph, name="SubGraph", color=(50, 50, 50)):
                     
                     if not group_node.get_input(pname_ext): 
                         group_node.add_input(pname_ext, color=source_port.color)
-                        # Создаем терминал внутри
+                        # create a terminal inside
                         term = graph.create_node('ros.nodes.internal.SubGraphInputNode', pos=[node.pos()[0]-200, node.pos()[1]])
                         term.set_name(pname_ext)
                         term.set_property('group_uid', gid)
@@ -154,13 +155,13 @@ def create_group_from_selection(graph, name="SubGraph", color=(50, 50, 50)):
                         internal_ids.append(term.id)
                     
                     g_in = group_node.get_input(pname_ext)
-                    # Находим терминал для этого порта
+                    # find the terminal for this port
                     term = next(n for n in graph.all_nodes() if n.type_ == 'ros.nodes.internal.SubGraphInputNode' and n.get_property('linked_port') == pname_ext and n.get_property('group_uid') == gid)
                     
                     in_port.disconnect_from(source_port)
                     source_port.connect_to(g_in)
                     term.get_output('out').connect_to(in_port)
-                    # Запоминаем связь внешний порт -> внутренний терминал
+                    # remember the link external port -> inner terminal
                     port_links[pname_ext] = {
                         "direction": "in",
                         "terminal_id": term.id,
@@ -168,7 +169,7 @@ def create_group_from_selection(graph, name="SubGraph", color=(50, 50, 50)):
                         "internal_port": in_port.name(),
                     }
 
-    # --- ИСХОДЯЩИЕ (Internal -> External) ---
+    # --- OUTGOING (Internal -> External) ---
     for node in selected_nodes:
         for out_port in node.output_ports():
             connected = list(out_port.connected_ports())
@@ -179,7 +180,7 @@ def create_group_from_selection(graph, name="SubGraph", color=(50, 50, 50)):
                     
                     if not group_node.get_output(pname_ext): 
                         group_node.add_output(pname_ext, color=target_port.color)
-                        # Создаем терминал внутри
+                        # create a terminal inside
                         term = graph.create_node('ros.nodes.internal.SubGraphOutputNode', pos=[node.pos()[0]+200, node.pos()[1]])
                         term.set_name(pname_ext)
                         term.set_property('group_uid', gid)
@@ -189,13 +190,13 @@ def create_group_from_selection(graph, name="SubGraph", color=(50, 50, 50)):
                         internal_ids.append(term.id)
                     
                     g_out = group_node.get_output(pname_ext)
-                    # Находим терминал
+                    # find the terminal
                     term = next(n for n in graph.all_nodes() if n.type_ == 'ros.nodes.internal.SubGraphOutputNode' and n.get_property('linked_port') == pname_ext and n.get_property('group_uid') == gid)
                     
                     target_port.disconnect_from(out_port)
                     out_port.connect_to(term.get_input('in'))
                     g_out.connect_to(target_port)
-                    # Запоминаем связь внутренний терминал -> внешний порт
+                    # remember the link inner terminal -> external port
                     port_links[pname_ext] = {
                         "direction": "out",
                         "terminal_id": term.id,
@@ -206,7 +207,7 @@ def create_group_from_selection(graph, name="SubGraph", color=(50, 50, 50)):
     group_node.set_property('internal_nodes', internal_ids)
     group_node.set_property('port_links', port_links)
 
-    # 4. Скрываем внутренние ноды
+    # 4. Hide the inner nodes
     for nid in internal_ids:
         node = next((n for n in graph.all_nodes() if n.id == nid), None)
         if node and hasattr(node, 'view'):
@@ -217,44 +218,44 @@ def create_group_from_selection(graph, name="SubGraph", color=(50, 50, 50)):
     
     return group_node, "OK"
 
-# === 3. ВОССТАНОВЛЕНИЕ ПОСЛЕ ЗАГРУЗКИ/СПАВНА ===
+# === 3. RESTORE AFTER LOAD/PASTE ===
 def fix_group_after_load(graph, loaded_nodes):
     """
-    Вызывается после вставки (Paste) или загрузки шаблона.
-    Ищет группы и их детей по 'group_uid', обновляет ID и скрывает детей.
+    Called after a paste or after loading a template.
+    Finds groups and their children by 'group_uid', updates ids and hides the children.
     """
     groups = [n for n in loaded_nodes if n.type_ in ['ros.nodes.RosGroup', 'ros.nodes.RosGroupNode']]
     if not groups: return
 
-    # Пробегаем по всем группам
+    # go over all groups
     for grp in groups:
         gid = grp.get_property('group_uid')
         if not gid: continue
         
-        # Ищем детей среди загруженных нод, у которых такой же group_uid
+        # find the children among the loaded nodes with the same group_uid
         children = []
         children_ids = []
         
         for n in loaded_nodes:
             if n == grp: continue
-            # дети теперь ссылаются на группу через parent_group_id
+            # children now refer to the group via parent_group_id
             if n.has_property('parent_group_id') and n.get_property('parent_group_id') == gid:
                 children.append(n)
                 children_ids.append(n.id)
         
-        # Обновляем список ID в группе (теперь они знают новые ID своих детей)
+        # update the id list in the group (now it knows its children's new ids)
         grp.set_property('internal_nodes', children_ids)
         
-        # Скрываем детей (чтобы не было "потроха наружу")
+        # hide the children (so the group's insides are not exposed)
         grp.set_property('is_expanded', False)
         for child in children:
             if hasattr(child, 'view'):
                 child.view.setVisible(False)
         
-        # Обновляем цвет
+        # update the colour
         grp.set_color(40, 40, 40)
 
-# === 4. ПЕРЕКЛЮЧЕНИЕ ВИДИМОСТИ ===
+# === 4. VISIBILITY TOGGLE ===
 def toggle_group_visibility(graph, group_node):
     internal_ids = group_node.get_property('internal_nodes')
     if not internal_ids: return
@@ -262,7 +263,7 @@ def toggle_group_visibility(graph, group_node):
     new_state = not group_node.get_property('is_expanded')
     group_node.set_property('is_expanded', new_state)
     
-    # Ищем ноды по ID
+    # find nodes by id
     all_nodes = {n.id: n for n in graph.all_nodes()}
     
     for nid in internal_ids:
@@ -275,8 +276,8 @@ def toggle_group_visibility(graph, group_node):
 
 def dissolve_group(graph, group_node):
     """
-    Распускает группу: обычных детей возвращает на канвас (чистит parent_group_id),
-    терминалы удаляет. Вызывать ПЕРЕД удалением самой группы.
+    Dissolves a group: plain children go back to the canvas (parent_group_id cleared),
+    terminals are deleted. Call it BEFORE deleting the group itself.
     """
     gid = group_node.get_property('group_uid')
     if not gid:
@@ -286,13 +287,13 @@ def dissolve_group(graph, group_node):
     for n in list(graph.all_nodes()):
         if n == group_node:
             continue
-        # терминалы этой группы — на удаление
+        # this group's terminals: to be deleted
         if n.type_ in ('ros.nodes.internal.SubGraphInputNode',
                        'ros.nodes.internal.SubGraphOutputNode') \
                 and n.has_property('group_uid') and n.get_property('group_uid') == gid:
             terminals_to_delete.append(n)
             continue
-        # обычные дети — освобождаем и показываем
+        # plain children: release and show them
         if n.has_property('parent_group_id') and n.get_property('parent_group_id') == gid:
             n.set_property('parent_group_id', '')
             if hasattr(n, 'view'):

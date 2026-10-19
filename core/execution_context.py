@@ -1,40 +1,42 @@
 """
-Где сейчас исполняются команды студии.
+Where Studio commands are executed right now.
 
-Самая частая ошибка при работе с роботом — потерять понимание, где ты:
-на своей машине, на удалённом хосте или внутри контейнера. Команды летят
-не туда: `docker` внутри контейнера, Windows-путь в scp из SSH-сессии,
-`ros2 launch` не в том окружении. Единственным ориентиром было
-приглашение шелла, и его легко проглядеть.
+The most common mistake when working with a robot is losing track of where you are:
+on your own machine, on a remote host or inside a container. Commands go to
+the wrong place: `docker` inside a container, a Windows path in scp from an SSH session,
+`ros2 launch` in the wrong environment. The only hint used to be the shell
+prompt, and it is easy to miss.
 
-Модель чистая (без Qt), чтобы её можно было тестировать и переиспользовать
-в будущем remote workspace (раздел 2.2+).
+The model is pure (no Qt) so it can be tested and reused
+by the remote workspace.
 """
 from dataclasses import dataclass
 from enum import Enum
 
+from core.i18n import t
+
 
 class ContextKind(Enum):
-    LOCAL = "local"          # сессии нет, всё на машине со студией
-    SSH = "ssh"              # подключены к удалённому Docker-хосту, сессии нет
-    CONTAINER = "container"  # есть живая сессия в контейнере
+    LOCAL = "local"          # no session, everything on the Studio machine
+    SSH = "ssh"              # connected to a remote Docker host, no session
+    CONTAINER = "container"  # a live session in a container
 
 
 @dataclass(frozen=True)
 class ExecutionContext:
     kind: ContextKind = ContextKind.LOCAL
-    host: str = ""            # "" = эта машина; иначе user@host
-    container: str = ""       # имя контейнера сессии
-    real_robot: bool = False  # цель — реальное железо, а не симуляция
+    host: str = ""            # "" = this machine; otherwise user@host
+    container: str = ""       # session container name
+    real_robot: bool = False  # the target is real hardware, not a simulation
 
-    # ---- представление ------------------------------------------------
+    # ---- presentation ------------------------------------------------
 
     @property
     def where(self):
         return self.host or "local"
 
     def label(self):
-        """Полная метка для бейджа и заголовка окна."""
+        """Full label for the badge and the window title."""
         if self.kind is ContextKind.CONTAINER:
             base = f"CONTAINER: {self.container} @ {self.where}"
         elif self.kind is ContextKind.SSH:
@@ -44,7 +46,7 @@ class ExecutionContext:
         return f"⚠ REAL ROBOT · {base}" if self.real_robot else base
 
     def short(self):
-        """Короткая метка для каждой строки System Log."""
+        """Short label for every System Log line."""
         if self.kind is ContextKind.CONTAINER:
             base = f"{self.container}@{_short_host(self.where)}"
         elif self.kind is ContextKind.SSH:
@@ -54,23 +56,20 @@ class ExecutionContext:
         return f"[⚠ROBOT {base}]" if self.real_robot else f"[{base}]"
 
     def describe(self):
-        """Развёрнутое объяснение для тултипа."""
+        """Detailed explanation for the tooltip."""
         if self.kind is ContextKind.CONTAINER:
-            where = "на этой машине" if not self.host else f"на удалённом хосте {self.host}"
-            text = (f"Команды выполняются внутри контейнера «{self.container}» {where}.\n"
-                    "docker / scp / Windows-пути отсюда недоступны.")
+            where = t("ctx.where_here") if not self.host else t("ctx.where_remote", host=self.host)
+            text = t("ctx.in_container", container=self.container, where=where)
         elif self.kind is ContextKind.SSH:
-            text = (f"Подключены к Docker на {self.host}, сессия не запущена.\n"
-                    "Run поднимет контейнер на удалённой машине.")
+            text = t("ctx.ssh_no_session", host=self.host)
         else:
-            text = "Сессия не запущена. Команды выполняются на этой машине."
+            text = t("ctx.local")
         if self.real_robot:
-            text = ("⚠ ЦЕЛЬ — РЕАЛЬНЫЙ РОБОТ. Команды двигают железо.\n"
-                    "Держи руку на аварийной кнопке.\n\n" + text)
+            text = t("ctx.real_robot") + "\n\n" + text
         return text
 
     def palette(self):
-        """(фон, текст) бейджа. Цвет дублирует текст, а не заменяет его."""
+        """(background, text) of the badge. The colour duplicates the text, it does not replace it."""
         if self.real_robot:
             return "#b71c1c", "#ffffff"
         return {
@@ -81,7 +80,7 @@ class ExecutionContext:
 
 
 def _short_host(host):
-    """user@192.168.1.10 → .10 ; local → local ; имя хоста — как есть."""
+    """user@192.168.1.10 -> .10 ; local -> local ; a host name as is."""
     if not host or host == "local":
         return "local"
     h = host.split("@", 1)[-1]
@@ -93,8 +92,8 @@ def _short_host(host):
 
 def host_from_target(target):
     """
-    target из ContainerConfigStore: {"type": "local"|"ssh", "host": "ssh://user@h"}.
-    Возвращает "user@h" для ssh и "" для локального.
+    target from ContainerConfigStore: {"type": "local"|"ssh", "host": "ssh://user@h"}.
+    Returns "user@h" for ssh and "" for local.
     """
     if not target or target.get("type") != "ssh":
         return ""
@@ -104,7 +103,7 @@ def host_from_target(target):
 
 def resolve_context(target=None, session_active=False, container_name="",
                     real_robot=False):
-    """Единая точка вычисления контекста из состояния студии."""
+    """The single place where the context is computed from Studio state."""
     host = host_from_target(target)
     if session_active:
         return ExecutionContext(ContextKind.CONTAINER, host, container_name, real_robot)

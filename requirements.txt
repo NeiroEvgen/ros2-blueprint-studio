@@ -1,6 +1,13 @@
-PySide6
-NodeGraphQt
-docker
-qt-material
-jinja2
-paramiko
+# Exact pins: Studio patches NodeGraphQt internals (main.py, project_manager), and
+# NodeGraphQt is tied to the Qt binding version. Bump together and run the tests.
+PySide6==6.11.2
+NodeGraphQt==0.6.44
+qt-material==2.17
+
+# Tested ranges
+docker>=7.1,<8
+Jinja2>=3.1,<4
+paramiko>=3.4,<6
+PyYAML>=6.0,<7
+# NodeGraphQt imports distutils, which Python 3.12+ no longer ships
+setuptools>=69,<85

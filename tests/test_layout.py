@@ -132,7 +132,7 @@ class TestMigrate:
         assert r(root, "src/launch/запуск.launch.py") == "ок"
 
     def test_real_world_project(self, tmp_path):
-        """Раскладка из реального проекта demo_stage (корень + src/ с дублями)."""
+        """Layout from the real demo_stage project (root + src/ with duplicates)."""
         root = str(tmp_path)
         for rel in ("CMakeLists.txt", "package.xml", "executor_core.cpp", "task_core.cpp",
                     "cpp/task_executor_node.cpp", "include/demo_stage/types.hpp",
@@ -142,7 +142,7 @@ class TestMigrate:
                     "src/task_core.cpp", "src/cpp/task_executor_node.cpp",
                     "src/include/demo_stage/types.hpp", "src/launch/sim.launch.py"):
             w(root, rel, "A")
-        w(root, "cpp/arm_driver.cpp", "drv")      # есть только в корне
+        w(root, "cpp/arm_driver.cpp", "drv")      # only in the root
         w(root, ".blueprint/state.yaml", "s")
         rep = migrate(root)
         assert r(root, "src/cpp/arm_driver.cpp") == "drv"

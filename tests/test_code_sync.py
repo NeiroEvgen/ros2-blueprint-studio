@@ -1,6 +1,6 @@
 """
-Правка кода в окне свойств доходит до файла (раньше диск всегда побеждал и правка терялась),
-а правка файла в IDE по-прежнему побеждает неизменённый узел. Конфликт → диск.
+A code edit in the properties window reaches the file (the disk used to always win and the edit was lost),
+while a file edit in an IDE still beats an unchanged node. Conflict -> disk.
 """
 import json
 import os
@@ -14,13 +14,13 @@ H = code_hash("old")
 
 @pytest.mark.parametrize("node,disk,synced,want,why", [
     ("old", "old", H, "old", "same"),
-    ("new", "old", H, "new", "node"),            # правка в Studio
-    ("old", "ide", H, "ide", "disk"),            # правка в IDE
-    ("new", "ide", H, "ide", "conflict"),        # менялись оба
-    ("new", "old", None, "old", "disk"),         # старый проект без отпечатка: диск не затираем
+    ("new", "old", H, "new", "node"),            # edit in Studio
+    ("old", "ide", H, "ide", "disk"),            # edit in the IDE
+    ("new", "ide", H, "ide", "conflict"),        # both changed
+    ("new", "old", None, "old", "disk"),         # old project without a fingerprint: never overwrite the disk
     ("x", "", H, "x", "no_disk"),
     ("", "disk", H, "disk", "same"),
-    ("a\r\nb", "a\nb", H, "a\nb", "same"),        # переводы строк не считаются правкой
+    ("a\r\nb", "a\nb", H, "a\nb", "same"),        # line endings do not count as an edit
 ])
 def test_choose_code(node, disk, synced, want, why):
     assert choose_code(node, disk, synced) == (want, why)
@@ -42,7 +42,7 @@ def test_ui_edit_reaches_file_and_hash_is_recorded(tmp_path):
     n = _node("print(1)\n")
     assert _run(tmp_path, n) == "print(1)\n"
     h1 = n["custom"]["code_sync_hash"]
-    n2 = _node("print(2)\n", h1)                   # правка в окне свойств
+    n2 = _node("print(2)\n", h1)                   # edit in the properties window
     assert _run(tmp_path, n2) == "print(2)\n"
     assert n2["custom"]["code_sync_hash"] == code_hash("print(2)\n")
 
@@ -63,7 +63,7 @@ def test_conflict_keeps_disk(tmp_path):
     assert _run(tmp_path, n2) == "print('ide')\n"
 
 
-# ---------- живые холсты ----------
+# ---------- live canvases ----------
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 pytest.importorskip("NodeGraphQt")
@@ -79,7 +79,7 @@ def win(app):
     from ui import main_window as mw
     w = mw.RosVisualRunner()
     yield w
-    w.close(); w.deleteLater()
+    w._mark_clean(); w.close(); w.deleteLater()   # this test is not about "unsaved changes"
 
 
 def test_properties_edit_survives_save_and_write_back(win, tmp_path):
@@ -93,22 +93,22 @@ def test_properties_edit_survives_save_and_write_back(win, tmp_path):
     (cpp,) = list((root / "src" / "cpp").glob("*.cpp"))
     assert cpp.read_text(encoding="utf-8") == "int main(){return 1;}\n"
 
-    node.set_property("code_content", "int main(){return 2;}\n")       # правка в окне свойств
+    node.set_property("code_content", "int main(){return 2;}\n")       # edit in the properties window
     assert win.project_manager.save_project(str(root))[0] is True
     assert cpp.read_text(encoding="utf-8") == "int main(){return 2;}\n"
 
-    cpp.write_text("int main(){return 3;}\n", encoding="utf-8")       # правка в IDE
+    cpp.write_text("int main(){return 3;}\n", encoding="utf-8")       # edit in the IDE
     assert win.project_manager.save_project(str(root))[0] is True
     assert cpp.read_text(encoding="utf-8") == "int main(){return 3;}\n"
-    assert node.get_property("code_content") == "int main(){return 3;}\n"   # узел догнал файл
+    assert node.get_property("code_content") == "int main(){return 3;}\n"   # the node caught up with the file
 
-    node.set_property("code_content", "int main(){return 4;}\n")       # и снова правка в Studio
+    node.set_property("code_content", "int main(){return 4;}\n")       # and another edit in Studio
     assert win.project_manager.save_project(str(root))[0] is True
     assert cpp.read_text(encoding="utf-8") == "int main(){return 4;}\n"
 
 
 def test_loaded_project_edit_wins_after_first_save(win, tmp_path):
-    """После открытия проекта правка в Studio сразу выигрывает: отпечаток ставится при загрузке."""
+    """After opening a project a Studio edit wins right away: the fingerprint is set on load."""
     root = tmp_path / "p"
     for d in ("src", ".blueprint", "docker"):
         (root / d).mkdir(parents=True)

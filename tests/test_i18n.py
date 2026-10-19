@@ -94,7 +94,7 @@ class TestDictionaries:
         monkeypatch.setattr(i18n_check, "LOCALES", str(d))
         monkeypatch.setattr(i18n_check, "used_keys", lambda *a, **k: ({}, {}))
         probs = "\n".join(i18n_check.check())
-        assert "нет перевода: b" in probs and "лишний ключ" in probs and "плейсхолдеры a" in probs
+        assert "missing translation: b" in probs and "extra key" in probs and "placeholders a" in probs
 
     def test_checker_detects_undefined_key_in_code(self, tmp_path, monkeypatch):
         d = tmp_path / "loc"; d.mkdir()

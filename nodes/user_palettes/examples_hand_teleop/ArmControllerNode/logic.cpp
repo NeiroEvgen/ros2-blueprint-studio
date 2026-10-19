@@ -6,17 +6,17 @@
 
 using namespace std::chrono_literals;
 
-// Маппинг позы руки (с камеры) в углы суставов манипулятора.
-// Вход:  /hand/pose  Float64MultiArray data[4]:
-//        [0] x запястья в кадре 0..1, [1] y в кадре 0..1 (0 = верх),
-//        [2] tilt кисти (рад, 0 = вертикально вверх), [3] grip 0..1
-// Выход: /arm/joint_cmd Float64MultiArray data[6] (контракт ArmRenderNode)
+// Maps the hand pose (from the camera) to manipulator joint angles.
+// Input:  /hand/pose  Float64MultiArray data[4]:
+//        [0] wrist x in the frame 0..1, [1] y in the frame 0..1 (0 = top),
+//        [2] hand tilt (rad, 0 = straight up), [3] grip 0..1
+// Output: /arm/joint_cmd Float64MultiArray data[6] (ArmRenderNode contract)
 class ArmControllerNode : public rclcpp::Node {
 public:
     ArmControllerNode() : Node("arm_controller_node") {
-        // Целевые и текущие (сглаженные) углы; старт = поза ожидания
+        // target and current (smoothed) angles; start = idle pose
         target_ = idle_ = {0.0, 1.10, -0.60, 0.0, 0.0, 0.5};
-        smooth_ = {0.0, 2.60, 0.20, 0.0, 0.0, 0.5};   // из сложенной
+        smooth_ = {0.0, 2.60, 0.20, 0.0, 0.0, 0.5};   // from folded
         last_hand_time_ = now();
 
         sub_ = create_subscription<std_msgs::msg::Float64MultiArray>(
@@ -28,12 +28,12 @@ public:
                 double tilt = std::clamp(msg->data[2], -1.2, 1.2);
                 double grip = std::clamp(msg->data[3], 0.0, 1.0);
 
-                // --- Маппинг кадр -> суставы ---
-                target_[0] = (x - 0.5) * 1.6;            // yaw базы
-                double lift = 1.0 - y;                    // выше рука = выше манипулятор
-                target_[1] = 1.60 - 1.10 * lift;          // плечо
-                target_[2] = -0.20 - 0.75 * lift;         // локоть
-                target_[3] = tilt;                        // кисть повторяет наклон
+                // --- frame -> joints mapping ---
+                target_[0] = (x - 0.5) * 1.6;            // base yaw
+                double lift = 1.0 - y;                    // hand higher = manipulator higher
+                target_[1] = 1.60 - 1.10 * lift;          // shoulder
+                target_[2] = -0.20 - 0.75 * lift;         // elbow
+                target_[3] = tilt;                        // wrist follows the tilt
                 target_[5] = grip;
 
                 last_hand_time_ = now();
@@ -47,11 +47,11 @@ public:
 
 private:
     void update() {
-        // Failsafe: рука пропала из кадра -> плывём в позу ожидания
+        // failsafe: hand left the frame -> drift to the idle pose
         bool hand_alive = (now() - last_hand_time_).seconds() < 0.5;
         const auto& goal = hand_alive ? target_ : idle_;
 
-        // EMA-сглаживание: чем меньше alpha, тем плавнее (и ленивее)
+        // EMA smoothing: smaller alpha = smoother (and lazier)
         const double alpha = hand_alive ? 0.25 : 0.06;
         for (size_t i = 0; i < smooth_.size(); i++)
             smooth_[i] += alpha * (goal[i] - smooth_[i]);

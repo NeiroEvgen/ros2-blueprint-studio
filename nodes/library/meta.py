@@ -17,9 +17,9 @@ class NoteNode(RosNodeBase):
 
 class FileNode(RosNodeBase):
     """
-    Файл проекта на рабочем столе (зелёная отметка во вкладке Files).
-    Без портов; в генерацию кода и launch не попадает (тип 'meta'). Содержимое файла —
-    code_content; при Save правка в Studio пишется в сам файл (ProjectManager.sync_file_nodes).
+    A project file on the canvas (green mark in the Files tab).
+    No ports; not part of code or launch generation (type 'meta'). The file content is
+    code_content; on Save, an edit made in Studio is written into the file itself (ProjectManager.sync_file_nodes).
     """
     __identifier__ = 'ros.nodes.meta'
     NODE_NAME = 'File'

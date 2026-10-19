@@ -1,1 +1,1 @@
-"""Remote workspace: работа с кодом на удалённой машине (робот, встраиваемый компьютер)."""
+"""Remote workspace: working with code on a remote machine (robot, embedded computer)."""

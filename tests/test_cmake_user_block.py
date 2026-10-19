@@ -1,11 +1,11 @@
 """
 1.1 — CMake protected block.
 
-Критерии приёмки:
-- вписанное в USER-блок переживает Save/регенерацию
-- старый проект без USER-блока: блок создаётся, ручные правки не теряются
-- чисто сгенерированный старый файл мигрирует без шума и без .bak
-- ament_package() остаётся последним
+Acceptance criteria:
+- what is written in the USER block survives Save/regeneration
+- an old project without a USER block: the block is created, hand edits are not lost
+- a purely generated old file migrates silently and without .bak
+- ament_package() stays last
 """
 import re
 
@@ -22,7 +22,7 @@ def _cmake(src):
 def _user_block(text):
     m = re.search(re.escape(CMAKE_USER_BEGIN) + r"\n(.*?)" + re.escape(CMAKE_USER_END),
                   text, re.S)
-    assert m, "USER-блок не найден"
+    assert m, "USER block not found"
     return m.group(1)
 
 
@@ -35,7 +35,7 @@ def _put_in_user_block(src, lines):
 
 
 def _as_old_format(new_text):
-    """Во что превращался файл старым генератором: AUTO без маркеров + ament_package()."""
+    """What the old generator turned the file into: AUTO without markers + ament_package()."""
     auto = new_text.split(CMAKE_AUTO_BEGIN + "\n", 1)[1].split(CMAKE_AUTO_END, 1)[0]
     return auto + "ament_package()\n"
 
@@ -61,7 +61,7 @@ class TestUserBlock:
         assert text.index(CMAKE_USER_END) < text.index("ament_package()")
 
     def test_user_lines_survive_regeneration(self, pm, cpp_project):
-        """Главный критерий: ручная правка переживает Save."""
+        """Main criterion: a hand edit survives Save."""
         src, add = cpp_project
         add("Node.cpp", MAIN_CPP)
         pm._generate_cpp_build_files(str(src), [])
@@ -72,7 +72,7 @@ class TestUserBlock:
         assert "target_link_libraries(Node yaml-cpp)" in _user_block(_cmake(src))
 
     def test_user_lines_survive_when_auto_part_changes(self, pm, cpp_project):
-        """Изменились зависимости → AUTO переписан, USER цел."""
+        """Dependencies changed -> AUTO rewritten, USER intact."""
         src, add = cpp_project
         add("Node.cpp", MAIN_CPP)
         pm._generate_cpp_build_files(str(src), [])
@@ -88,7 +88,7 @@ class TestUserBlock:
         assert "target_link_libraries(Node yaml-cpp)" in _user_block(text)
 
     def test_real_case_trajectory_player_with_kinlib(self, pm, cpp_project):
-        """Ровно то, что стиралось дважды на реальном проекте."""
+        """Exactly what got wiped twice on a real project."""
         src, add = cpp_project
         add("TrajectoryPlayerNode.cpp", MAIN_CPP)
         pm._generate_cpp_build_files(str(src), [])
@@ -111,7 +111,7 @@ class TestUserBlock:
         src, add = cpp_project
         add("Node.cpp", MAIN_CPP)
         pm._generate_cpp_build_files(str(src), [])
-        _put_in_user_block(src, ["  # мой комментарий с отступом", "", "set(FOO bar)"])
+        _put_in_user_block(src, ["  # my indented comment", "", "set(FOO bar)"])
         before = _user_block(_cmake(src))
 
         pm._generate_cpp_build_files(str(src), [])
@@ -134,7 +134,7 @@ class TestUserBlock:
 class TestMigrationFromOldFormat:
 
     def test_pure_generated_old_file_migrates_silently(self, pm, cpp_project):
-        """Старый файл без правок → никаких .bak и перенесённых строк."""
+        """Old file without edits -> no .bak and no migrated lines."""
         src, add = cpp_project
         add("Node.cpp", MAIN_CPP)
         pm._generate_cpp_build_files(str(src), [])
@@ -143,7 +143,7 @@ class TestMigrationFromOldFormat:
         pm._generate_cpp_build_files(str(src), [])
 
         assert not list(src.glob("CMakeLists.txt.bak*"))
-        assert "перенесено из старого" not in _cmake(src)
+        assert "migrated from the old CMakeLists.txt" not in _cmake(src)
         assert CMAKE_USER_BEGIN in _cmake(src)
 
     def test_hand_edited_old_file_is_backed_up(self, pm, cpp_project):
@@ -161,7 +161,7 @@ class TestMigrationFromOldFormat:
         assert baks[0].read_text(encoding="utf-8") == old
 
     def test_hand_edits_migrated_commented_out(self, pm, cpp_project):
-        """Ручная строка не теряется, но и не активируется вслепую."""
+        """A hand-written line is not lost, but not blindly activated either."""
         src, add = cpp_project
         add("Node.cpp", MAIN_CPP)
         pm._generate_cpp_build_files(str(src), [])
@@ -177,7 +177,7 @@ class TestMigrationFromOldFormat:
         assert active == []
 
     def test_stale_executable_not_reactivated(self, pm, cpp_project):
-        """add_executable на удалённый файл не должен молча вернуться в сборку."""
+        """add_executable for a deleted file must not silently come back into the build."""
         src, add = cpp_project
         add("Node.cpp", MAIN_CPP)
         pm._generate_cpp_build_files(str(src), [])
@@ -204,7 +204,7 @@ class TestMigrationFromOldFormat:
         pm._generate_cpp_build_files(str(src), [])
 
         assert len(list(src.glob("CMakeLists.txt.bak*"))) == 1
-        assert _cmake(src).count("перенесено из старого") == 1
+        assert _cmake(src).count("migrated from the old CMakeLists.txt") == 1
 
     def test_existing_bak_is_not_overwritten(self, pm, cpp_project):
         src, add = cpp_project
@@ -219,3 +219,25 @@ class TestMigrationFromOldFormat:
 
         assert (src / "CMakeLists.txt.bak").read_text(encoding="utf-8") == "precious"
         assert (src / "CMakeLists.txt.bak1").read_text(encoding="utf-8") == old
+
+
+class TestNonUtf8File:
+    """CMakeLists edited in Windows Notepad (cp1251): the USER block was silently replaced by the template."""
+
+    def test_cp1251_user_block_survives_and_original_is_backed_up(self, pm, cpp_project):
+        src, add = cpp_project
+        add("Node.cpp", MAIN_CPP)
+        pm._generate_cpp_build_files(str(src), [])
+        path = src / "CMakeLists.txt"
+        text = path.read_text(encoding="utf-8")
+        body = _user_block(text)
+        edited = text.replace(body, body + "# своя библиотека\ntarget_link_libraries(Node yaml-cpp)\n")
+        path.write_bytes(edited.encode("cp1251"))
+        original = path.read_bytes()
+
+        pm._generate_cpp_build_files(str(src), [])
+
+        user = _user_block(_cmake(src))                       # the file reads as UTF-8 again
+        assert "target_link_libraries(Node yaml-cpp)" in user
+        assert "# своя библиотека" in user
+        assert (src / "CMakeLists.txt.bak").read_bytes() == original

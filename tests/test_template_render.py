@@ -1,4 +1,4 @@
-"""Шаблоны нод палитры заполняются перед записью файла; поток colcon делится на строки."""
+"""Palette node templates are filled before the file is written; the colcon stream is split into lines."""
 import pytest
 
 from core import colcon
@@ -62,7 +62,7 @@ def test_process_flat_nodes_writes_rendered_file(tmp_path):
 
 def test_broken_file_from_previous_build_is_repaired(tmp_path):
     from core.node_sources import process_flat_nodes
-    (tmp_path / "StringPub.cpp").write_text(CPP_TEMPLATES["Publisher"], encoding="utf-8")   # старый сломанный
+    (tmp_path / "StringPub.cpp").write_text(CPP_TEMPLATES["Publisher"], encoding="utf-8")   # the old broken one
     node = {"id": "1", "name": "StringPub", "type_": "ros.cpp.CppStringPubNode", "ports": [],
             "custom": {"node_name": "talker", "template_key": "cpp_string_pub",
                        "code_content": CPP_TEMPLATES["Publisher"], "source_file": "StringPub.cpp"}}

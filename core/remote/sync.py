@@ -1,24 +1,26 @@
 """
-Инкрементальная синхронизация исходников: локальный проект → удалённая цель.
+Incremental source sync: local project -> remote target.
 
-На удалённой стороне лежит манифест <remote_root>/.blueprint_sync.json:
-{относительный_путь: sha1} — что именно мы туда положили в прошлый раз.
+The remote side keeps a manifest <remote_root>/.blueprint_sync.json:
+{relative_path: sha1}: exactly what we put there last time.
 
-Правила (все проверены тестами):
-1. Неизменённые файлы не пересылаются.
-2. Файлы, которых нет в манифесте, НИКОГДА не трогаются: build/, install/,
-   log/ и всё, что создано на роботе руками, в безопасности.
-3. Конфликт: файл изменён И локально, И на роботе (кто-то правил прямо там
-   через ssh/sed на самом роботе) → НЕ перезаписываем, сообщаем.
-4. Удаление: файл пропал локально → удаляем на роботе, только если там он
-   не менялся с прошлой синхронизации. Иначе — конфликт, оставляем.
-5. dry_run показывает план, ничего не меняя.
+Rules (all covered by tests):
+1. Unchanged files are not sent.
+2. Files that are not in the manifest are NEVER touched: build/, install/,
+   log/ and anything created on the robot by hand are safe.
+3. Conflict: a file changed BOTH locally AND on the robot (someone edited it
+   right there via ssh/sed) -> NOT overwritten, reported.
+4. Deletion: a file gone locally is deleted on the robot only if it has not
+   changed there since the last sync. Otherwise it is a conflict and stays.
+5. dry_run shows the plan without changing anything.
 """
 import fnmatch
 import hashlib
 import json
 import os
 from dataclasses import dataclass, field
+
+from core.i18n import t
 
 MANIFEST_NAME = ".blueprint_sync.json"
 
@@ -33,7 +35,7 @@ class SyncReport:
     uploaded: list = field(default_factory=list)
     deleted: list = field(default_factory=list)
     unchanged: int = 0
-    conflicts: list = field(default_factory=list)   # (rel, причина)
+    conflicts: list = field(default_factory=list)   # (rel, reason)
     dry_run: bool = False
 
     @property
@@ -41,12 +43,11 @@ class SyncReport:
         return not self.conflicts
 
     def summary(self):
-        verb = "будет" if self.dry_run else ""
         parts = [f"↑ {len(self.uploaded)}", f"✕ {len(self.deleted)}",
                  f"= {self.unchanged}"]
         if self.conflicts:
-            parts.append(f"⚠ конфликтов: {len(self.conflicts)}")
-        return (f"[dry-run] " if self.dry_run else "") + "  ".join(parts)
+            parts.append(t("sync.conflicts", count=len(self.conflicts)))
+        return ("[dry-run] " if self.dry_run else "") + "  ".join(parts)
 
 
 def _excluded(rel, patterns):
@@ -58,7 +59,7 @@ def _excluded(rel, patterns):
 
 
 def scan_local(root, excludes=DEFAULT_EXCLUDES):
-    """{posix_rel: sha1} для всех файлов проекта, кроме исключённых."""
+    """{posix_rel: sha1} for all project files except the excluded ones."""
     result = {}
     for dirpath, dirnames, filenames in os.walk(root):
         rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
@@ -106,7 +107,7 @@ def sync_tree(local_root, remote, remote_root, excludes=DEFAULT_EXCLUDES,
     if not dry_run:
         remote.makedirs(remote_root)
 
-    # --- загрузка изменённого ---
+    # --- upload what changed ---
     for rel in sorted(local):
         sha = local[rel]
         if manifest.get(rel) == sha:
@@ -116,13 +117,13 @@ def sync_tree(local_root, remote, remote_root, excludes=DEFAULT_EXCLUDES,
         if rel in manifest:
             current = _remote_sha(remote, rpath)
             if current is not None and current != manifest[rel] and current != sha:
-                report.conflicts.append((rel, "изменён и локально, и на удалённой стороне"))
+                report.conflicts.append((rel, t("sync.both_changed")))
                 continue
         else:
             current = _remote_sha(remote, rpath)
             if current is not None and current != sha:
                 report.conflicts.append(
-                    (rel, "на удалённой стороне уже есть другой файл с этим именем"))
+                    (rel, t("sync.remote_exists")))
                 continue
             if current == sha:
                 new_manifest[rel] = sha
@@ -135,7 +136,7 @@ def sync_tree(local_root, remote, remote_root, excludes=DEFAULT_EXCLUDES,
                 remote.write_bytes(rpath, f.read())
             new_manifest[rel] = sha
 
-    # --- удаление пропавшего локально ---
+    # --- delete what disappeared locally ---
     if delete:
         for rel in sorted(set(manifest) - set(local)):
             rpath = remote.join(remote_root, *rel.split("/"))
@@ -144,7 +145,7 @@ def sync_tree(local_root, remote, remote_root, excludes=DEFAULT_EXCLUDES,
                 new_manifest.pop(rel, None)
                 continue
             if current != manifest[rel]:
-                report.conflicts.append((rel, "удалён локально, но изменён на удалённой стороне"))
+                report.conflicts.append((rel, t("sync.deleted_but_changed")))
                 continue
             report.deleted.append(rel)
             say(f"✕ {rel}")

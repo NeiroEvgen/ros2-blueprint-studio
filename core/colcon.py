@@ -1,4 +1,4 @@
-"""Сборка colcon: команда и разбор вывода. Чистая логика, без docker/Qt."""
+"""colcon build: command and output parsing. Pure logic, no docker/Qt."""
 import re
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -9,7 +9,7 @@ WS = "/root/ros2_ws"
 
 
 def build_command(ws: str = WS) -> str:
-    """Команда сборки для `bash -c`. Завершается кодом colcon (не маскируется)."""
+    """Build command for `bash -c`. Exits with colcon's code (not masked)."""
     return (f"source /opt/ros/humble/setup.bash && cd {ws} && "
             "colcon build --symlink-install --event-handlers console_direct+")
 
@@ -96,9 +96,9 @@ def parse_output(lines) -> BuildResult:
 
 def iter_lines(chunks):
     """
-    Поток байтовых чанков Docker → отдельные строки (str). Чанк может содержать несколько
-    строк или обрываться посреди строки; без этого разбора строка 'Failed <<< pkg' теряется
-    внутри многострочного чанка и сборка отчитывается как «неизвестный пакет».
+    Stream of Docker byte chunks -> separate lines (str). A chunk may contain several
+    lines or end in the middle of one; without this, a 'Failed <<< pkg' line gets lost
+    inside a multi-line chunk and the build reports an "unknown package".
     """
     buf = ""
     for chunk in chunks:

@@ -1,4 +1,4 @@
-"""Один проект — C++ и Python ноды вместе (project_type = "mixed")."""
+"""One project with C++ and Python nodes together (project_type = "mixed")."""
 import ast
 import json
 import os
@@ -49,7 +49,7 @@ def test_launch_runs_both(mixed):
     ast.parse(text)
     assert "executable='drv'" in text
     assert "/root/ros2_ws/src/user_project/python/vision.py" in text
-    assert text.index("executable='drv'") < text.index("vision.py")        # сначала C++, потом Python
+    assert text.index("executable='drv'") < text.index("vision.py")        # C++ first, then Python
 
 
 def test_cmake_exists_and_contains_only_cpp_targets(mixed):
@@ -116,7 +116,7 @@ class TestWorkspaceMixed:
 
 
 def test_python_node_on_cpp_tab_still_generated_as_python(mixed):
-    """Нода ros.py.* случайно оказалась в C++-вкладке — она всё равно Python."""
+    """A ros.py.* node accidentally ended up on the C++ tab: it is still Python."""
     save(mixed, [cpp_node("drv", MAIN), py_node("oops", PY_CODE)], [])
     assert (mixed / "src/python/oops.py").is_file() and not (mixed / "src/cpp/oops.cpp").exists()
     assert "oops.py" in launch(mixed)
@@ -128,7 +128,7 @@ def test_cpp_node_on_python_tab_still_generated_as_cpp(mixed):
 
 
 def test_pure_cpp_project_unchanged_by_language_routing(tmp_path):
-    """В одноязычном проекте никакого перераспределения: все ноды вкладки — язык проекта."""
+    """In a single-language project there is no redistribution: all nodes of the tab use the project language."""
     root = tmp_path / "c"
     for d in ("src", ".blueprint"):
         (root / d).mkdir(parents=True)

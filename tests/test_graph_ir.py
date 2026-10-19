@@ -109,7 +109,7 @@ class TestMergeSplit:
         m["connections"].append(conn("p1", "c1"))
         assert ir.cross_links(m, meta) == [conn("p1", "c1")]
         py, cpp = ir.split_session(m, meta)
-        assert py == PY and cpp == CPP     # межъязыковая связь не протекла ни в одну сторону
+        assert py == PY and cpp == CPP     # a cross-language link leaked in neither direction
 
     def test_cyrillic_and_tuples_survive(self):
         py = {"nodes": {"a": n("a", "ros.py.A", (0, 0), color=(1, 2, 3), title="Привет")}, "connections": []}

@@ -1,6 +1,6 @@
 """
-Режим одного холста: единый граф Python+C++ сохраняется в state v4, генерирует код
-в обе директории и открывается обратно (в одном графе и в двух вкладках).
+Single-canvas mode: one Python+C++ graph is saved in state v4, generates code
+into both folders and opens back (as one graph and in two tabs).
 """
 import json
 import os
@@ -72,7 +72,7 @@ def test_first_v4_write_keeps_v36_backup(mixed):
     assert (mixed / ".blueprint/state.v3.6.yaml.bak").exists()
 
 
-# ---------- реальные холсты (Qt offscreen) ----------
+# ---------- real canvases (Qt offscreen) ----------
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
@@ -114,7 +114,7 @@ def test_single_window_has_one_graph_and_one_canvas_tab(single_win):
     assert w.graph_py is w.graph_cpp
     assert w.graphs.is_single
     assert w.ui.tabs.indexOf(w.graph_py.widget) >= 0
-    w.ui.set_visible_graph("mixed")          # не должен падать при одной вкладке
+    w.ui.set_visible_graph("mixed")          # must not fail with a single tab
     w.ui.set_visible_graph("cpp")
 
 

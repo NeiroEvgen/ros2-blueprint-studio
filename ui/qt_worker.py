@@ -1,9 +1,9 @@
-"""Фоновое выполнение блокирующих операций (SSH, sync, сборка) без фриза UI."""
+"""Background execution of blocking operations (SSH, sync, build) without freezing the UI."""
 from PySide6 import QtCore
 
 
 class Task(QtCore.QThread):
-    """fn(emit_line) -> result. Сигналы доставляются в главный поток."""
+    """fn(emit_line) -> result. Signals are delivered to the main thread."""
     line = QtCore.Signal(str)
     done = QtCore.Signal(object)
     failed = QtCore.Signal(str)
@@ -20,7 +20,7 @@ class Task(QtCore.QThread):
 
 
 class TaskHost:
-    """Держит ссылки на живые задачи, чтобы их не собрал GC посреди работы."""
+    """Keeps references to live tasks so the GC does not collect them mid-run."""
     def __init__(self):
         self._tasks = set()
 

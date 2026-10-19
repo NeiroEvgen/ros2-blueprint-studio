@@ -1,4 +1,4 @@
-"""Замыкание импортов: локальные файлы, пакеты, относительные импорты, stdlib/сторонние, опциональные, динамические."""
+"""Import closure: local files, packages, relative imports, stdlib/third-party, optional, dynamic."""
 import os
 
 from core.import_closure import compute

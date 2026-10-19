@@ -1,20 +1,22 @@
 """
-Профиль удалённой цели и подключение к ней.
+Remote target profile and connecting to it.
 
-Профиль хранится в проекте: <project>/.blueprint/remote.yaml.
-Секретов в нём НЕТ: только хост, пользователь, путь к ключу. Пароль,
-если нужен, передаётся в connect() в момент подключения и нигде не
-сохраняется — поэтому remote.yaml можно спокойно коммитить.
+The profile is stored in the project: <project>/.blueprint/remote.yaml.
+It holds NO secrets: only host, user, key path. The password, if
+needed, is passed to connect() at connection time and is never
+stored, so remote.yaml is safe to commit.
 
-Ключи хостов — TOFU (trust on first use), как у обычного ssh: при первом
-подключении отпечаток запоминается в ~/.blueprint/known_hosts, при смене
-ключа подключение ОТКАЗЫВАЕТСЯ. AutoAddPolicy здесь не годится: он молча
-принял бы подменённую машину.
+Host keys use TOFU (trust on first use), like plain ssh: on the first
+connection the fingerprint is stored in ~/.blueprint/known_hosts; if the key
+changes, the connection is REFUSED. AutoAddPolicy does not fit here: it would
+silently accept a substituted machine.
 """
 import os
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict
 
 import yaml
+
+from core.i18n import t
 
 PROFILE_REL = os.path.join(".blueprint", "remote.yaml")
 DEFAULT_KNOWN_HOSTS = os.path.join(os.path.expanduser("~"), ".blueprint", "known_hosts")
@@ -28,10 +30,10 @@ class RemoteProfile:
     host: str = ""
     port: int = 22
     user: str = ""
-    key_path: str = ""                  # пусто = ssh-agent / ~/.ssh
-    remote_workspace: str = ""          # куда кладём исходники на хосте
-    container: str = ""                 # пусто = собирать на хосте напрямую
-    container_workspace: str = ""       # тот же каталог, как он виден в контейнере
+    key_path: str = ""                  # empty = ssh-agent / ~/.ssh
+    remote_workspace: str = ""          # where the sources go on the host
+    container: str = ""                 # empty = build directly on the host
+    container_workspace: str = ""       # the same folder as seen inside the container
     ros_setup: str = "/opt/ros/humble/setup.bash"
 
     @property
@@ -40,7 +42,7 @@ class RemoteProfile:
 
     @property
     def build_dir(self):
-        """Каталог, где запускать colcon: в контейнере или на хосте."""
+        """Folder to run colcon in: inside the container or on the host."""
         if self.container:
             return self.container_workspace or self.remote_workspace
         return self.remote_workspace
@@ -51,17 +53,17 @@ class RemoteProfile:
     def validate(self):
         errors = []
         if not self.host:
-            errors.append("не указан хост")
+            errors.append(t("rp.err_no_host"))
         if not self.user:
-            errors.append("не указан пользователь")
+            errors.append(t("rp.err_no_user"))
         if not self.remote_workspace:
-            errors.append("не указан remote_workspace")
+            errors.append(t("rp.err_no_workspace"))
         elif not self.remote_workspace.startswith("/"):
-            errors.append("remote_workspace должен быть абсолютным путём (/home/...)")
+            errors.append(t("rp.err_workspace_abs"))
         if not (0 < int(self.port) < 65536):
-            errors.append("некорректный порт")
+            errors.append(t("rp.err_port"))
         if self.container and self.container_workspace and not self.container_workspace.startswith("/"):
-            errors.append("container_workspace должен быть абсолютным путём")
+            errors.append(t("rp.err_container_workspace_abs"))
         return errors
 
 
@@ -96,7 +98,7 @@ def _tofu_policy(known_hosts_path):
     import paramiko
 
     class TOFUPolicy(paramiko.MissingHostKeyPolicy):
-        """Вызывается только для НЕизвестного хоста: запоминаем и пускаем."""
+        """Called only for an UNKNOWN host: remember it and let it in."""
         def missing_host_key(self, client, hostname, key):
             os.makedirs(os.path.dirname(known_hosts_path), exist_ok=True)
             client.get_host_keys().add(hostname, key.get_name(), key)
@@ -107,8 +109,8 @@ def _tofu_policy(known_hosts_path):
 
 def connect(profile, password=None, known_hosts=DEFAULT_KNOWN_HOSTS, timeout=10):
     """
-    Возвращает подключённый paramiko.SSHClient.
-    Бросает HostKeyChanged, если ключ хоста не совпал с запомненным.
+    Returns a connected paramiko.SSHClient.
+    Raises HostKeyChanged if the host key does not match the stored one.
     """
     import paramiko
 
@@ -133,6 +135,33 @@ def connect(profile, password=None, known_hosts=DEFAULT_KNOWN_HOSTS, timeout=10)
     except paramiko.BadHostKeyException as e:
         client.close()
         raise HostKeyChanged(
-            f"Ключ хоста {profile.host} изменился! Возможна подмена машины. "
-            f"Если робот переустанавливали — удали его строку из {known_hosts}.") from e
+            t("rp.hostkey_changed", host=profile.host, path=known_hosts)) from e
+    enable_keepalive(client)
     return client
+
+
+def enable_keepalive(client, idle=10, interval=5, count=3):
+    """
+    A dead connection (robot powered off, Wi-Fi gone) is otherwise detected only by
+    the TCP timeout, tens of minutes. SSH keepalive keeps NAT/routers happy, TCP keepalive
+    drops the socket after about idle + interval*count seconds of silence from the other side.
+    """
+    import socket
+    tr = client.get_transport()
+    if tr is None:
+        return
+    tr.set_keepalive(idle)
+    sock = getattr(tr, "sock", None)
+    if sock is None or not hasattr(sock, "setsockopt"):
+        return
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        if hasattr(socket, "SIO_KEEPALIVE_VALS"):                        # Windows
+            sock.ioctl(socket.SIO_KEEPALIVE_VALS, (1, idle * 1000, interval * 1000))
+            return
+        for opt, val in (("TCP_KEEPIDLE", idle), ("TCP_KEEPALIVE", idle),   # Linux / macOS
+                         ("TCP_KEEPINTVL", interval), ("TCP_KEEPCNT", count)):
+            if hasattr(socket, opt):
+                sock.setsockopt(socket.IPPROTO_TCP, getattr(socket, opt), val)
+    except OSError:
+        pass                     # keepalive is a safety net, not a condition for connecting

@@ -1,22 +1,23 @@
 """
-RemoteSession — одна точка входа для UI: подключение, файлы, sync, сборка.
+RemoteSession: the single entry point for the UI: connection, files, sync, build.
 
-Раскладка на удалённой стороне (обычный colcon workspace):
-    <remote_workspace>/src/<pkg>/   ← сюда синхронизируется <project>/src
-    <remote_workspace>/build, install, log  ← colcon, sync их не трогает
+Layout on the remote side (a normal colcon workspace):
+    <remote_workspace>/src/<pkg>/   <- <project>/src is synced here
+    <remote_workspace>/build, install, log  <- colcon; sync never touches them
 """
 import os
-import re
 
 from core.remote.profile import connect as _connect
 from core.remote.providers import SSHProvider, SSHContainerProvider
 from core.remote.runner import RemoteRunner
 from core.remote.sync import sync_tree
+from core.generators.build_generator import package_name_from_dir
+from core.i18n import t
 
 
 def package_name_for(project_path):
-    """То же правило, что у генератора CMakeLists/package.xml."""
-    return re.sub(r"[^a-z0-9_]", "_", os.path.basename(os.path.normpath(project_path)).lower())
+    """Same rule as the CMakeLists/package.xml generator."""
+    return package_name_from_dir(project_path)
 
 
 class NotConnected(RuntimeError):
@@ -34,7 +35,7 @@ class RemoteSession:
         self._container = None
         self.runner = None
 
-    # ---------- подключение ----------
+    # ---------- connection ----------
 
     @property
     def connected(self):
@@ -58,9 +59,9 @@ class RemoteSession:
 
     def _require(self):
         if not self.connected:
-            raise NotConnected("нет подключения к удалённой цели")
+            raise NotConnected(t("rp.not_connected_error"))
 
-    # ---------- файлы ----------
+    # ---------- files ----------
 
     @property
     def local_src(self):
@@ -78,7 +79,7 @@ class RemoteSession:
         self._require()
         return self._container
 
-    # ---------- операции ----------
+    # ---------- operations ----------
 
     def sync(self, on_line=None, dry_run=False):
         self._require()
@@ -87,7 +88,7 @@ class RemoteSession:
         if on_line:
             on_line(f"Sync → {self.profile.display()}:{self.remote_src}  {report.summary()}")
             for rel, why in report.conflicts:
-                on_line(f"⚠ конфликт {rel}: {why}")
+                on_line(t("sync.conflict_line", path=rel, reason=why))
         return report
 
     def build(self, on_line, packages=None):

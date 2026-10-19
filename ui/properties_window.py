@@ -1,4 +1,4 @@
-from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6 import QtWidgets, QtCore
 from core.i18n import t
 from ui.fonts import MONO_CSS
 
@@ -15,11 +15,11 @@ class PropertiesWindow(QtWidgets.QWidget):
         
         layout = QtWidgets.QVBoxLayout(self)
         
-        # Вкладки: Параметры и Код
+        # tabs: Parameters and Code
         self.tabs = QtWidgets.QTabWidget()
         layout.addWidget(self.tabs)
         
-        # --- ВКЛАДКА ПАРАМЕТРОВ ---
+        # --- PARAMETERS TAB ---
         self.params_widget = QtWidgets.QWidget()
         params_vbox = QtWidgets.QVBoxLayout(self.params_widget)
         
@@ -36,12 +36,12 @@ class PropertiesWindow(QtWidgets.QWidget):
         
         self.tabs.addTab(self.params_widget, t("prop.tab_params"))
         
-        # --- ВКЛАДКА КОДА ---
+        # --- CODE TAB ---
         self.code_editor = QtWidgets.QTextEdit()
         self.code_editor.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: " + MONO_CSS + ";")
         self.tabs.addTab(self.code_editor, t("prop.tab_code"))
         
-        # Кнопки
+        # buttons
         btn_layout = QtWidgets.QHBoxLayout()
         self.add_param_btn = QtWidgets.QPushButton(t("prop.add_param"))
         self.add_param_btn.clicked.connect(self.add_custom_parameter)
@@ -54,9 +54,9 @@ class PropertiesWindow(QtWidgets.QWidget):
         btn_layout.addWidget(self.save_btn)
         layout.addLayout(btn_layout)
         
-        # Подписка на события обоих графов
+        # subscribe to both graphs
         for g in ([graph_py] if graph_py is graph_cpp else [graph_py, graph_cpp]):
-            g.node_selected.connect(self.on_node_selected)   # один граф — один раз
+            g.node_selected.connect(self.on_node_selected)   # one graph: connect once
 
     def on_node_selected(self, node):
         self.current_node = node
@@ -64,7 +64,7 @@ class PropertiesWindow(QtWidgets.QWidget):
         self.refresh_params()
 
     def set_node(self, node):
-        """Метод для явной установки ноды (например, при двойном клике)"""
+        """Sets the node explicitly (e.g. on double click)."""
         self.on_node_selected(node)
     def refresh_params(self):
         while self.params_layout.count():
@@ -74,16 +74,16 @@ class PropertiesWindow(QtWidgets.QWidget):
         if not self.current_node: return
         props = self.current_node.model.custom_properties
         
-        # Секция: Основные настройки
+        # section: basic settings
         self._add_section_label("--- General Settings ---")
         self._add_row("node_name", props.get("node_name", ""))
         
-        # Секция: Порты и Связи
+        # section: ports and connections
         self._add_section_label("--- Ports & Topics ---")
         if "topic_name" in props:
             self._add_row("topic_name", props.get("topic_name", ""))
         
-        # Секция: Пользовательские переменные
+        # section: user variables
         self._add_section_label("--- Custom Variables ---")
         for key, val in props.items():
             if key in ["node_name", "topic_name", "source_file", "code_content", "type", "group_uid", "saved_ports_config", "template_key"]: 
@@ -104,7 +104,7 @@ class PropertiesWindow(QtWidgets.QWidget):
         if not self.current_node: return
         name, ok = QtWidgets.QInputDialog.getText(self, t("prop.new_param_title"), t("prop.new_param_prompt"))
         if ok and name:
-            # Создаём свойство на ноде сразу, чтобы save_parameters не упал
+            # create the property on the node right away so save_parameters does not fail
             if not self.current_node.has_property(name):
                 try:
                     self.current_node.create_property(name, "")
@@ -115,7 +115,7 @@ class PropertiesWindow(QtWidgets.QWidget):
     def save_parameters(self):
         if not self.current_node: return
 
-        # 1. Сохраняем параметры из формы
+        # 1. Parameters from the form
         for i in range(self.params_layout.count()):
             label_item = self.params_layout.itemAt(i, QtWidgets.QFormLayout.LabelRole)
             field_item = self.params_layout.itemAt(i, QtWidgets.QFormLayout.FieldRole)
@@ -125,7 +125,7 @@ class PropertiesWindow(QtWidgets.QWidget):
                 val = field_item.widget().text()
                 self._safe_set(key, val)
 
-        # 2. Сохраняем код из редактора
+        # 2. Code from the editor
         new_code = self.code_editor.toPlainText()
         self._safe_set("code_content", new_code)
 
@@ -136,7 +136,7 @@ class PropertiesWindow(QtWidgets.QWidget):
             parent.system_log(t("prop.saved"))
 
     def _safe_set(self, key, val):
-        """set_property с гарантией, что свойство существует (NodeGraphQt требует)."""
+        """set_property, making sure the property exists (NodeGraphQt requires it)."""
         if not self.current_node.has_property(key):
             try:
                 self.current_node.create_property(key, val)

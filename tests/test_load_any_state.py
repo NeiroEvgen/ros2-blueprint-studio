@@ -1,7 +1,7 @@
 """
-Загрузка проекта принимает ЛЮБУЮ версию state.yaml: 3.6 (две вкладки) и 4 (один общий граф).
-Проект, сохранённый новым режимом, поэтому всегда открывается и в режиме двух вкладок.
-Реальные холсты NodeGraphQt (Qt offscreen).
+Loading a project accepts ANY state.yaml version: 3.6 (two tabs) and 4 (one shared graph).
+So a project saved in the new mode always opens in the two-tab mode too.
+Real NodeGraphQt canvases (Qt offscreen).
 """
 import os
 import pytest
@@ -67,7 +67,7 @@ def test_loads_v4_into_two_tabs(win, tmp_path):
 
 def test_v4_cpp_layout_offset_is_undone(win, tmp_path):
     a, b = _fill(win)
-    a.set_pos(10, 20); b.set_pos(10, 20)             # одинаковые позиции в двух вкладках
+    a.set_pos(10, 20); b.set_pos(10, 20)             # the same positions in two tabs
     merged, meta = graph_ir.merge_sessions(win.graph_py.serialize_session(), win.graph_cpp.serialize_session())
     path = _project(tmp_path, state_store.build_v4(merged, meta))
     win.graph_py.clear_session(); win.graph_cpp.clear_session()

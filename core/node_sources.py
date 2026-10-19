@@ -1,10 +1,10 @@
 """
-Ноды графа → файлы исходников.
+Graph nodes -> source files.
 
-  flatten_nodes()          — плоский список нод с namespace и деплой-группой (раскрывает группы)
-  process_and_save_files() — пишет <code_dir>/<node>.(cpp|py); диск — источник истины для кода
+  flatten_nodes()          — flat node list with namespace and deploy group (expands groups)
+  process_and_save_files() — writes <code_dir>/<node>.(cpp|py); the disk is the source of truth for code
 
-Без Qt, без docker. Граф сюда приходит уже сериализованным (dict).
+No Qt, no docker. The graph arrives here already serialized (dict).
 """
 import hashlib
 import logging
@@ -19,7 +19,7 @@ from core.generators.python_generator import PythonGenerator
 def _normalize_nodes(session_data):
     nodes = session_data.get('nodes', [])
     if isinstance(nodes, dict):
-        # ключ словаря — ID ноды; вписываем его внутрь
+        # the dict key is the node ID; put it inside the node
         tmp = []
         for node_id, node_val in nodes.items():
             if isinstance(node_val, dict):
@@ -44,12 +44,12 @@ def _walk(nodes, nodes_dict, current_ns, inherited_group, seen):
         nid = node.get('id')
         pgid = node.get('custom', {}).get('parent_group_id')
         if current_ns == "" and pgid:
-            continue                      # ребёнок группы: его выведет сама группа
+            continue                      # group child: the group itself emits it
         node_type = _node_type(node)
         if node_type in _SKIP_TYPES or 'meta' in node_type:
             continue
         if nid in seen:
-            continue                      # нода уже выведена (глубочайшей группой)
+            continue                      # node already emitted (by the deepest group)
         seen.add(nid)
 
         if node_type in _GROUP_TYPES:
@@ -59,18 +59,18 @@ def _walk(nodes, nodes_dict, current_ns, inherited_group, seen):
             new_ns = f"{current_ns}/{safe_group_name}".replace("//", "/")
 
             internal_ids = [i for i in custom.get('internal_nodes', []) if i in nodes_dict]
-            # Если группа перечисляет и вложенную группу, и её детей — ребёнок
-            # принадлежит самой глубокой группе, а не выводится дважды.
+            # If a group lists both a nested group and its children, the child
+            # belongs to the deepest group and is not emitted twice.
             nested = set()
             for i in internal_ids:
                 inner = nodes_dict[i]
                 if _node_type(inner) in _GROUP_TYPES:
                     nested.update(inner.get('custom', {}).get('internal_nodes', []))
             children = [nodes_dict[i] for i in internal_ids if i not in nested]
-            logging.debug(f"[FLATTEN] группа '{group_name}': детей={len(children)}, ns='{new_ns}'")
+            logging.debug(f"[FLATTEN] group '{group_name}': children={len(children)}, ns='{new_ns}'")
 
-            # Деплой-группа детей: явная у самой группы → иначе (вложенная) унаследованная от
-            # внешней → иначе имя группы верхнего уровня. Так же считают файлы и launch.
+            # Deploy group of the children: the group's explicit one -> otherwise (nested) inherited from
+            # the outer group -> otherwise the top-level group name. Files and launch use the same rule.
             group_container = (custom.get('container_group')
                                or (inherited_group if current_ns else safe_group_name.lower()))
             flat.extend(_walk(children, nodes_dict, new_ns, group_container, seen))
@@ -82,9 +82,9 @@ def _walk(nodes, nodes_dict, current_ns, inherited_group, seen):
 
 def flatten_nodes(session_data, current_ns="", inherited_group="main"):
     """
-    Собирает все ноды сессии, раскрывая группы (в том числе вложенные).
-    Возвращает список: [{'node':..., 'namespace':..., 'container_group':...}]
-    Каждая нода выводится ровно один раз — в самой глубокой своей группе.
+    Collects all session nodes, expanding groups (nested ones too).
+    Returns a list: [{'node':..., 'namespace':..., 'container_group':...}]
+    Every node is emitted exactly once, in its deepest group.
     """
     nodes = _normalize_nodes(session_data)
     nodes_dict = {n['id']: n for n in nodes}
@@ -92,32 +92,30 @@ def flatten_nodes(session_data, current_ns="", inherited_group="main"):
 
 
 def process_and_save_files(session_data, target_dir, project_type):
-    """Сессия графа → файлы в target_dir (раскрывает группы и вызывает process_flat_nodes)."""
+    """Graph session -> files in target_dir (expands groups and calls process_flat_nodes)."""
     try:
         flat_nodes = flatten_nodes(session_data)
-        logging.debug(f"[PROC DEBUG] flat_nodes получено: {len(flat_nodes)}")
-    except Exception as e:
-        logging.debug(f"[PROC DEBUG] flatten_nodes УПАЛ: {e}")
-        traceback.print_exc()
+    except Exception:
+        logging.exception("flatten_nodes failed, nothing generated")
         flat_nodes = []
     return process_flat_nodes(flat_nodes, target_dir, project_type)
 
 
 def code_hash(text):
-    """Отпечаток кода без различий в переводах строк (Windows пишет \\r\\n, читает \\n)."""
+    """Code fingerprint that ignores line endings (Windows writes \\r\\n, reads \\n)."""
     return hashlib.sha1((text or "").replace("\r\n", "\n").encode("utf-8")).hexdigest()
 
 
 def choose_code(node_code, disk_code, synced_hash):
     """
-    Чей код записывать: правка в Studio (node_code) или файл на диске (disk_code).
-    synced_hash — отпечаток кода при последней синхронизации узла с файлом.
-      узел не менялся           → побеждает диск (правка в IDE / внешняя);
-      менялся узел, диск — нет  → побеждает узел (правка в окне свойств);
-      менялись оба              → диск (чужие данные не затираем), причина "conflict".
-    Без отпечатка (старый проект, состояние неизвестно) — диск: не затираем чужие правки;
-    отпечаток появится после первого же сохранения.
-    Возвращает (код, причина).
+    Whose code to write: the Studio edit (node_code) or the file on disk (disk_code).
+    synced_hash is the code fingerprint at the node's last sync with the file.
+      node unchanged               -> disk wins (edit in an IDE / external);
+      node changed, disk did not   -> node wins (edit in the properties window);
+      both changed                 -> disk (never overwrite someone else's data), reason "conflict".
+    Without a fingerprint (old project, state unknown): disk, do not overwrite other edits;
+    the fingerprint appears after the first save.
+    Returns (code, reason).
     """
     if not disk_code or not disk_code.strip():
         return node_code, "no_disk"
@@ -133,11 +131,11 @@ def choose_code(node_code, disk_code, synced_hash):
 
 
 def process_flat_nodes(flat_nodes, target_dir, project_type):
-    """Плоский список нод ([{'node','namespace',...}]) → файлы <target_dir>/<node>.(cpp|py)."""
+    """Flat node list ([{'node','namespace',...}]) -> files <target_dir>/<node>.(cpp|py)."""
     is_cpp_mode = (project_type == "cpp")
     forced_extension = ".cpp" if is_cpp_mode else ".py"
 
-    # Инициализируем генератор
+    # template generator
     project_name = os.path.basename(os.path.dirname(target_dir))
     generator = CppGenerator(project_name) if is_cpp_mode else PythonGenerator(project_name)
 
@@ -151,13 +149,13 @@ def process_flat_nodes(flat_nodes, target_dir, project_type):
         custom = node.get('custom', {})
         visual_name = node.get('name', 'Unnamed')
 
-        logging.debug(f"[GROUP DEBUG] нода '{visual_name}' namespace='{namespace}' -> group='{container_group}'")
+        logging.debug(f"node '{visual_name}' namespace='{namespace}' -> group='{container_group}'")
     
         bound = (custom.get('bound_file') or '').replace('\\', '/').strip('/')
         if bound:
-            # нода привязана к файлу «на месте» (зелёная отметка): код живёт по этому пути
+            # node bound to a file in place (green mark): its code lives at that path
             if not bound.endswith(('.cpp', '.cc', '.cxx') if is_cpp_mode else ('.py',)):
-                continue                                  # файл другого языка — не для этого прохода
+                continue                                  # a file of the other language: not for this pass
             file_path = os.path.normpath(os.path.join(os.path.dirname(target_dir), bound))
             filename = os.path.basename(bound)
             used_names.add(bound)
@@ -171,13 +169,13 @@ def process_flat_nodes(flat_nodes, target_dir, project_type):
                 n = 2
                 while f"{base_name}_{n}{forced_extension}" in used_names:
                     n += 1
-                logging.warning(f"Имя файла '{filename}' уже занято другой нодой — '{visual_name}' "
-                                f"получит '{base_name}_{n}{forced_extension}'")
+                logging.warning(f"File name '{filename}' is taken by another node; '{visual_name}' "
+                                f"gets '{base_name}_{n}{forced_extension}'")
                 filename = f"{base_name}_{n}{forced_extension}"
             used_names.add(filename)
             file_path = os.path.join(target_dir, filename)
 
-        # Сбор данных для Jinja2 шаблона
+        # data for the Jinja2 template
         node_data = {
             'name': custom.get('node_name', visual_name),
             'namespace': namespace,
@@ -185,14 +183,14 @@ def process_flat_nodes(flat_nodes, target_dir, project_type):
             'subscribers': []
         }
         
-        # Парсим порты для определения паблишеров/подписчиков
+        # ports -> publishers / subscribers
         for port in node.get('ports', []):
             port_name = port.get('name', 'port')
-            # Очистка имени порта для использования в коде
+            # port name usable as an identifier in code
             safe_port_name = re.sub(r'[^a-zA-Z0-9_]', '_', port_name).lower()
             
-            # Если нода внутри сабграфа, топик должен учитывать неймспейс, 
-            # если только это не глобальный топик (начинается с /)
+            # Inside a subgraph the topic gets the namespace,
+            # unless it is a global topic (starts with /)
             topic_name = port_name
             if namespace and not topic_name.startswith('/'):
                 topic_name = f"{namespace}/{topic_name}"
@@ -209,7 +207,7 @@ def process_flat_nodes(flat_nodes, target_dir, project_type):
                     disk_code = df.read()
                 existing_code, why = choose_code(existing_code, disk_code, custom.get('code_sync_hash'))
                 if why == "conflict":
-                    logging.warning(f"{filename}: изменён и в Studio, и на диске — взята версия с диска")
+                    logging.warning(f"{filename}: changed both in Studio and on disk; the disk version wins")
                 custom['code_content'] = existing_code
         except Exception as e:
             logging.warning(f"Disk re-read skipped for {filename}: {e}")
@@ -254,11 +252,11 @@ def process_flat_nodes(flat_nodes, target_dir, project_type):
                 try:
                     with open(file_path, 'w', encoding='utf-8') as f:
                         f.write(code_to_write)
-                    logging.info(f"Сгенерирован/обновлен файл: {filename}")
+                    logging.info(f"File generated/updated: {filename}")
                 except Exception as e:
                     logging.error(f"Write error {filename}: {e}")
             else:
-                logging.info(f"Пропущен (нет изменений): {filename}")
+                logging.info(f"Skipped (no changes): {filename}")
 
     return created
 

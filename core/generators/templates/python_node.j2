@@ -6,7 +6,7 @@ class {{ class_name }}(Node):
     def __init__(self):
         super().__init__('{{ node_name }}')
         
-        # Параметры ROS 2
+        # ROS 2 parameters
         {% for param in parameters %}
         self.declare_parameter('{{ param.name }}', {{ param.value if param.type != 'string' else "'" + param.value + "'" }})
         self.{{ param.name }} = self.get_parameter('{{ param.name }}').value

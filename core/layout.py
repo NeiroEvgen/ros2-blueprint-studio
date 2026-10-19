@@ -1,14 +1,14 @@
 """
-Раскладка папок проекта — единственный источник путей + миграция старых проектов.
+Project folder layout: the single source of paths + migration of old projects.
 
     <project>/
-      src/              ← всё, с чем работает ROS 2 (код, launch, CMakeLists, package.xml)
+      src/              <- everything ROS 2 works with (code, launch, CMakeLists, package.xml)
         cpp|python/  launch/  include/ ...
-      docker/           ← docker-compose.yaml шаблон
-      .blueprint/       ← состояние редактора (state.yaml), legacy_backup/
-      Dockerfile, docker-compose.yml   ← пока в корне (отдельное решение)
+      docker/           <- docker-compose.yaml template
+      .blueprint/       <- editor state (state.yaml), legacy_backup/
+      Dockerfile, docker-compose.yml   <- in the root for now (separate decision)
 
-Чистая логика: без Qt и docker.
+Pure logic: no Qt, no docker.
 """
 import filecmp
 import os
@@ -19,7 +19,7 @@ from typing import List, Optional
 
 from core.i18n import t
 
-# Что считается «ROS-мусором в корне» у старых проектов.
+# What counts as "ROS clutter in the root" in old projects.
 LEGACY_ROOT_FILES = ("CMakeLists.txt", "package.xml")
 LEGACY_ROOT_DIRS = ("launch", "cpp", "python", "include", "scripts", "test",
                     "config", "msg", "srv", "urdf", "lib", "kinematics_lib")
@@ -41,11 +41,11 @@ class ProjectLayout:
     backup_root = property(lambda s: os.path.join(s.blueprint, "legacy_backup"))
 
     def code_dir(self, language: str) -> str:
-        """Папка исходников языка: 'cpp' → src/cpp, остальное → src/python."""
+        """Source folder of a language: 'cpp' -> src/cpp, anything else -> src/python."""
         return os.path.join(self.src, "cpp" if language == "cpp" else "python")
 
     def code_dirs(self, project_type: str):
-        """Папки кода проекта: 'mixed' → обе."""
+        """Code folders of the project: 'mixed' -> both."""
         langs = ("cpp", "python") if project_type == "mixed" else (("cpp",) if project_type == "cpp" else ("python",))
         return [self.code_dir(l) for l in langs]
 
@@ -54,7 +54,7 @@ class ProjectLayout:
             os.makedirs(d, exist_ok=True)
 
     def legacy_items(self) -> List[str]:
-        """Относительные пути (от корня, всегда через «/») старых ROS-файлов вне src/."""
+        """Relative paths (from the root, always with "/") of old ROS files outside src/."""
         found = []
         if not os.path.isdir(self.root):
             return found
@@ -76,9 +76,9 @@ class ProjectLayout:
 
 @dataclass
 class MigrationReport:
-    moved: List[str] = field(default_factory=list)       # перенесено в src/
-    identical: List[str] = field(default_factory=list)   # дубль src/, убрано из корня
-    conflicts: List[str] = field(default_factory=list)   # отличается от src/: src оставлен, корневая копия в backup
+    moved: List[str] = field(default_factory=list)       # moved into src/
+    identical: List[str] = field(default_factory=list)   # duplicate of src/, removed from the root
+    conflicts: List[str] = field(default_factory=list)   # differs from src/: src kept, root copy in backup
     backup_dir: Optional[str] = None
     dry_run: bool = False
 
@@ -113,12 +113,12 @@ def _prune_empty(path: str, stop: str) -> None:
 
 def migrate(root: str, dry_run: bool = False) -> MigrationReport:
     """
-    Приводит старый проект к новой раскладке. Безопасно и идемпотентно:
-      * каждый затрагиваемый файл сначала копируется в .blueprint/legacy_backup/<stamp>/;
-      * файл переносится в src/ только если там нет такого же пути;
-      * идентичный дубль — удаляется из корня;
-      * отличающийся — src/ побеждает, корневая версия остаётся только в backup.
-    Если нечего мигрировать — ничего не создаётся.
+    Brings an old project to the new layout. Safe and idempotent:
+      * every affected file is first copied to .blueprint/legacy_backup/<stamp>/;
+      * a file moves into src/ only if that path does not exist there;
+      * an identical duplicate is removed from the root;
+      * a differing one: src/ wins, the root version stays only in the backup.
+    If there is nothing to migrate, nothing is created.
     """
     lay = ProjectLayout(root)
     rep = MigrationReport(dry_run=dry_run)
@@ -156,9 +156,9 @@ def migrate(root: str, dry_run: bool = False) -> MigrationReport:
 
 if __name__ == "__main__":
     import argparse
-    ap = argparse.ArgumentParser(description="Миграция проекта Studio на раскладку src/")
+    ap = argparse.ArgumentParser(description="Migrate a Studio project to the src/ layout")
     ap.add_argument("project")
-    ap.add_argument("--dry-run", action="store_true", help="только показать, что будет сделано")
+    ap.add_argument("--dry-run", action="store_true", help="only show what would be done")
     a = ap.parse_args()
     rep = migrate(a.project, dry_run=a.dry_run)
     for tag, lst in (("move", rep.moved), ("dup-removed", rep.identical), ("conflict(src kept)", rep.conflicts)):

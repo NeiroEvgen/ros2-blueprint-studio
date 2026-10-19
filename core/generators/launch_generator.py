@@ -1,4 +1,4 @@
-"""Генератор launch-файла проекта. Чистая логика: без Qt и без ui/."""
+"""Project launch file generator. Pure logic: no Qt, no ui/."""
 import os
 
 CONTAINER_PYTHON_DIR = "/root/ros2_ws/src/user_project/python"
@@ -10,7 +10,7 @@ class LaunchCompiler:
         self.package_name = package_name
 
     def compile(self):
-        r = repr  # корректно экранирует кавычки/юникод в строковых литералах
+        r = repr  # escapes quotes/unicode in string literals correctly
         code = "import os\n"
         code += "from launch import LaunchDescription\n"
         code += "from launch_ros.actions import Node\n"
@@ -49,7 +49,7 @@ class LaunchCompiler:
 
 
 def group_files(created_files):
-    """{группа: [файлы]} — порядок групп по первому появлению, дефолт 'main'."""
+    """{group: [files]}: groups in order of first appearance, default 'main'."""
     groups = {}
     for cf in created_files:
         groups.setdefault(cf.get('group', 'main'), []).append(cf)
@@ -58,8 +58,8 @@ def group_files(created_files):
 
 def build_launch_files(created_files, package_name):
     """
-    Чистая функция: {имя_файла: содержимое} для всех launch-файлов проекта —
-    общий project_launch.py и по одному <группа>_launch.py на деплой-группу.
+    Pure function: {file_name: content} for all launch files of the project:
+    the shared project_launch.py and one <group>_launch.py per deploy group.
     """
     out = {"project_launch.py": LaunchCompiler(created_files, package_name).compile()}
     for gname, gfiles in group_files(created_files).items():
@@ -68,7 +68,7 @@ def build_launch_files(created_files, package_name):
 
 
 def write_launch_files(launch_dir, created_files, package_name):
-    """Пишет launch-файлы в launch_dir и чистит __pycache__. Возвращает группы (для compose)."""
+    """Writes the launch files into launch_dir and cleans __pycache__. Returns the groups (for compose)."""
     import shutil
     os.makedirs(launch_dir, exist_ok=True)
     pycache = os.path.join(launch_dir, "__pycache__")
@@ -88,8 +88,8 @@ _GENERATED_HEADER = ("import os\nfrom launch import LaunchDescription\n"
 
 def remove_stale_group_launches(launch_dir, keep):
     """
-    Удаляет <группа>_launch.py удалённых групп. Трогаем только файлы с заголовком,
-    который пишет сам генератор: launch-файлы, написанные вручную, остаются.
+    Removes <group>_launch.py of deleted groups. Only files with the header the generator
+    writes itself are touched: hand-written launch files stay.
     """
     removed = []
     try:

@@ -15,7 +15,7 @@ def test_new_project_has_clean_layout(ws, ptype):
     path = WorkspaceManager.create_project("demo", ptype)
     top = set(os.listdir(path))
     assert {"src", "docker", ".blueprint", "project_config.json"} <= top
-    # никакого ROS-мусора в корне
+    # no ROS clutter in the root
     assert not top & {"launch", "CMakeLists.txt", "package.xml", "cpp", "include"}
     assert os.path.isdir(os.path.join(path, "src", "launch"))
     assert not ProjectLayout(path).is_legacy()

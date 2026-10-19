@@ -1,10 +1,10 @@
 """
-Сквозной сценарий remote workspace на НАСТОЯЩЕМ sshd:
-connect → sync → build (с ошибкой компиляции) → правка → sync → build ок.
+End-to-end remote workspace scenario on a REAL sshd:
+connect -> sync -> build (with a compile error) -> edit -> sync -> build ok.
 
-colcon подменяется фейком через ros_setup: этот скрипт source-ится перед
-сборкой и кладёт фейковый colcon в PATH. Фейк проверяет, что запущен в
-workspace и что исходники реально доехали в src/<pkg>.
+colcon is replaced by a fake via ros_setup: that script is sourced before
+the build and puts a fake colcon on PATH. The fake checks that it runs in the
+workspace and that the sources really arrived in src/<pkg>.
 """
 import os
 import stat
@@ -78,7 +78,7 @@ def test_full_cycle(remote_env):
     assert s.build(lines.append) == 0
     assert lines[-1] == f"Finished <<< {pkg}"
 
-    # ломаем код → ошибка компиляции должна прийти в лог целиком
+    # break the code -> the compile error must reach the log in full
     (project / "src" / "cpp" / "Node.cpp").write_text("int main(){\n  BROKEN;\n}\n")
     assert s.sync().uploaded == ["cpp/Node.cpp"]
     lines = []
@@ -87,7 +87,7 @@ def test_full_cycle(remote_env):
     assert any("error: 'BROKEN' was not declared" in l for l in lines)
     assert lines[-1] == f"Failed   <<< {pkg}"
 
-    # чиним → зелёная сборка
+    # fix it -> green build
     (project / "src" / "cpp" / "Node.cpp").write_text("int main(){\n  return 0;\n}\n")
     s.sync()
     assert s.build(lambda l: None) == 0

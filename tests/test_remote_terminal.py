@@ -1,6 +1,6 @@
 """
-Консоль на удалённой цели: сборка команды ssh, проверка опасных значений,
-выбор терминала по ОС. Ничего реально не запускается (Popen подменён).
+Console on the remote target: building the ssh command, checking dangerous values,
+choosing the terminal by OS. Nothing is really started (Popen is faked).
 """
 import os
 import subprocess
@@ -36,7 +36,7 @@ class TestSshArgv:
         assert a[-1] == "docker exec -it demo_run bash -l"
 
     def test_no_password_anywhere(self):
-        # у профиля нет поля пароля; в argv его быть не может
+        # the profile has no password field; it cannot be in argv
         assert not any("pass" in x.lower() for x in ssh_argv(prof()))
 
 

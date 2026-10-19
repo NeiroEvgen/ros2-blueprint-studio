@@ -1,7 +1,7 @@
 from ..base import RosNodeBase
 
 class CppTimerNode(RosNodeBase):
-    __identifier__ = 'ros.cpp' # ВАЖНО: Явно указываем C++
+    __identifier__ = 'ros.cpp' # IMPORTANT: explicitly C++
     NODE_NAME = 'Cpp Timer'
     
     def __init__(self):
@@ -9,7 +9,7 @@ class CppTimerNode(RosNodeBase):
         self.add_text_input('node_name', 'Name', text='cpp_timer')
         self.add_text_input('interval', 'Interval (s)', text='1.0')
         self.add_exec_output('ExecOut') 
-        # Шаблон ищется в CPP_TEMPLATES
+        # the template is looked up in CPP_TEMPLATES
         self._init_template('Timer')
         self.set_color(20, 100, 20)
 

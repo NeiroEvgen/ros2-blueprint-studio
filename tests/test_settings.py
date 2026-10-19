@@ -32,7 +32,7 @@ def test_set_unknown_key_rejected():
 
 def test_unwritable_dir_returns_false(monkeypatch, tmp_path):
     f = tmp_path / "file"; f.write_text("x")
-    monkeypatch.setenv("STUDIO_SETTINGS_DIR", str(f / "sub"))     # родитель — файл
+    monkeypatch.setenv("STUDIO_SETTINGS_DIR", str(f / "sub"))     # the parent is a file
     assert settings.set("language", "ru") is False
 
 

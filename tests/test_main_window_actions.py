@@ -1,6 +1,6 @@
 """
-Главное окно: верхние кнопки Open/Save раньше не были подключены; Run падал с
-TypeError, если save_project вернул False. Qt offscreen, Docker подменён.
+Main window: the Open/Save toolbar buttons used not to be connected; Run failed with
+TypeError if save_project returned False. Qt offscreen, Docker faked.
 """
 import os
 import types
@@ -88,14 +88,14 @@ class TestToolbarButtons:
 
 class TestRunWithFailedSave:
     def test_run_does_not_crash_when_save_fails(self, win):
-        win.container_manager = types.SimpleNamespace()      # Docker «есть»
-        win.project_manager.save_project = lambda p: False   # раньше: TypeError
+        win.container_manager = types.SimpleNamespace()      # Docker "is there"
+        win.project_manager.save_project = lambda p: False   # used to be a TypeError
         win.on_run_project()
         assert any("Aborting run" in m for m in win._logs)
 
 
 class TestYamlKeepsCyrillic:
-    """yaml.dump без allow_unicode превращал кириллицу в \\u04xx (грязные diff в git)."""
+    """yaml.dump without allow_unicode turned Cyrillic into \\u04xx (noisy git diffs)."""
 
     def test_save_node_to_palette_writes_readable_yaml(self, win, tmp_path, monkeypatch):
         import inspect
@@ -146,7 +146,7 @@ class TestSaveWarnings:
 
 
 class TestLogsFollowLanguage:
-    """Сообщения главного окна идут через словарь: тот же сценарий на двух языках."""
+    """Main window messages go through the dictionary: the same scenario in two languages."""
 
     def test_no_project_message_in_both_languages(self, win):
         from core import i18n
@@ -161,7 +161,7 @@ class TestLogsFollowLanguage:
         i18n.set_language("en")
 
     def test_context_menu_labels_localized(self, win):
-        """Контекстное меню графа строится из словаря (язык задан при старте)."""
+        """The graph context menu is built from the dictionary (language set at startup)."""
         from core import i18n
         from core.i18n import t
         assert t("menu.restart_node") == "Restart Node"
@@ -169,3 +169,82 @@ class TestLogsFollowLanguage:
         assert t("menu.restart_node") == "Перезапустить ноду"
         assert t("menu.add_port", name="String") == "Добавить String"
         i18n.set_language("en")
+
+
+class TestManualRescan:
+    """Rescan looked for the file in src/<file>, but it lives in src/python|cpp/, and silently did nothing."""
+
+    @pytest.fixture
+    def loaded(self, app, tmp_path):
+        import shutil
+        from ui import main_window as mw
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        proj = tmp_path / "py_pubsub"
+        shutil.copytree(os.path.join(root, "examples", "py_pubsub"), proj)
+        w = mw.RosVisualRunner()
+        w.on_load_project_init(str(proj))
+        logs = []
+        w.system_log = logs.append
+        w._logs = logs
+        yield w, proj
+        w._mark_clean()
+        w.close()
+
+    def _talker(self, w):
+        return next(n for g in w.graphs.all() for n in g.all_nodes()
+                    if (n.get_property('source_file') if n.has_property('source_file') else "") == "talker.py")
+
+    def test_rescan_reads_file_from_code_dir(self, loaded):
+        w, proj = loaded
+        node = self._talker(w)
+        path = proj / "src" / "python" / "talker.py"
+        code = path.read_text(encoding="utf-8").replace(
+            "create_publisher(String, '/chatter', 10)",
+            "create_publisher(String, '/chatter', 10)\n        self.p2 = self.create_publisher(String, 'status', 10)")
+        assert "'status'" in code
+        path.write_text(code, encoding="utf-8")
+        node.set_selected(True)
+        w.on_manual_rescan(node.graph)
+        assert "status" in [p.name() for p in node.output_ports()]
+        assert any("talker.py" in m for m in w._logs)
+
+    def test_rescan_reports_missing_file(self, loaded):
+        w, proj = loaded
+        node = self._talker(w)
+        os.remove(proj / "src" / "python" / "talker.py")
+        node.set_selected(True)
+        w.on_manual_rescan(node.graph)
+        assert any("not found" in m for m in w._logs)
+
+
+class TestNodeMenuCommands:
+    """Restart/Freeze from the menu: the right spec, off the UI thread, no crash without Docker."""
+
+    def _node(self, win, type_="ros.cpp.CppCustomNode", source="talker.cpp"):
+        g = win.graphs.all()[0]
+        n = g.create_node(type_, name="Talker")
+        if not n.has_property("source_file"):
+            n.create_property("source_file", source)
+        n.set_property("source_file", source)
+        n.set_selected(True)
+        return g, n
+
+    def test_restart_passes_launch_spec_in_background(self, win):
+        calls = []
+        win.process_manager = types.SimpleNamespace(
+            restart_node=lambda name, log, rebuild_cpp=False, spec=None: calls.append((name, rebuild_cpp, spec)))
+        g, n = self._node(win)
+        win.on_restart_selected(g)
+        win._bg_tasks.wait_all(5000)
+        pkg = os.path.basename(win.current_project_path)
+        assert calls == [("Talker", True, {"language": "cpp", "package_name": pkg, "entry": "talker"})]
+
+    def test_freeze_without_docker_reports(self, win):
+        from core.process_manager import ProcessManager
+        win.process_manager = ProcessManager(None)
+        g, n = self._node(win, "ros.cpp.CppCustomNode", "cam.cpp")
+        win._is_lifecycle_node = lambda node: True
+        win.on_freeze_selected(g, "deactivate")
+        win._bg_tasks.wait_all(5000)
+        QtWidgets.QApplication.processEvents()
+        assert any("Run" in m for m in win._logs)

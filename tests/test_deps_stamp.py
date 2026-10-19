@@ -1,4 +1,4 @@
-"""Пропуск apt/rosdep, если package.xml и доп. пакеты не менялись (экономит ~25 с на запуск)."""
+"""Skip apt/rosdep if package.xml and the extra packages have not changed (saves ~25 s per run)."""
 import os
 import stat
 import subprocess
@@ -13,7 +13,7 @@ DIGEST = b"a" * 64 + b"  -\n"
 
 
 class Fake:
-    """exec_run-двойник: помнит команды; отметка 'есть' по флагу."""
+    """exec_run double: remembers commands; the stamp "exists" by a flag."""
     def __init__(self, stamped=False, digest=DIGEST):
         self.stamped, self.digest, self.calls = stamped, digest, []
 

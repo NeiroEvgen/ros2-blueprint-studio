@@ -1,11 +1,11 @@
 """
 1.3 — apt_safe.
 
-Сниппет исполняется в НАСТОЯЩЕМ bash с поддельным apt-get на PATH:
-проверяем поведение (ретраи, коды выхода), а не текст команды.
+The snippet runs in a REAL bash with a fake apt-get on PATH:
+we check the behaviour (retries, exit codes), not the command text.
 
-Плюс критерий приёмки: в docker_manager.py не осталось прямых вызовов
-apt-get — все рантайм-вызовы идут через core/apt_safe.
+Plus an acceptance criterion: docker_manager.py has no direct apt-get
+calls left; all runtime calls go through core/apt_safe.
 """
 import os
 import re
@@ -67,7 +67,7 @@ class TestBehaviour:
         assert (tmp_path / "counter").read_text().strip() == "3"
 
     def test_real_error_fails_fast_without_retry(self, tmp_path):
-        """Опечатка в имени пакета не должна крутиться минуту."""
+        """A typo in a package name must not spin for a minute."""
         bindir = _fake_apt(tmp_path, REAL_ERROR)
         r = _run(apt_snippet(["ros-humble-typo"], update=False, delay=0),
                  bindir, tmp_path)
@@ -102,7 +102,7 @@ class TestBehaviour:
         assert cmd[:2] == ["bash", "-c"] and len(cmd) == 3
 
     def test_snippet_has_no_single_quotes(self):
-        """Можно вкладывать в bash -c '...' при композиции с rosdep."""
+        """Can be nested in bash -c '...' when composed with rosdep."""
         assert "'" not in apt_snippet(["pkg-a"], update=True)
 
 
@@ -144,10 +144,10 @@ class TestMissingCheck:
 class TestAcceptance:
 
     def test_no_direct_apt_get_in_docker_manager(self):
-        """Критерий приёмки 1.3."""
+        """Acceptance criterion."""
         src = open(os.path.join(ROOT, "core", "docker_manager.py"), encoding="utf-8").read()
         hits = [l.strip() for l in src.splitlines() if "apt-get" in l]
-        assert hits == [], f"прямые вызовы apt-get: {hits}"
+        assert hits == [], f"direct apt-get calls: {hits}"
 
     def test_no_fuser_lock_polling_left(self):
         src = open(os.path.join(ROOT, "core", "docker_manager.py"), encoding="utf-8").read()

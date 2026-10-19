@@ -1,13 +1,13 @@
 """
-1.2 — кастомный образ blueprint-studio:humble.
+Custom image blueprint-studio:humble.
 
-Критерий приёмки: после docker rm -f и нового Run пакеты на месте без
-единого apt install. Реальную сборку образа здесь не проверить (нет
-Docker-демона) — проверяем всё, что вокруг неё:
-- студия выбирает студийный образ, если он собран, и откатывается иначе
-- на студийном образе пакеты сессии не доустанавливаются
-- всё, что студия ждёт в сессии, реально запечено в Dockerfile.studio
-- проектные образы наследуются от студийного через ARG BASE_IMAGE
+Acceptance criterion: after docker rm -f and a new Run the packages are there without
+a single apt install. The real image build cannot be checked here (no
+Docker daemon), so everything around it is checked:
+- Studio picks the studio image if it is built and falls back otherwise
+- on the studio image session packages are not installed again
+- everything Studio expects in a session is really baked into Dockerfile.studio
+- project images inherit from the studio image via ARG BASE_IMAGE
 """
 import os
 import re
@@ -48,9 +48,9 @@ class TestBakedPackages:
                               text))
 
     def test_session_packages_are_baked(self, baked):
-        """Иначе на студийном образе apt всё равно полезет при каждой сессии."""
+        """Otherwise apt would still run on the studio image for every session."""
         missing = set(RosContainerManager.SESSION_PACKAGES) - baked
-        assert not missing, f"не запечены: {missing}"
+        assert not missing, f"not baked in: {missing}"
 
     @pytest.mark.parametrize("pkg", [
         "ros-humble-moveit",
@@ -70,11 +70,11 @@ class TestBakedPackages:
 
     def test_bat_is_ascii(self):
         raw = open(os.path.join(ROOT, "docker_image", "build_studio_image.bat"), "rb").read()
-        raw.decode("ascii")   # кириллицу cmd.exe превращает в мусор
+        raw.decode("ascii")   # cmd.exe turns Cyrillic into garbage
 
     @requires_posix_shell
     def test_sh_is_executable(self):
-        # На Windows у .sh нет бита исполнения — проверять нечего
+        # On Windows a .sh has no executable bit: nothing to check
         assert os.access(os.path.join(ROOT, "docker_image", "build_studio_image.sh"), os.X_OK)
 
 
@@ -115,7 +115,7 @@ class TestManagerImageFlow:
 
     def test_ensure_image_never_pulls_studio(self):
         m = _manager(set())
-        m.image_name = STUDIO_IMAGE          # как будто образ удалили после старта
+        m.image_name = STUDIO_IMAGE          # as if the image was removed after start
         m.ensure_image(lambda msg: None)
         assert STUDIO_IMAGE not in m.client.images.pulled
         assert m.image_name == FALLBACK_IMAGE
@@ -154,7 +154,7 @@ class TestProjectDockerfile:
         assert lines[1] == "FROM ${BASE_IMAGE}"
 
     def test_manual_block_survives_auto_regeneration(self, tmp_path):
-        """Существующее поведение: смена графа не трогает библиотеки из Library."""
+        """Existing behaviour: changing the graph does not touch the libraries from Library."""
         dm = DockerfileManager(str(tmp_path))
         dm.ensure_exists()
         dm.add_manual_library("apt", "libyaml-cpp-dev")

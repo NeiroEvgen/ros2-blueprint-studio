@@ -1,13 +1,13 @@
 """
-0.1 — Страховочная сетка на генераторы.
+Safety net for the generators.
 
-ПРАВИЛО ЭТОГО ФАЙЛА: тесты фиксируют СУЩЕСТВУЮЩЕЕ поведение и должны
-проходить на текущем коде без его правок. Если тест падает на работающем
-коде — неверен тест, а не код.
+RULE OF THIS FILE: the tests pin EXISTING behaviour and must
+pass on the current code without changing it. If a test fails on working
+code, the test is wrong, not the code.
 
-Известные дыры (поведения, которого ещё нет) оформляются как xfail(strict=True):
-они документируют пробел и «покраснеют», когда фича появится — сигнал снять пометку.
-Сейчас дыр нет: yaml-cpp и multi-file executable реализованы.
+Known gaps (behaviour that does not exist yet) are written as xfail(strict=True):
+they document the gap and "turn red" when the feature appears, a signal to remove the mark.
+There are no gaps right now: yaml-cpp and multi-file executables are implemented.
 """
 import re
 import pytest
@@ -24,7 +24,7 @@ def _executables(cmake_text):
 
 
 # ------------------------------------------------------------------
-# CMake-генератор: что становится executable
+# CMake generator: what becomes an executable
 # ------------------------------------------------------------------
 
 class TestCmakeExecutables:
@@ -102,7 +102,7 @@ class TestCmakeExecutables:
 
 
 # ------------------------------------------------------------------
-# Резолвер зависимостей
+# dependency resolver
 # ------------------------------------------------------------------
 
 class TestDependencyResolver:
@@ -146,7 +146,7 @@ class TestDependencyResolver:
         code = "import os\nimport sys\nfrom typing import List\n"
         assert resolver.scan_includes(code, "python") == []
 
-    # ---- известные дыры: поведения ещё нет ----
+    # ---- known gaps: behaviour that does not exist yet ----
 
     def test_yaml_cpp_gives_find_package_and_link(self, pm, cpp_project):
         src, add = cpp_project

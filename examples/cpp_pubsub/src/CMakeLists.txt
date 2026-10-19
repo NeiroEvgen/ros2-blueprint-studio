@@ -29,7 +29,7 @@ install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 # === BLUEPRINT AUTO END ===
 
 # === BLUEPRINT USER BEGIN — never touched by the generator ===
-# Сюда пиши всё, что генератор не знает сам. Примеры:
+# Put here everything the generator does not know about. Examples:
 #   target_sources(MyNode PRIVATE cpp/kinematics_lib/trajectory_solver.cpp)
 #   find_package(yaml-cpp REQUIRED)
 #   target_link_libraries(MyNode yaml-cpp)

@@ -1,4 +1,4 @@
-"""GraphSet: единая точка доступа к холстам (подготовка к одному общему холсту)."""
+"""GraphSet: the single access point to the canvases (groundwork for one shared canvas)."""
 import os
 import pytest
 

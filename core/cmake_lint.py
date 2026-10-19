@@ -1,4 +1,4 @@
-"""Лёгкий линтер CMakeLists: ловит типичные поломки ament-проектов до colcon."""
+"""Lightweight CMakeLists linter: catches typical ament project breakages before colcon."""
 import re
 from dataclasses import dataclass
 from typing import List
@@ -10,7 +10,7 @@ _KW = {"PUBLIC", "PRIVATE", "INTERFACE"}
 class LintIssue:
     line: int
     target: str
-    code: str            # ключ локализации: lint.<code>
+    code: str            # localization key: lint.<code>
 
     @property
     def message(self) -> str:
@@ -19,7 +19,7 @@ class LintIssue:
 
 
 def _calls(text: str, name: str):
-    """Yield (line_no, [args]) для вызовов name(...), комментарии отброшены."""
+    """Yield (line_no, [args]) for calls name(...), comments stripped."""
     clean = re.sub(r"#[^\n]*", lambda m: " " * len(m.group(0)), text)
     for m in re.finditer(rf"(?<![\w]){name}\s*\(([^()]*)\)", clean, re.I | re.S):
         yield clean.count("\n", 0, m.start()) + 1, m.group(1).split()

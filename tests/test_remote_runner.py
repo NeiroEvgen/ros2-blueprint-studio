@@ -1,14 +1,14 @@
 """
-2.3 — удалённая сборка и запуск.
+Remote build and run.
 
-Критерии приёмки:
-- ошибка компиляции видна в System Log ПОЛНОСТЬЮ (stderr не теряется,
-  порядок сохранён)
-- прерывание из UI реально останавливает процесс на удалённой машине —
-  всё дерево, а не только верхний shell
-- запущенная нода видна в списке процессов студии
+Acceptance criteria:
+- a compile error is visible in the System Log IN FULL (stderr is not lost,
+  order is kept)
+- interrupting from the UI really stops the process on the remote machine,
+  the whole tree, not just the top shell
+- a started node is visible in Studio's process list
 
-Гоняется против НАСТОЯЩЕГО sshd.
+Runs against a REAL sshd.
 """
 import shlex
 import subprocess
@@ -55,7 +55,7 @@ class TestStreaming:
         assert lines == ["one", "two", "three"]
 
     def test_stderr_merged_in_order(self, client, tmp_path):
-        """Ошибка компиляции идёт в stderr — она не должна потеряться."""
+        """A compile error goes to stderr: it must not get lost."""
         lines = []
         _runner(client, tmp_path).run_streaming(
             "echo 'compiling Node.cpp'; "
@@ -93,7 +93,7 @@ class TestStreaming:
 class TestCancel:
 
     def test_cancel_kills_whole_process_tree(self, client, tmp_path):
-        """Критерий: не только верхний shell, а colcon→make→gcc целиком."""
+        """Criterion: not just the top shell but colcon->make->gcc in full."""
         tag = f"{uuid.uuid4().int % 1000}.{uuid.uuid4().int % 900 + 100}"
         r = _runner(client, tmp_path)
         lines, result = [], {}
@@ -105,24 +105,102 @@ class TestCancel:
             if "started" in lines:
                 break
             time.sleep(0.05)
-        assert _pgrep(f"sleep [345]{tag}"), "процессы должны были стартовать"
+        assert _pgrep(f"sleep [345]{tag}"), "the processes should have started"
 
         started = time.time()
         assert r.cancel() is True
         t.join(timeout=10)
 
-        assert not t.is_alive(), "run_streaming не вернулся после отмены"
+        assert not t.is_alive(), "run_streaming did not return after cancel"
         assert time.time() - started < 8
-        assert _pgrep(f"sleep [345]{tag}") == [], "в дереве остались живые процессы"
+        assert _pgrep(f"sleep [345]{tag}") == [], "live processes left in the tree"
 
     def test_cancel_without_running_is_noop(self, client, tmp_path):
         assert _runner(client, tmp_path).cancel() is False
 
 
+class TestConnectionLost:
+
+    def test_streaming_returns_when_link_drops(self, client, tmp_path):
+        """Robot powered off / Wi-Fi gone mid-build: run_streaming must not hang forever."""
+        import socket
+        from core.remote.runner import RemoteConnectionLost
+        r = _runner(client, tmp_path)
+        lines, result = [], {}
+
+        def work():
+            try:
+                result["rc"] = r.run_streaming("echo started; sleep 30", lines.append)
+            except Exception as e:          # noqa: BLE001 (type checked below)
+                result["error"] = e
+        t = threading.Thread(target=work, daemon=True)
+        t.start()
+        for _ in range(100):
+            if "started" in lines:
+                break
+            time.sleep(0.05)
+        client.get_transport().sock.shutdown(socket.SHUT_RDWR)    # TCP dropped
+        t.join(timeout=10)
+        assert not t.is_alive(), "run_streaming hung after the link dropped"
+        assert isinstance(result.get("error"), RemoteConnectionLost)
+
+
+    def test_connect_enables_tcp_keepalive(self, sshd, tmp_path):
+        """A silent drop (no RST) otherwise hangs until the TCP timeout: tens of minutes."""
+        import socket
+        from core.remote.profile import connect
+        prof = RemoteProfile(host=sshd["host"], port=sshd["port"], user=sshd["user"],
+                             key_path=sshd["key"], remote_workspace=str(tmp_path))
+        c = connect(prof, known_hosts=str(tmp_path / "known_hosts"))
+        try:
+            tr = c.get_transport()
+            assert tr.packetizer._Packetizer__keepalive_interval == 10
+            sock = tr.sock
+            assert sock.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE) == 1
+            if hasattr(socket, "TCP_KEEPIDLE"):
+                assert sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE) == 10
+        finally:
+            c.close()
+
+    def test_dead_transport_without_closed_channel_raises(self):
+        """The channel is still "open", no data, but the transport is dead: do not spin forever."""
+        from core.remote.runner import RemoteConnectionLost
+
+        class Chan:
+            closed = False
+            def exec_command(self, cmd): pass
+            def recv_ready(self): return False
+            def exit_status_ready(self): return False
+            def close(self): pass
+
+        class Transport:
+            active = True
+            def open_session(self): return Chan()
+            def is_active(self): return self.active
+
+        tr = Transport()
+        ssh = types.SimpleNamespace(get_transport=lambda: tr)
+        r = RemoteRunner(ssh, RemoteProfile(host="h", user="u", remote_workspace="/w"), "p")
+        result = {}
+
+        def work():
+            try:
+                r.run_streaming("sleep 30", lambda l: None)
+            except RemoteConnectionLost as e:
+                result["error"] = e
+        th = threading.Thread(target=work, daemon=True)
+        th.start()
+        time.sleep(0.2)
+        assert th.is_alive()                 # transport alive: keep waiting
+        tr.active = False
+        th.join(timeout=3)
+        assert not th.is_alive() and "error" in result
+
+
 class TestBackgroundNodes:
 
     def test_named_process_listed_and_stoppable(self, client, tmp_path):
-        """Критерий: запущенная нода видна в списке процессов."""
+        """Criterion: a started node is visible in the process list."""
         tag = f"6{uuid.uuid4().int % 1000}.25"
         r = _runner(client, tmp_path)
         t = threading.Thread(target=lambda: r.run_streaming(
@@ -144,7 +222,7 @@ class TestPreflight:
 
     def test_missing_workspace(self, client, tmp_path):
         r = _runner(client, tmp_path, ws=f"/tmp/nope-{uuid.uuid4().hex}")
-        with pytest.raises(PreflightError, match="нет каталога"):
+        with pytest.raises(PreflightError, match="no folder"):
             r.preflight()
 
     def test_missing_src_says_sync_first(self, client, tmp_path):
@@ -154,7 +232,7 @@ class TestPreflight:
     def test_missing_ros(self, client, tmp_path):
         (tmp_path / "src").mkdir()
         r = _runner(client, tmp_path, ros_setup="/opt/ros/nonexistent/setup.bash")
-        with pytest.raises(PreflightError, match="не найден"):
+        with pytest.raises(PreflightError, match="not found"):
             r.preflight()
 
     def test_missing_colcon(self, client, tmp_path):
@@ -163,7 +241,7 @@ class TestPreflight:
         setup.write_text("# fake ros\n")
         r = _runner(client, tmp_path, ros_setup=str(setup))
         if subprocess.run(["bash", "-c", "command -v colcon"]).returncode == 0:
-            pytest.skip("colcon установлен в тестовой среде")
+            pytest.skip("colcon is installed in the test environment")
         with pytest.raises(PreflightError, match="colcon"):
             r.preflight()
 
@@ -192,7 +270,7 @@ class TestContainerWrapping:
         return RemoteRunner(ssh, prof, "mpd"), ssh
 
     def test_kill_goes_through_same_container(self):
-        """docker exec без -t не убивает процесс внутри — kill обязан идти туда же."""
+        """docker exec without -t does not kill the process inside: kill must go the same way."""
         r, ssh = self._r()
         r._current_pgid = 4242
         r._kill_group(4242, grace=0)

@@ -1,13 +1,13 @@
 """
-Шрифты интерфейса. Моноширинный шрифт не должен быть одним «Consolas»: его нет на
-Linux и macOS, и Qt подставляет случайный пропорциональный. Здесь — стек запасных.
+UI fonts. The monospace font must not be "Consolas" alone: it does not exist on
+Linux and macOS, and Qt substitutes a random proportional one. Hence a fallback stack.
 """
 from PySide6 import QtGui
 
 MONO_FAMILIES = ["Consolas", "Cascadia Mono", "DejaVu Sans Mono", "Menlo",
                  "Liberation Mono", "Courier New", "monospace"]
 
-# Для таблиц стилей: font-family: <MONO_CSS>;
+# for stylesheets: font-family: <MONO_CSS>;
 MONO_CSS = ", ".join(f'"{f}"' if " " in f else f for f in MONO_FAMILIES)
 
 

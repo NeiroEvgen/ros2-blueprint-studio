@@ -69,7 +69,7 @@ def test_stale_group_launch_removed_but_handwritten_kept(tmp_path):
     write_launch_files(str(tmp_path), files, "pkg")
     assert (tmp_path / "pc_launch.py").exists()
     (tmp_path / "mine_launch.py").write_text("# my own launch\nfrom launch import LaunchDescription\n")
-    write_launch_files(str(tmp_path), files[:1], "pkg")           # группа pc удалена
+    write_launch_files(str(tmp_path), files[:1], "pkg")           # group pc removed
     assert not (tmp_path / "pc_launch.py").exists()
     assert (tmp_path / "robot_launch.py").exists() and (tmp_path / "project_launch.py").exists()
     assert (tmp_path / "mine_launch.py").exists()

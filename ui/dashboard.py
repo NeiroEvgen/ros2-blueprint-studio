@@ -17,7 +17,7 @@ class TerminalLogDialog(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Консольное поле
+        # console field
         self.text_view = QtWidgets.QTextEdit()
         self.text_view.setReadOnly(True)
         self.text_view.setFont(mono_font(10))
@@ -30,13 +30,13 @@ class TerminalLogDialog(QtWidgets.QDialog):
             }
         """)
         
-        # Заливаем историю
+        # fill in the history
         self.text_view.setText("\n".join(history))
         self.text_view.moveCursor(QtGui.QTextCursor.End)
         
         layout.addWidget(self.text_view)
         
-        # Кнопка закрытия в стиле терминала
+        # terminal-style close button
         btn = QtWidgets.QPushButton(t("dash.close"))
         btn.setCursor(QtCore.Qt.PointingHandCursor)
         btn.setStyleSheet("""
@@ -50,20 +50,20 @@ class TerminalLogDialog(QtWidgets.QDialog):
 
 class ConsoleDashboard(QtWidgets.QWidget):
     """
-    Комбинированный виджет:
-    Умеет переключаться между Умной Таблицей и Сырой Консолью по ПКМ.
+    Combined widget:
+    switches between the smart table and the raw console via right click.
     """
     def __init__(self):
         super().__init__()
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # Стек для переключения видов
+        # stack for switching views
         self.stack = QtWidgets.QStackedWidget()
         layout.addWidget(self.stack)
         
         # ==========================================
-        # 1. УМНАЯ ТАБЛИЦА (Smart Dashboard)
+        # 1. SMART TABLE
         # ==========================================
         self.table = QtWidgets.QTableWidget()
         self.table.setColumnCount(3)
@@ -96,7 +96,7 @@ class ConsoleDashboard(QtWidgets.QWidget):
         """.replace("__MONO__", MONO_CSS))
         
         # ==========================================
-        # 2. СЫРАЯ КОНСОЛЬ (Raw Terminal)
+        # 2. RAW CONSOLE
         # ==========================================
         self.raw_console = QtWidgets.QTextEdit()
         self.raw_console.setReadOnly(True)
@@ -108,22 +108,22 @@ class ConsoleDashboard(QtWidgets.QWidget):
             }
         """.replace("__MONO__", MONO_CSS))
         
-        # Добавляем оба виджета в стек
+        # add both widgets to the stack
         self.stack.addWidget(self.table)
         self.stack.addWidget(self.raw_console)
         
-        # Состояния
+        # state
         self.is_raw_mode = False
         self.node_map = {}
         self.history = {}
         self.buffer = ""
         
         # ==========================================
-        # СОБЫТИЯ И МЕНЮ
+        # EVENTS AND MENU
         # ==========================================
         self.table.cellDoubleClicked.connect(self.open_details)
         
-        # Привязываем контекстное меню к обоим виджетам
+        # context menu on both widgets
         self.table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_context_menu)
         
@@ -131,16 +131,16 @@ class ConsoleDashboard(QtWidgets.QWidget):
         self.raw_console.customContextMenuRequested.connect(self.show_context_menu)
 
     def process_log(self, text):
-        """Параллельная запись: и в сырую консоль, и в парсер таблицы"""
-        # Чистим от цветовых символов ANSI
+        """Writes to both: the raw console and the table parser."""
+        # strip ANSI colour codes
         clean_chunk = self._strip_ansi(text)
         
-        # --- 1. ПИШЕМ В СЫРУЮ КОНСОЛЬ ---
+        # --- 1. RAW CONSOLE ---
         self.raw_console.moveCursor(QtGui.QTextCursor.End)
         self.raw_console.insertPlainText(clean_chunk)
         self.raw_console.verticalScrollBar().setValue(self.raw_console.verticalScrollBar().maximum())
         
-        # --- 2. ПИШЕМ В УМНУЮ ТАБЛИЦУ ---
+        # --- 2. SMART TABLE ---
         full_text = self.buffer + clean_chunk
         
         if not full_text.endswith('\n'):
@@ -227,7 +227,7 @@ class ConsoleDashboard(QtWidgets.QWidget):
             dialog.exec()
 
     def show_context_menu(self, pos):
-        """Всплывающее меню по правому клику"""
+        """Right-click popup menu."""
         menu = QtWidgets.QMenu(self)
         menu.setStyleSheet("""
             QMenu { background-color: #2b2b2b; color: white; border: 1px solid #444; }
@@ -240,7 +240,7 @@ class ConsoleDashboard(QtWidgets.QWidget):
         menu.addSeparator()
         clear_action = menu.addAction(icons.icon("clear", color="#dddddd"), t("dash.clear"))
         
-        # Получаем глобальные координаты от виджета, по которому кликнули
+        # global coordinates from the widget that was clicked
         sender_widget = self.sender()
         global_pos = sender_widget.mapToGlobal(pos)
         
