@@ -1,5 +1,4 @@
 import os
-import re
 from .base import BaseGenerator
 
 class PythonGenerator(BaseGenerator):
@@ -12,7 +11,7 @@ class PythonGenerator(BaseGenerator):
     def generate(self, node_data: dict) -> str:
         template = self.env.get_template('python_node.j2')
         
-        # Подготовка данных для шаблона
+        # template data
         context = {
             'class_name': self.safe_class_name(node_data.get('name', 'Node')),
             'node_name': self.safe_ros_name(node_data.get('name', 'node')),

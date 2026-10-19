@@ -2,6 +2,7 @@ from PySide6 import QtCore, QtGui
 from NodeGraphQt import NodeGraph
 
 from nodes import ALL_NODE_CLASSES
+from core.i18n import t
 TYPE_COLORS = {
     "std_msgs/String": (255, 235, 59),
     "geometry_msgs/Twist": (255, 152, 0),
@@ -10,7 +11,7 @@ TYPE_COLORS = {
 
 
 def _node_from_item(graph, item):
-    """Находит BaseNode по QGraphicsItem (поднимаясь по родителям)."""
+    """Finds the BaseNode for a QGraphicsItem (walking up the parents)."""
     while item is not None:
         for n in graph.all_nodes():
             if n.view is item:
@@ -20,14 +21,14 @@ def _node_from_item(graph, item):
 
 
 class GraphDropFilter(QtCore.QObject):
-    """Drop из палитры на граф + Alt+drag ноды с графа в палитру."""
+    """Drop from the palette onto the graph + Alt+drag of a node from the graph to the palette."""
     def __init__(self, graph, node_map_callback):
         super().__init__()
         self.graph = graph
         self.get_node_type = node_map_callback
 
     def eventFilter(self, watched, event):
-        # 1) Drop из палитры -> создать ноду
+        # 1) drop from the palette -> create a node
         if event.type() == QtCore.QEvent.Drop:
             code = event.mimeData().text()
             node_type = self.get_node_type(code)
@@ -38,7 +39,7 @@ class GraphDropFilter(QtCore.QObject):
                 event.acceptProposedAction()
                 return True
 
-        # 2) Alt+клик по ноде -> начать drag в палитру
+        # 2) Alt+click on a node -> start dragging to the palette
         if (event.type() == QtCore.QEvent.MouseButtonPress
                 and event.modifiers() & QtCore.Qt.AltModifier):
             viewer = self.graph.viewer()
@@ -51,17 +52,21 @@ class GraphDropFilter(QtCore.QObject):
                 mime.setData("application/x-bp-node-id", node.id.encode())
                 drag.setMimeData(mime)
                 drag.exec(QtCore.Qt.CopyAction)
-                return True  # съедаем событие, чтобы нода не поехала по холсту
+                return True
 
         return super().eventFilter(watched, event)
     
-def setup_graphs(ui_tabs, callback_node_resolver, delete_handler=None):
-    """Создает и настраивает два графа (Python и C++)"""
+def setup_graphs(ui_tabs, callback_node_resolver, delete_handler=None, single=False):
+    """
+    Creates and sets up the canvases. Two by default (Python and C++); in single-canvas mode
+    (single=True) one shared graph, returned under both names.
+    """
     graph_py = NodeGraph()
-    graph_cpp = NodeGraph()
-    
-    # Настройки
-    for g in [graph_py, graph_cpp]:
+    graph_cpp = graph_py if single else NodeGraph()
+    unique = [graph_py] if single else [graph_py, graph_cpp]
+
+    # settings
+    for g in unique:
         g.set_pipe_style(0)
         g.set_acyclic(False)
         g.register_nodes(ALL_NODE_CLASSES)
@@ -71,32 +76,38 @@ def setup_graphs(ui_tabs, callback_node_resolver, delete_handler=None):
         g.viewer().setAcceptDrops(True)
         g.viewer().viewport().setAcceptDrops(True)
 
-    # Добавляем во вкладки
-    ui_tabs.addTab(graph_py.widget, "Python Blueprints")
-    ui_tabs.addTab(graph_cpp.widget, "C++ Blueprints")
+    # add to the tabs
+    if single:
+        ui_tabs.addTab(graph_py.widget, t("tab.canvas"))
+    else:
+        ui_tabs.addTab(graph_py.widget, "Python Blueprints")
+        ui_tabs.addTab(graph_cpp.widget, "C++ Blueprints")
 
-    # Устанавливаем фильтры
+    # event filters
     filter_py = GraphDropFilter(graph_py, callback_node_resolver)
     graph_py.viewer().viewport().installEventFilter(filter_py)
 
-    filter_cpp = GraphDropFilter(graph_cpp, callback_node_resolver)
-    graph_cpp.viewer().viewport().installEventFilter(filter_cpp)
+    if single:
+        filter_cpp = filter_py        # a second filter on the same canvas would create the node twice
+    else:
+        filter_cpp = GraphDropFilter(graph_cpp, callback_node_resolver)
+        graph_cpp.viewer().viewport().installEventFilter(filter_cpp)
 
-    # Удаление через QShortcut (работает независимо от фокуса viewport)
+    # deletion via QShortcut (works regardless of viewport focus)
     if delete_handler:
         from PySide6 import QtGui
-        for g in (graph_py, graph_cpp):
-            # Delete = распустить / обычное удаление
+        for g in unique:
+            # Delete = dissolve / plain delete
             sc_del = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Delete), g.widget)
             sc_del.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
             sc_del.activated.connect(lambda gr=g: delete_handler(gr, False))
-            # Ctrl+Delete = удалить с содержимым
+            # Ctrl+Delete = delete with contents
             sc_del_all = QtGui.QShortcut(
                 QtGui.QKeySequence("Ctrl+Delete"), g.widget)
             sc_del_all.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
             sc_del_all.activated.connect(lambda gr=g: delete_handler(gr, True))
-            # держим ссылки, чтобы не собрал GC
+            # keep references so the GC does not collect them
             g._sc_del = sc_del
             g._sc_del_all = sc_del_all
-
+    
     return graph_py, graph_cpp, filter_py, filter_cpp

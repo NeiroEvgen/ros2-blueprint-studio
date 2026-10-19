@@ -3,13 +3,11 @@ import yaml
 import logging
 import traceback
 import re
-import shutil
 from core.workspace_manager import WorkspaceManager
-from core.generators.cpp_generator import CppGenerator
-from core.generators.python_generator import PythonGenerator
-from ui.launch_compiler import LaunchCompiler
+from core.generators.launch_generator import write_launch_files
+from core.i18n import t
 
-# YAML настройки для корректного сохранения кортежей (цветов и позиций)
+# YAML: write tuples (colours, positions) as plain lists and read them back as tuples
 def tuple_representer(dumper, data):
     return dumper.represent_sequence('tag:yaml.org,2002:seq', data)
 yaml.add_representer(tuple, tuple_representer)
@@ -23,103 +21,220 @@ try:
 except ImportError:
     PYTHON_TEMPLATES = {}; CPP_TEMPLATES = {}
 
-# Маппинг для перевода "generic" имен в конкретные шаблоны
+# Generic short names -> concrete template names
 KEY_MAPPING = {
     "timer": "Timer", "pub": "Publisher", "sub": "Subscriber",
     "trigger": "Subscriber", "action": "ActionClient", "client": "ActionClient", "service": "Service"
 }
 
+
+# CMake zones and generation live in core.generators.build_generator (re-exported for compatibility)
+from core.generators.build_generator import (  # noqa: F401
+    CMAKE_AUTO_BEGIN, CMAKE_AUTO_END, CMAKE_USER_BEGIN, CMAKE_USER_END, CMAKE_USER_TEMPLATE,
+)
+from core.generators import build_generator
+from core import node_sources
+from core import graph_ir
+from core import state_store
+from core import cmake_lint
+from core.layout import ProjectLayout
+
 class ProjectManager:
     def __init__(self, graph_py, graph_cpp):
         self.graph_py = graph_py
         self.graph_cpp = graph_cpp
+        # Single canvas: both "language" graphs are the same object (see ui/graph_set.py)
+        self.single = graph_py is graph_cpp
+        self.last_warnings = []     # warnings of the last Save, already in the UI language
+        # Project whose state.yaml failed to load: the canvas is empty, and Save would overwrite graph and code
+        self.load_failed_path = None
 
     # ==========================================
-    #               СОХРАНЕНИЕ
+    #               SAVE
     # ==========================================
+    @staticmethod
+    def _sync_live_nodes(pairs):
+        """
+        Push the final code and its sync hash back into the live nodes: otherwise the next edit
+        in the properties window looks like "both sides changed" and gets lost.
+        """
+        for graph, session in pairs:
+            try:
+                items = dict(graph_ir._node_items(session))
+                for node in graph.all_nodes():
+                    custom = (items.get(node.id) or {}).get("custom") or {}
+                    for key in ("code_content", "code_sync_hash"):
+                        if key in custom and node.has_property(key) and node.get_property(key) != custom[key]:
+                            node.set_property(key, custom[key])
+            except Exception as e:      # syncing is a convenience, not a reason to fail the save
+                logging.warning(f"Live node sync skipped: {e}")
+
+    FILE_NODE_TYPE = "ros.nodes.meta.FileNode"
+
+    def sync_file_nodes(self, src_dir):
+        """
+        File nodes (green mark) <-> files on disk, with the same rules as code nodes
+        (core.node_sources.choose_code): edit in Studio -> file, edit on disk -> node,
+        both -> disk wins. Returns the number of updated nodes.
+        """
+        graphs = [self.graph_py] if self.single else [self.graph_py, self.graph_cpp]
+        changed = 0
+        for g in graphs:
+            for n in g.all_nodes():
+                if getattr(n, "type_", "") != self.FILE_NODE_TYPE or not n.has_property('bound_file'):
+                    continue
+                rel = (n.get_property('bound_file') or '').replace('\\', '/').strip('/')
+                full = os.path.normpath(os.path.join(src_dir, rel))
+                if not rel or not os.path.isfile(full):
+                    continue
+                try:
+                    with open(full, 'r', encoding='utf-8') as f:
+                        disk = f.read()
+                except (OSError, UnicodeDecodeError):
+                    continue                     # binary file: nothing to show in the node
+                node_code = n.get_property('code_content') or ''
+                code, why = node_sources.choose_code(node_code, disk, n.get_property('code_sync_hash'))
+                if why == "conflict":
+                    logging.warning(f"{rel}: changed both in Studio and on disk; the disk version wins")
+                if node_sources.code_hash(code) != node_sources.code_hash(disk):
+                    with open(full, 'w', encoding='utf-8') as f:
+                        f.write(code)
+                if code != node_code:
+                    n.set_property('code_content', code)
+                    changed += 1
+                n.set_property('code_sync_hash', node_sources.code_hash(code))
+        return changed
+
     def save_project(self, project_path):
-        print("[SAVE DEBUG] save_project ВЫЗВАН, path=", project_path)
+        self.last_warnings = []
+        if self.load_failed_path and os.path.normpath(project_path) == self.load_failed_path:
+            msg = t("save.state_unreadable")
+            logging.error(msg)
+            self.last_warnings.append(msg)
+            return False
         try:
-            # === ШАГ 0: ГЕНЕРАЦИЯ ДИНАМИЧЕСКОГО ИМЕНИ ПАКЕТА ===
-            raw_name = os.path.basename(project_path)
-            pkg_name = re.sub(r'[^a-z0-9_]', '_', raw_name.lower())
+            pkg_name = build_generator.package_name_from_dir(project_path)
             
             blueprint_dir = os.path.join(project_path, ".blueprint")
             src_dir = os.path.join(project_path, "src")
             
-            # 1. ЖЕСТКОЕ РАЗДЕЛЕНИЕ ПАПОК
             project_type = WorkspaceManager.get_project_type(project_path)
-            
-            if project_type == "cpp":
-                code_dir = os.path.join(src_dir, "cpp")
-            else:
-                code_dir = os.path.join(src_dir, "python")
-            
-            launch_dir = os.path.join(src_dir, "launch")
+            languages = graph_ir.project_languages(project_type)   # ('cpp',) | ('python',) | ('cpp','python')
+            layout = ProjectLayout(project_path)
+            code_dirs = {lang: layout.code_dir(lang) for lang in languages}
+            launch_dir = layout.launch
 
-            for d in [blueprint_dir, src_dir, code_dir, launch_dir]:
+            for d in [blueprint_dir, src_dir, launch_dir, *code_dirs.values()]:
                 if not os.path.exists(d): os.makedirs(d)
 
-            logging.info(f"Saving project {pkg_name} ({project_type}) into {code_dir}")
+            logging.info(f"Saving project {pkg_name} ({project_type}) into {sorted(code_dirs.values())}")
+            from core import generated_files
+            prev_generated = generated_files.previous(project_path)   # before state.yaml is overwritten
 
-            # 2. Сохраняем графы
+            self.sync_file_nodes(src_dir)              # file-node edits -> disk, before serialize
             self._backup_dynamic_ports(self.graph_py)
-            self._backup_dynamic_ports(self.graph_cpp)
-            
-            py_data = self.graph_py.serialize_session()
-            cpp_data = self.graph_cpp.serialize_session()
-            print(f"[SAVE DEBUG] project_type={project_type}")
-            print(f"[SAVE DEBUG] cpp_data nodes={len(cpp_data.get('nodes', {}))}, py_data nodes={len(py_data.get('nodes', {}))}")
-            print(f"[SAVE DEBUG] cpp_data keys={list(cpp_data.keys())}")
-            # 3. ГЕНЕРАЦИЯ КОДА (только активный граф; возвращает файлы с группами)
-            if project_type == "cpp":
-                created_files = self._process_and_save_files(cpp_data, code_dir, project_type)
+            if not self.single:
+                self._backup_dynamic_ports(self.graph_cpp)
+
+            merged = None
+            if self.single:
+                # single graph: split by NODE language (not by tab); the raw graph goes into state v4
+                merged = self.graph_py.serialize_session()
+                py_data = cpp_data = None
             else:
-                created_files = self._process_and_save_files(py_data, code_dir, project_type)
-            created_files = created_files or []
+                py_data = self.graph_py.serialize_session()
+                cpp_data = self.graph_cpp.serialize_session()
 
-            print(f"[SAVE DEBUG] created_files = {created_files}")
+            if self.single:
+                flat_by_lang = self._flat_single(languages, merged, project_type)
+            else:
+                # language -> session of its tab ("mixed" generates both)
+                sessions = {graph_ir.CPP: cpp_data, graph_ir.PYTHON: py_data}
+                flat_by_lang = self._flat_by_language(languages, sessions)
+            created_files = []
+            for lang in languages:
+                created_files += node_sources.process_flat_nodes(flat_by_lang[lang], code_dirs[lang], lang) or []
+            self._sync_live_nodes([(self.graph_py, merged)] if self.single
+                                  else [(self.graph_py, py_data), (self.graph_cpp, cpp_data)])
 
-            state = {"meta": {"version": "3.6"}, "graphs": {"python": py_data, "cpp": cpp_data}}
-            with open(os.path.join(blueprint_dir, "state.yaml"), 'w', encoding='utf-8') as f:
-                yaml.dump(state, f, sort_keys=False)
+            from core.generators.dependency_resolver import DependencyResolver, DepSet
+            from core.dockerfile_manager import DockerfileManager
+
+            resolver = DependencyResolver()
+            dep_set = DepSet()
+            for lang in languages:
+                dep_set.update(resolver.collect_from_nodes(flat_by_lang[lang], lang))
+
+            dockerfile_mgr = DockerfileManager(project_path)
+            dockerfile_mgr.ensure_exists()
+            dockerfile_changed = dockerfile_mgr.write_auto_block(dep_set)
+            if dockerfile_changed:
+                logging.info(f"Dockerfile updated. apt: {sorted(dep_set.apt)}")
+            if dep_set.unknown:
+                logging.warning(f"Unresolved includes (not in registry): {sorted(dep_set.unknown)}")
+
+
+            if self.single:
+                state_store.write_state_v4(project_path, merged, graph_ir.single_meta(merged))
+            else:
+                state = {"meta": {"version": "3.6"}, "graphs": {"python": py_data, "cpp": cpp_data}}
+                with open(os.path.join(blueprint_dir, "state.yaml"), 'w', encoding='utf-8') as f:
+                    yaml.dump(state, f, sort_keys=False, allow_unicode=True)
             
-            # 3.1 ОЧИСТКА ФАЙЛОВ-ПРИЗРАКОВ (удалённые ноды, терминалы)
-            valid_files = {cf['filename'] for cf in created_files}
-            ext = ".cpp" if project_type == "cpp" else ".py"
-            try:
-                for f in os.listdir(code_dir):
-                    if f.endswith(ext) and f not in valid_files:
-                        os.remove(os.path.join(code_dir, f))
-                        logging.info(f"🗑 Удалён устаревший файл: {f}")
-            except Exception as e:
-                logging.warning(f"Cleanup skipped: {e}")
+            # 3.1 GHOST FILE CLEANUP (over the FULL list, before filtering by executable,
+            # otherwise .cpp helpers without main() would be considered stale and removed).
+            # Only the code folder of each language, only files with its extension, and only files
+            # Studio generated itself (generated.json): other people's code in src/cpp is never touched.
+            # A ghost is not deleted but moved to .blueprint/trash/<time>/.
+            from core import build_marks
+            marks = build_marks.load(project_path)
+            now_generated = set()
+            trash_dir = None
+            for lang in languages:
+                valid_files = {cf['filename'] for cf in created_files if cf['language'] == lang}
+                ext = ".cpp" if lang == graph_ir.CPP else ".py"
+                try:
+                    for f in os.listdir(code_dirs[lang]):
+                        rel = build_marks.norm(os.path.relpath(os.path.join(code_dirs[lang], f), src_dir))
+                        if f in valid_files:
+                            now_generated.add(rel)
+                            continue
+                        if build_marks.effective(marks, rel):
+                            if rel in prev_generated:
+                                now_generated.add(rel)   # if the mark is removed, it becomes a ghost again
+                            continue       # marked in the Files tab: not a ghost
+                        if f.endswith(ext) and rel in prev_generated:
+                            trash_dir = trash_dir or generated_files.new_trash_dir(project_path)
+                            generated_files.move_to_trash(src_dir, rel, trash_dir)
+                            logging.info(f"Stale file {f} moved to {trash_dir}")
+                except Exception as e:
+                    logging.warning(f"Cleanup skipped: {e}")
+            generated_files.save(project_path, now_generated)
 
-            pycache_dir = os.path.join(launch_dir, "__pycache__")
-            if os.path.isdir(pycache_dir):
-                shutil.rmtree(pycache_dir, ignore_errors=True)
-                
-            # 4. ГЕНЕРАЦИЯ LAUNCH ФАЙЛОВ
-            from ui.launch_compiler import LaunchCompiler
+            # 3.5 CMAKE & PACKAGE.XML before launch generation, so that created_files is
+            # filtered by real executables before anything reaches the launch file
+            cmake_path = layout.cmake
+            cpp_apt_deps = set()
+            if graph_ir.CPP not in languages:
+                if os.path.exists(cmake_path):
+                    os.remove(cmake_path)
+            else:
+                cpp_apt_deps, executable_names = self._generate_cpp_build_files(src_dir, created_files)
+                self._lint_cmake(cmake_path)
+                # Helpers without main() (pulled into other nodes via #include) must not
+                # appear in launch as separate processes.
+                # Python nodes are not filtered.
+                before = {cf['filename'] for cf in created_files if cf['language'] == graph_ir.CPP}
+                created_files = [cf for cf in created_files
+                                 if cf['language'] != graph_ir.CPP
+                                 or os.path.splitext(cf['filename'])[0] in executable_names]
+                kept = {cf['filename'] for cf in created_files if cf['language'] == graph_ir.CPP}
+                if before - kept:
+                    logging.info(f"Excluded from launch (no main(), library helpers): {sorted(before - kept)}")
 
-            # 4.1 Главный launch — ВСЕ ноды (Run запускает весь проект разом)
-            main_compiler = LaunchCompiler(created_files, package_name=pkg_name)
-            with open(os.path.join(launch_dir, "project_launch.py"), 'w', encoding='utf-8') as f:
-                f.write(main_compiler.compile())
+            # 4. LAUNCH FILES (created_files is already filtered for C++)
+            groups = write_launch_files(launch_dir, created_files, pkg_name)
 
-            # 4.2 Группировка по 'group' (приходит из _process_and_save_files)
-            groups = {}
-            for cf in created_files:
-                groups.setdefault(cf.get('group', 'main'), []).append(cf)
-            print(f"[SAVE DEBUG] groups = { {k: len(v) for k, v in groups.items()} }")
-
-            # 4.3 Per-group launch
-            for gname, gfiles in groups.items():
-                gc = LaunchCompiler(gfiles, package_name=pkg_name)
-                with open(os.path.join(launch_dir, f"{gname}_launch.py"), 'w', encoding='utf-8') as f:
-                    f.write(gc.compile())
-
-            # 4.4 docker-compose из групп
             try:
                 from core.compose_generator import ComposeGenerator
                 from core.container_config import ContainerConfigStore
@@ -128,375 +243,117 @@ class ProjectManager:
             except Exception as ce:
                 logging.warning(f"Compose skipped: {ce}")
 
-            # 5. CMAKE & PACKAGE.XML
-            cmake_path = os.path.join(src_dir, "CMakeLists.txt")
-            if project_type == "python":
-                if os.path.exists(cmake_path): os.remove(cmake_path)
-            else:
-                # Метод сам вычислит имя пакета внутри, если ты обновил его как мы обсуждали
-                self._generate_cpp_build_files(src_dir, created_files)
-
-            return True
+            self.sync_file_nodes(src_dir)              # CMakeLists/launch regenerated -> nodes show the fresh file
+            return True, cpp_apt_deps
 
         except Exception as e:
             logging.error(f"Save Error: {e}")
             traceback.print_exc()
             return False
 
-    def _map_files_to_groups(self, created_files, cpp_data, py_data, project_type):
-        """Сопоставляет созданные файлы с деплой-группами по source_file нод."""
-        # строим карту source_file -> container_group
-        file_to_group = {}
-        data = cpp_data if project_type == "cpp" else py_data
-        nodes = data.get('nodes', {})
-        if isinstance(nodes, dict):
-            tmp = []
-            for node_id, node_val in nodes.items():
-                if isinstance(node_val, dict):
-                    node_val = dict(node_val)  # копия, чтобы не портить исходник
-                    node_val.setdefault('id', node_id)
-                    tmp.append(node_val)
-            nodes = tmp
-        else:
-            nodes = [n for n in nodes if isinstance(n, dict) and 'id' in n]
+    def _flat_by_language(self, languages, sessions):
+        """
+        {language: flat list of nodes to generate}. In a single-language project: all nodes of its tab.
+        In mixed: both tabs, but a node with an explicit language (ros.py.* on the C++ tab) still
+        goes to its own language, not to the tab's.
+        """
+        flats = {lang: self._flatten_nodes(sessions[lang]) for lang in languages}
+        if len(languages) == 1:
+            return flats
+        out = {lang: [] for lang in languages}
+        for tab_lang, flat in flats.items():
+            for entry in flat:
+                lang = graph_ir.language_of(entry["node"]) or tab_lang
+                out[lang if lang in out else tab_lang].append(entry)
+        return out
 
-        nodes_dict = {n['id']: n for n in nodes}
-        for n in nodes:
-            print(f"[FLAT DEBUG]   нода type={n.get('type')}, parent_group_id={n.get('custom', {}).get('parent_group_id')!r}")
-        groups = {}
-        for cf in created_files:
-            grp = file_to_group.get(cf['filename'], 'main')
-            groups.setdefault(grp, []).append(cf)
-        return groups
+    def _flat_single(self, languages, merged, project_type):
+        """
+        Single graph -> {language: flat list}. A node's language comes from its type; neutral nodes
+        (notes etc.) get the project language. In a single-language project the whole graph goes to it.
+        """
+        flat = self._flatten_nodes(merged)
+        if len(languages) == 1:
+            return {languages[0]: flat}
+        parts = graph_ir.partition_by_language(flat, graph_ir.default_language(project_type))
+        return {lang: parts[lang] for lang in languages}
 
     def _process_and_save_files(self, session_data, target_dir, project_type):
-        print("[PROC DEBUG] _process_and_save_files ВЫЗВАН!!!")
-        is_cpp_mode = (project_type == "cpp")
-        forced_extension = ".cpp" if is_cpp_mode else ".py"
-        
-        # Инициализируем генератор
-        project_name = os.path.basename(os.path.dirname(target_dir))
-        generator = CppGenerator(project_name) if is_cpp_mode else PythonGenerator(project_name)
-
-        # Собираем все ноды в плоский список, учитывая неймспейсы сабграфов
-        try:
-            flat_nodes = self._flatten_nodes(session_data)
-            print(f"[PROC DEBUG] flat_nodes получено: {len(flat_nodes)}")
-        except Exception as e:
-            import traceback
-            print(f"[PROC DEBUG] _flatten_nodes УПАЛ: {e}")
-            traceback.print_exc()
-            flat_nodes = []
-
-        created = []
-        for node_entry in flat_nodes:
-            node = node_entry['node']
-            namespace = node_entry['namespace']
-            container_group = node_entry.get('container_group', 'main')
-            
-            custom = node.get('custom', {})
-            visual_name = node.get('name', 'Unnamed')
-
-            ns_clean = (namespace or "").strip("/")
-            container_group = ns_clean.split("/")[0].lower() if ns_clean else "main"
-            print(f"[GROUP DEBUG] нода '{visual_name}' namespace='{namespace}' -> group='{container_group}'")
-        
-            raw_filename = custom.get('source_file') or ''
-            base_name = os.path.splitext(os.path.basename(raw_filename))[0]
-            if not base_name or base_name.startswith('.'):
-                base_name = re.sub(r'[^a-zA-Z0-9_]', '_', visual_name)
-            filename = base_name + forced_extension
-            file_path = os.path.join(target_dir, filename)
-
-            # Сбор данных для Jinja2 шаблона
-            node_data = {
-                'name': custom.get('node_name', visual_name),
-                'namespace': namespace,
-                'publishers': [],
-                'subscribers': []
-            }
-            
-            # Парсим порты для определения паблишеров/подписчиков
-            for port in node.get('ports', []):
-                port_name = port.get('name', 'port')
-                # Очистка имени порта для использования в коде
-                safe_port_name = re.sub(r'[^a-zA-Z0-9_]', '_', port_name).lower()
-                
-                # Если нода внутри сабграфа, топик должен учитывать неймспейс, 
-                # если только это не глобальный топик (начинается с /)
-                topic_name = port_name
-                if namespace and not topic_name.startswith('/'):
-                    topic_name = f"{namespace}/{topic_name}"
-
-                if port.get('type') == 'out':
-                    node_data['publishers'].append({'name': safe_port_name, 'topic': topic_name})
-                elif port.get('type') == 'in':
-                    node_data['subscribers'].append({'name': safe_port_name, 'topic': topic_name})
-
-            existing_code = custom.get('code_content', '')
-            try:
-                if os.path.exists(file_path):
-                    with open(file_path, 'r', encoding='utf-8') as df:
-                        disk_code = df.read()
-                    if disk_code.strip():
-                        existing_code = disk_code
-                        custom['code_content'] = disk_code
-            except Exception as e:
-                logging.warning(f"Disk re-read skipped for {filename}: {e}")
-
-            freshly_generated = generator.generate(node_data)
-
-            if existing_code and existing_code.strip():
-                
-                code_to_write = existing_code
-            else:
-                
-                code_to_write = freshly_generated
-
-            if code_to_write:
-                custom['code_content'] = code_to_write
-                custom['source_file'] = filename
-
-                created.append({
-                    'language': 'cpp' if is_cpp_mode else 'python',
-                    'filename': filename,
-                    'group': container_group,
-                })
-
-                write_needed = True
-                if os.path.exists(file_path):
-                    try:
-                        with open(file_path, 'r', encoding='utf-8') as existing_f:
-                            if existing_f.read() == code_to_write:
-                                write_needed = False
-                    except Exception:
-                        pass
-
-                if write_needed:
-                    try:
-                        with open(file_path, 'w', encoding='utf-8') as f:
-                            f.write(code_to_write)
-                        logging.info(f"Сгенерирован/обновлен файл: {filename}")
-                    except Exception as e:
-                        logging.error(f"Write error {filename}: {e}")
-                else:
-                    logging.info(f"Пропущен (нет изменений): {filename}")
-
-        return created
+        return node_sources.process_and_save_files(session_data, target_dir, project_type)
 
     def _flatten_nodes(self, session_data, current_ns="", inherited_group="main"):
-        """
-        Рекурсивно собирает все ноды из сессии, учитывая вложенность групп.
-        Возвращает список: [{'node':..., 'namespace':..., 'container_group':...}]
-        """
-        flat_list = []
-        nodes = session_data.get('nodes', [])
+        return node_sources.flatten_nodes(session_data, current_ns, inherited_group)
 
-        if isinstance(nodes, dict):
-            # ключ словаря — ID ноды; вписываем его внутрь
-            tmp = []
-            for node_id, node_val in nodes.items():
-                if isinstance(node_val, dict):
-                    node_val = dict(node_val)
-                    node_val.setdefault('id', node_id)
-                    tmp.append(node_val)
-            nodes = tmp
-        else:
-            nodes = [n for n in nodes if isinstance(n, dict) and 'id' in n]
+    def _lint_cmake(self, cmake_path):
+        """Finds typical CMake breakages (including in the USER zone) before colcon and stores the warnings."""
+        try:
+            with open(cmake_path, 'r', encoding='utf-8') as f:
+                issues = cmake_lint.lint(f.read())
+        except OSError:
+            return
+        for issue in issues:
+            self.last_warnings.append(issue.message)
+            logging.warning(issue.message)
 
-        nodes_dict = {n['id']: n for n in nodes}
-        
-        for node in nodes:
-            _pgid = node.get('custom', {}).get('parent_group_id')
-            print(f"[FLAT DEBUG] нода type={node.get('type')}, parent_group_id={_pgid!r}")
-            if current_ns == "" and _pgid:
-                print(f"[FLAT DEBUG]   -> ПРОПУЩЕНА (parent_group_id={_pgid})")
-                continue
-
-            node_type = node.get('type_') or node.get('type') or ''
-            if node_type in ('ros.nodes.internal.SubGraphInputNode',
-                             'ros.nodes.internal.SubGraphOutputNode'):
-                continue
-            
-            if 'meta' in node_type:
-                continue
-            is_group = node_type in ['ros.nodes.RosGroup', 'ros.nodes.RosGroupNode']
-
-            if is_group:
-                group_name = node.get('custom', {}).get('node_name', node.get('name', 'group'))
-                safe_group_name = re.sub(r'[^a-zA-Z0-9_]', '_', group_name)
-                new_ns = f"{current_ns}/{safe_group_name}".replace("//", "/")
-
-                internal_ids = node.get('custom', {}).get('internal_nodes', [])
-                internal_nodes_data = [nodes_dict[nid] for nid in internal_ids if nid in nodes_dict]
-                print(f"[FLATTEN DEBUG] группа '{group_name}': internal_ids={len(internal_ids)}, найдено нод={len(internal_nodes_data)}, new_ns='{new_ns}'")
-
-                # имя группы становится деплой-группой для её детей
-                group_container = node.get('custom', {}).get('container_group') or safe_group_name.lower()
-                flat_list.extend(self._flatten_nodes(
-                    {'nodes': internal_nodes_data}, new_ns, group_container))
-            else:
-                own_group = node.get('custom', {}).get('container_group') or inherited_group
-                flat_list.append({'node': node, 'namespace': current_ns,
-                                  'container_group': own_group})
-
-        return flat_list
+    def _resolve_cmake_user_block(self, cmake_path, new_auto):
+        return build_generator.resolve_user_block(cmake_path, new_auto)
 
     def _generate_cpp_build_files(self, src_dir, created_files):
-        # 1. ДИНАМИЧЕСКОЕ ИМЯ ПРОЕКТА (берем из папки, где лежит src)
-        project_root = os.path.dirname(src_dir)
-        raw_name = os.path.basename(project_root)
-        # Приводим к стандарту ROS: маленькие буквы, только цифры и подчеркивания
-        pkg_name = re.sub(r'[^a-z0-9_]', '_', raw_name.lower())
-        
-        cpp_dir = os.path.join(src_dir, "cpp")
-        
-        # БАЗОВЫЕ ЗАВИСИМОСТИ
-        deps = set(['rclcpp', 'rclcpp_action', 'rclcpp_lifecycle', 'std_msgs', 'geometry_msgs', 'sensor_msgs', 'example_interfaces'])
-
-        # УМНЫЙ СКАНЕР (Оставляем твою логику с OpenCV)
-        pattern_msg = re.compile(r'#include\s+["<]([^/]+)/(msg|srv|action)/[^">]+[">]')
-        pattern_libs = re.compile(r'#include\s+["<](tf2_ros|tf2|tf2_geometry_msgs|image_transport|cv_bridge|opencv2|rclcpp_lifecycle|rclcpp_components|lifecycle_msgs)/[^">]+[">]')
-
-        if os.path.exists(cpp_dir):
-            for file in os.listdir(cpp_dir):
-                if file.endswith(('.cpp', '.hpp', '.h')):
-                    with open(os.path.join(cpp_dir, file), 'r', encoding='utf-8') as f:
-                        content = f.read()
-                        for match in pattern_msg.findall(content):
-                            deps.add(match[0])
-                        for match in pattern_libs.findall(content):
-                            if match == "opencv2":
-                                deps.add("opencv")
-                            else:
-                                deps.add(match)
-
-        # 3. ГЕНЕРАЦИЯ CMakeLists.txt
-        # ВНИМАНИЕ: Здесь используем обычные строки, чтобы не путаться с f-строками и скобками
-        cmake_content = "cmake_minimum_required(VERSION 3.8)\n"
-        cmake_content += f"project({pkg_name})\n\n"
-        
-        cmake_content += "if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES \"Clang\")\n"
-        cmake_content += "  add_compile_options(-Wall -Wextra -Wpedantic)\nendif()\n\n"
-        
-        cmake_content += "find_package(ament_cmake REQUIRED)\n"
-
-        for dep in sorted(deps):
-            cmake_name = "OpenCV" if dep == "opencv" else dep
-            cmake_content += f"find_package({cmake_name} REQUIRED)\n"
-
-        cmake_content += "\ninclude_directories(include)\n"
-        cmake_content += "file(GLOB_RECURSE CPP_SOURCES \"cpp/*.cpp\")\n\n"
-        
-        # Исправленный цикл foreach (убраны двойные скобки)
-        cmake_content += "foreach(source_file ${CPP_SOURCES})\n"
-        cmake_content += "  get_filename_component(exec_name ${source_file} NAME_WE)\n"
-        cmake_content += "  add_executable(${exec_name} ${source_file})\n"
-
-        cmake_deps_list = [("OpenCV" if d == "opencv" else d) for d in sorted(deps)]
-        deps_str = " ".join(cmake_deps_list)
-        
-        cmake_content += f"  ament_target_dependencies(${{exec_name}} {deps_str})\n"
-        cmake_content += f"  install(TARGETS ${{exec_name}} DESTINATION lib/${{PROJECT_NAME}})\n"
-        cmake_content += "endforeach()\n\n"
-
-        cmake_content += "install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})\n"
-        cmake_content += "ament_package()\n"
-
-        # === SMART WRITE ДЛЯ CMakeLists.txt ===
-        cmake_path = os.path.join(src_dir, "CMakeLists.txt")
-        write_cmake = True
-        if os.path.exists(cmake_path):
-            try:
-                with open(cmake_path, 'r', encoding='utf-8') as f:
-                    if f.read() == cmake_content:
-                        write_cmake = False # Контент идентичен, запись не нужна
-            except Exception:
-                pass
-                
-        if write_cmake:
-            with open(cmake_path, 'w', encoding='utf-8') as f:
-                f.write(cmake_content)
-            logging.info("✨ CMakeLists.txt сгенерирован/обновлен")
-        else:
-            logging.info("⏭ CMakeLists.txt пропущен (нет изменений)")
-
-
-        # 4. ГЕНЕРАЦИЯ package.xml
-        pkg_xml = '<?xml version="1.0"?>\n'
-        pkg_xml += '<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>\n'
-        pkg_xml += f'<package format="3">\n  <name>{pkg_name}</name>\n  <version>0.0.0</version>\n' 
-        pkg_xml += '  <description>Auto-generated by ROS2 Blueprint Studio</description>\n'
-        pkg_xml += '  <maintainer email="user@email.com">User</maintainer>\n'
-        pkg_xml += '  <license>TODO</license>\n  <buildtool_depend>ament_cmake</buildtool_depend>\n\n'
-
-        # Динамически добавляем теги depend
-        for dep in sorted(deps):
-            pkg_xml += f"  <depend>{dep}</depend>\n"
-
-        pkg_xml += '\n  <export><build_type>ament_cmake</build_type></export>\n</package>'
-
-        # === SMART WRITE ДЛЯ package.xml ===
-        pkg_path = os.path.join(src_dir, "package.xml")
-        write_pkg = True
-        if os.path.exists(pkg_path):
-            try:
-                with open(pkg_path, 'r', encoding='utf-8') as f:
-                    if f.read() == pkg_xml:
-                        write_pkg = False # Контент идентичен, запись не нужна
-            except Exception:
-                pass
-                
-        if write_pkg:
-            with open(pkg_path, 'w', encoding='utf-8') as f:
-                f.write(pkg_xml)
-            logging.info("package.xml сгенерирован/обновлен")
-        else:
-            logging.info("⏭ package.xml пропущен (нет изменений)")
+        return build_generator.generate_cpp_build_files(src_dir, created_files)
 
     # ==========================================
-    #               ЗАГРУЗКА (RESTORED)
+    #               LOAD
     # ==========================================
     def load_project(self, project_path):
-        import copy # Добавляем импорт глубокого копирования
+        import copy
         try:
             if project_path.endswith('.json') or project_path.endswith('.yaml'):
                 project_path = os.path.dirname(os.path.dirname(project_path))
             
             state_file = os.path.join(project_path, ".blueprint", "state.yaml")
             src_dir = os.path.join(project_path, "src")
-            
+            self.load_failed_path = None
+
+            # ALWAYS clear the canvas: otherwise the previous project's nodes end up in the new one on Save
+            for g in ([self.graph_py] if self.single else [self.graph_py, self.graph_cpp]):
+                g.clear_session()
+
             if not os.path.exists(state_file): return False
             
-            with open(state_file, 'r', encoding='utf-8') as f:
-                project_state = yaml.safe_load(f)
-            
+            # Any supported state.yaml version (3.6: two tabs; 4: one shared graph, split into
+            # python/cpp parts using the merge metadata) -> two sessions.
+            loaded_state = state_store.read_state(project_path)
+            if loaded_state is None: return False
+
+            if self.single:
+                return self._load_into_single(loaded_state, src_dir)
+
             self.graph_py.clear_session()
             self.graph_cpp.clear_session()
+
+            py_data_raw = loaded_state.py
+            cpp_data_raw = loaded_state.cpp
             
-            py_data_raw = project_state["graphs"].get("python", {})
-            cpp_data_raw = project_state["graphs"].get("cpp", {})
-            
-            # --- 1. ЖЕСТКО ЗАПОМИНАЕМ СВЯЗИ (До того, как движок их зачистит) ---
+            # 1. Copy connections before deserializing: the engine drops those whose ports do not exist yet
             py_conns = copy.deepcopy(py_data_raw.get('connections', []))
             cpp_conns = copy.deepcopy(cpp_data_raw.get('connections', []))
             
             py_data, py_map = self._prepare_data_for_loading(py_data_raw)
             cpp_data, cpp_map = self._prepare_data_for_loading(cpp_data_raw)
             
-            # --- 2. ВОССТАНАВЛИВАЕМ НОДЫ ---
+            # 2. Nodes
             self._safe_deserialize(self.graph_py, py_data)
             self._safe_deserialize(self.graph_cpp, cpp_data)
             
-            # --- 3. ВОССТАНАВЛИВАЕМ КОД ---
+            # 3. Code from files on disk
             self._restore_files_and_code(self.graph_py, py_map, src_dir)
             self._restore_files_and_code(self.graph_cpp, cpp_map, src_dir)
             
-            # --- 4. СОЗДАЕМ ДИНАМИЧЕСКИЕ ПОРТЫ ---
+            # 4. Dynamic ports
             self._restore_dynamic_ports(self.graph_py)
             self._restore_dynamic_ports(self.graph_cpp)
             
-            # --- 5. ПРИНУДИТЕЛЬНО КЛЕИМ СВЯЗИ ОБРАТНО ---
+            # 5. Connections, by node name (ids are new after deserialization)
             self._restore_connections(self.graph_py, py_conns, py_data_raw.get('nodes', {}))
             self._restore_connections(self.graph_cpp, cpp_conns, cpp_data_raw.get('nodes', {}))
             
@@ -508,7 +365,25 @@ class ProjectManager:
         except Exception as e:
             logging.error(f"Load Error: {e}")
             traceback.print_exc()
+            if os.path.exists(os.path.join(project_path, ".blueprint", "state.yaml")):
+                self.load_failed_path = os.path.normpath(project_path)
             return False
+
+    def _load_into_single(self, loaded_state, src_dir):
+        """Load into the single shared canvas (state v4 as is; v3.6 is already merged in loaded_state.merged)."""
+        import copy
+        from nodes.group_logic import fix_group_after_load
+        graph = self.graph_py
+        graph.clear_session()
+        raw = loaded_state.merged
+        conns = copy.deepcopy(raw.get('connections', []))
+        data, files_map = self._prepare_data_for_loading(raw)
+        self._safe_deserialize(graph, data)
+        self._restore_files_and_code(graph, files_map, src_dir)
+        self._restore_dynamic_ports(graph)
+        self._restore_connections(graph, conns, raw.get('nodes', {}))
+        fix_group_after_load(graph, graph.all_nodes())
+        return True
 
     def _prepare_data_for_loading(self, session_data):
         files_map = {}
@@ -529,15 +404,15 @@ class ProjectManager:
 
     def _safe_deserialize(self, graph, data):
         """
-        Десериализация, устойчивая к свойствам, которых нет в классе ноды
-        (старые проекты / новые поля). Недостающие свойства создаются на лету.
+        Deserialization that tolerates properties missing from the node class
+        (old projects / new fields). Missing properties are created on the fly.
         """
         from NodeGraphQt.base.model import NodeModel
         orig_set = NodeModel.set_property
 
         def patched_set(self_model, name, value, *a, **kw):
             if name not in self_model.properties and name not in self_model.custom_properties:
-                # свойства нет — создаём, чтобы загрузка не падала
+                # no such property: create it so that loading does not fail
                 try:
                     self_model.custom_properties[name] = value
                     return
@@ -552,11 +427,11 @@ class ProjectManager:
             NodeModel.set_property = orig_set
 
     def _restore_files_and_code(self, graph, files_map, src_dir):
-        """Восстанавливает код, ища файлы по имени ноды"""
+        """Restores node code by looking up files by node name."""
         for node in graph.all_nodes():
             if node.name() in files_map:  
                 fname = files_map[node.name()]
-                 # Пытаемся найти файл в подпапках
+                 # look in the language subfolders
                 possible_paths = [
                     os.path.join(src_dir, "cpp", fname),
                     os.path.join(src_dir, "python", fname),
@@ -569,18 +444,22 @@ class ProjectManager:
                         found_path = p
                         break
 
-                # Свойства ноды
+                # node properties
                 if not node.has_property('source_file'):
                     node.create_property('source_file', value=fname, widget_type=0)
                 else:
                     node.set_property('source_file', fname)
 
-                # Читаем код
+                # read the code
                 if found_path:
                     try:
                         with open(found_path, 'r', encoding='utf-8') as f:
-                            node.set_property('code_content', f.read())
-                    except: pass
+                            text = f.read()
+                        node.set_property('code_content', text)
+                        if node.has_property('code_sync_hash'):
+                            node.set_property('code_sync_hash', node_sources.code_hash(text))
+                    except Exception:
+                        pass
                 else:
                     node.set_property('code_content', "// Source file not found on disk.")
 
@@ -601,7 +480,7 @@ class ProjectManager:
                 except: pass
 
     # ==========================================
-    #               РЕДАКТОР КОДА
+    #               CODE EDITOR
     # ==========================================
     def open_node_in_editor(self, node, project_path):
         import subprocess
@@ -610,7 +489,7 @@ class ProjectManager:
         src_dir = os.path.join(project_path, "src")
         project_type = WorkspaceManager.get_project_type(project_path)
         
-        # Умный поиск подпапки (cpp или python)
+        # pick the code subfolder (cpp or python)
         code_dir = os.path.join(src_dir, "cpp" if project_type == "cpp" else "python")
         if not os.path.exists(code_dir): 
             os.makedirs(code_dir)
@@ -618,7 +497,7 @@ class ProjectManager:
         is_cpp = 'cpp' in node.type_
         ext = '.cpp' if is_cpp else '.py'
         
-        # Выясняем имя файла
+        # file name
         filename = node.get_property('source_file') if node.has_property('source_file') else None
         if not filename:
             safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', node.name())
@@ -630,7 +509,7 @@ class ProjectManager:
                 
         full_path = os.path.join(code_dir, filename)
         
-        # Если файла еще нет на диске (новая нода), но код в ней есть - создаем
+        # no file on disk yet (new node) but the node has code: create it
         if not os.path.exists(full_path):
             code = node.get_property('code_content') if node.has_property('code_content') else ""
             try:
@@ -639,18 +518,18 @@ class ProjectManager:
             except Exception as e: 
                 logging.error(f"Failed to create file {full_path}: {e}")
                 
-        # Дергаем системный редактор (откроется VS Code, если он стоит по умолчанию)
+        # open the system editor (VS Code if it is the default)
         try: 
-            if os.name == 'nt':  # Для Windows
+            if os.name == 'nt':
                 os.startfile(full_path)
-            else:                # Для Linux / Mac
+            else:
                 subprocess.call(['xdg-open', full_path])
             logging.info(f"Successfully opened: {filename}")
         except Exception as e: 
             logging.error(f"Failed to open editor: {e}")
 
     # ==========================================
-    #               СИНХРОНИЗАЦИЯ С ФАЙЛОМ
+    #               SYNC FROM FILE
     # ==========================================
     def sync_node_from_file(self, filename, content, ports, graphs, log_callback):
         incoming_name = os.path.basename(filename)
@@ -685,11 +564,11 @@ class ProjectManager:
                 updated = True
                 
         if updated: 
-            log_callback(f"⚡ Sync: Added ports to {incoming_name}")
+            log_callback(f"Sync: Added ports to {incoming_name}")
             target_node.update()
 
     # ==========================================
-    #               ВСПОМОГАТЕЛЬНЫЕ
+    #               HELPERS
     # ==========================================
     def _get_nodes_iterable(self, session_data):
         nodes = session_data.get('nodes', [])
@@ -702,12 +581,12 @@ class ProjectManager:
             try:
                 ports_config = []
                 
-                # Безопасно извлекаем значение: если это функция — вызываем, если нет — берем как есть
+                # the attribute may be a method or a plain value
                 def get_safe(attr):
                     return attr() if callable(attr) else attr
 
                 for port in node.input_ports():
-                    # Проверяем multi_connection через view или напрямую, без вызова как функции
+                    # read multi_connection from the view, do not call it
                     is_multi = port.view.multi_connection if hasattr(port, 'view') else False
                     
                     ports_config.append({
@@ -733,12 +612,12 @@ class ProjectManager:
                     node.set_property('saved_ports_config', ports_config)
                     
             except Exception as e:
-                logging.error(f"Ошибка бэкапа портов в ноде {node.name()}: {e}")
+                logging.error(f"Port backup failed for node {node.name()}: {e}")
     
     def _restore_connections(self, graph, connections_data, raw_nodes_data):
         if not connections_data: return
 
-        # 1. Достаем имена нод по их старым (мертвым) ID
+        # 1. Node names by their old (dead) ids
         id_to_name = {}
         if isinstance(raw_nodes_data, dict):
             for nid, ndata in raw_nodes_data.items():
@@ -747,7 +626,7 @@ class ProjectManager:
             for ndata in raw_nodes_data:
                 id_to_name[ndata.get('id')] = ndata.get('name')
 
-        # 2. Создаем карту новых, живых нод по их имени
+        # 2. Map of the new, live nodes by name
         name_to_node = {node.name(): node for node in graph.all_nodes()}
         
         restored_count = 0
@@ -757,11 +636,11 @@ class ProjectManager:
             in_data = conn.get('in', [])
             
             if len(out_data) == 2 and len(in_data) == 2:
-                # Получаем имена нод по старым ID
+                # old ids -> names
                 out_name = id_to_name.get(out_data[0])
                 in_name = id_to_name.get(in_data[0])
                 
-                # Ищем новые ноды по именам
+                # names -> new nodes
                 out_node = name_to_node.get(out_name)
                 in_node = name_to_node.get(in_name)
                 
@@ -777,10 +656,10 @@ class ProjectManager:
                             out_port.connect_to(in_port)
                             restored_count += 1
                         except Exception as e:
-                            print(f" Ошибка соединения портов: {e}")
+                            logging.warning(f"Connection {out_name}.{out_port_name} -> {in_name}.{in_port_name} failed: {e}")
                     else:
-                        print(f" Порты не найдены! Искали: {out_port_name} -> {in_port_name}")
+                        logging.warning(f"Ports not found: {out_name}.{out_port_name} -> {in_name}.{in_port_name}")
                 else:
-                    print(f" Ноды не найдены по именам! {out_name} -> {in_name}")
+                    logging.warning(f"Nodes not found by name: {out_name} -> {in_name}")
 
-        print(f"🔗 ВОССТАНОВЛЕНО СВЯЗЕЙ: {restored_count} из {len(connections_data)}")
+        logging.info(f"Connections restored: {restored_count} of {len(connections_data)}")

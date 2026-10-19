@@ -13,7 +13,7 @@ public:
     CallbackReturn on_configure(const rclcpp_lifecycle::State &) override {
         RCLCPP_INFO(get_logger(), "Configuring...");
         
-        // Параметры ROS 2
+        // ROS 2 parameters
         {% for param in parameters %}
         this->declare_parameter("{{ param.name }}", {{ param.value if param.type != 'string' else '"' + param.value + '"' }});
         {% endfor %}

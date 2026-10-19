@@ -1,4 +1,3 @@
-
 # === PYTHON TEMPLATES ===
 PYTHON_TEMPLATES = {
     "Default": """import rclpy
@@ -7,15 +6,15 @@ from rclpy.node import Node
 class {class_name}(Node):
     def __init__(self):
         super().__init__('{node_name}')
-        # [AUTO-GEN-PUBS] - маркер для добавления паблишеров
+        # [AUTO-GEN-PUBS] - marker where publishers are added
         {EXEC_OUT_INIT}
         
-        # [AUTO-GEN-SUBS] - маркер для добавления подписчиков
+        # [AUTO-GEN-SUBS] - marker where subscribers are added
         {EXEC_IN_INIT}
         
         self.get_logger().info('Node {node_name} started')
 
-    # [AUTO-GEN-FIRE] - сюда можно добавлять колбэки
+    # [AUTO-GEN-FIRE] - callbacks can be added here
     {EXEC_FIRE}
 
 def main():
@@ -43,7 +42,7 @@ class {class_name}(Node):
         # [AUTO-GEN-PUBS]
         {EXEC_OUT_INIT}
         
-        # Создаем встроенный триггер для topic_1
+        # built-in trigger on topic_1
         self.trigger_pub = self.create_publisher(String, 'topic_1', 10)
         
         interval = float({interval})
@@ -51,7 +50,7 @@ class {class_name}(Node):
         self.get_logger().info(f'Timer Started: {interval}s')
 
     def timer_callback(self):
-        # 1. Отправляем сигнал
+        # 1. Send the signal
         msg = String()
         msg.data = "tick"
         self.trigger_pub.publish(msg)
@@ -84,13 +83,13 @@ class {class_name}(Node):
         # [AUTO-GEN-PUBS]
         {EXEC_OUT_INIT}
 
-        # Основной паблишер ноды
+        # the node's main publisher
         self.pub = self.create_publisher(String, '{topic_name}', 10)
         
         # [AUTO-GEN-SUBS]
         {EXEC_IN_INIT}
         
-        # Слушаем триггер от таймера
+        # listen to the trigger from the timer
         self.trigger_sub = self.create_subscription(String, 'topic_1', self.trigger_callback, 10)
         self.i = 0
 
@@ -198,9 +197,9 @@ public:
         // [AUTO-GEN-EXEC-OUT]
         {EXEC_OUT_INIT}
 
-        // Конвертация интервала
+        // interval conversion
         long int ms = (long int)({interval} * 1000);
-        if(ms <= 0) ms = 500; // защита от нуля
+        if(ms <= 0) ms = 500; // guard against zero
         
         timer_ = this->create_wall_timer(std::chrono::milliseconds(ms), [this](){
             // [AUTO-GEN-FIRE]
@@ -314,3 +313,15 @@ int main(int argc, char ** argv) {
 TEMPLATES = {}
 TEMPLATES.update(PYTHON_TEMPLATES)
 TEMPLATES.update(CPP_TEMPLATES)
+
+CPP_TEMPLATES["Lifecycle"] = '#include "rclcpp/rclcpp.hpp"\n#include "rclcpp_lifecycle/lifecycle_node.hpp"\n\nusing CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;\n\nclass {class_name} : public rclcpp_lifecycle::LifecycleNode {\npublic:\n    {class_name}() : rclcpp_lifecycle::LifecycleNode("{node_name}") {\n        RCLCPP_INFO(this->get_logger(), "{node_name} constructed (unconfigured)");\n    }\n\n    CallbackReturn on_configure(const rclcpp_lifecycle::State &) override {\n        // [AUTO-GEN-EXEC-IN-INIT]\n        {EXEC_IN_INIT}\n        // [AUTO-GEN-EXEC-OUT-INIT]\n        {EXEC_OUT_INIT}\n        RCLCPP_INFO(this->get_logger(), "Configuring...");\n        return CallbackReturn::SUCCESS;\n    }\n\n    CallbackReturn on_activate(const rclcpp_lifecycle::State &) override {\n        RCLCPP_INFO(this->get_logger(), "Activating...");\n        // [AUTO-GEN-FIRE]\n        {EXEC_FIRE}\n        return CallbackReturn::SUCCESS;\n    }\n\n    CallbackReturn on_deactivate(const rclcpp_lifecycle::State &) override {\n        RCLCPP_INFO(this->get_logger(), "Deactivating (frozen)...");\n        return CallbackReturn::SUCCESS;\n    }\n\n    CallbackReturn on_cleanup(const rclcpp_lifecycle::State &) override {\n        RCLCPP_INFO(this->get_logger(), "Cleaning up...");\n        return CallbackReturn::SUCCESS;\n    }\n\n    CallbackReturn on_shutdown(const rclcpp_lifecycle::State &) override {\n        RCLCPP_INFO(this->get_logger(), "Shutting down...");\n        return CallbackReturn::SUCCESS;\n    }\n\nprivate:\n    // [AUTO-GEN-EXEC-VARS]\n    {EXEC_VARS}\n};\n\nint main(int argc, char * argv[]) {\n    rclcpp::init(argc, argv);\n    auto node = std::make_shared<{class_name}>();\n    rclcpp::spin(node->get_node_base_interface());\n    rclcpp::shutdown();\n    return 0;\n}\n'
+TEMPLATES.update(CPP_TEMPLATES)
+
+def template_name(template_key):
+    """Node key ('cpp_string_pub', 'py_timer'...) -> template name in *_TEMPLATES."""
+    k = (template_key or "").lower()
+    for needle, name in (("custom", "Custom"), ("lifecycle", "Lifecycle"), ("timer", "Timer"),
+                         ("pub", "Publisher"), ("sub", "Subscriber"), ("action", "ActionClient")):
+        if needle in k:
+            return name
+    return "Default"

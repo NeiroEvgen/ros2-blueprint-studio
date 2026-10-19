@@ -3,8 +3,11 @@ import os
 from PySide6 import QtWidgets
 from qt_material import apply_stylesheet
 
-# Добавляем корень в путь
+# add the project root to the path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from core import settings as _settings
+_settings.apply_language()          # saved UI language, before any window is created
 
 from ui.launcher_dialog import LauncherDialog
 from ui.main_window import RosVisualRunner
@@ -23,7 +26,7 @@ _nb.NodeItem.auto_switch_mode = _safe_asm
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     
-    # Настройка темы
+    # theme
     extra = {
         'font_family': 'Segoe UI', 
         'font_size': '14px', 
@@ -38,12 +41,12 @@ if __name__ == '__main__':
         QDockWidget::title { background: #2c3e50; text-align: center; padding: 5px; }
     """)
 
-    # Лаунчер
+    # launcher
     launcher = LauncherDialog()
     if launcher.exec() == QtWidgets.QDialog.Accepted:
         project_path = launcher.selected_project_path
         
-        # Запуск главного окна
+        # main window
         window = RosVisualRunner(project_path)
         window.show()
         

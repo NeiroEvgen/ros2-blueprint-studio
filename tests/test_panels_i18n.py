@@ -1,0 +1,165 @@
+"""Container settings and Remote panels: labels from the dictionary, in two languages."""
+import os
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+from core import i18n  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def app():
+    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+
+def _form_labels(form_layout):
+    out = []
+    for r in range(form_layout.rowCount()):
+        item = form_layout.itemAt(r, QtWidgets.QFormLayout.LabelRole)
+        if item is not None and item.widget() is not None:
+            out.append(item.widget().text())
+    return out
+
+
+def _all_texts(widget):
+    texts = []
+    for w in widget.findChildren(QtWidgets.QLabel):
+        texts.append(w.text())
+    for w in widget.findChildren(QtWidgets.QAbstractButton):
+        texts.append(w.text())
+    return texts
+
+
+def test_container_settings_english_and_russian(app):
+    from ui.container_settings import ContainerSettingsPanel
+    p = ContainerSettingsPanel()
+    en = _all_texts(p)
+    assert "Container groups" in en and "Save group config" in en
+    assert "Open a project to edit container configs." in en
+    i18n.set_language("ru")
+    p2 = ContainerSettingsPanel()
+    ru = _all_texts(p2)
+    assert "Группы контейнеров" in ru and "Сохранить конфиг группы" in ru
+    assert p2.sp_delay.suffix() == " мс"
+    assert p2.env_table.horizontalHeaderItem(0).text() == "КЛЮЧ"
+    i18n.set_language("en")
+    p.deleteLater(); p2.deleteLater()
+
+
+def test_remote_panel_english_and_russian(app):
+    from ui.remote_panel import RemotePanel
+    p = RemotePanel()
+    assert p.lbl_state.text() == "Not connected"
+    assert p.btn_connect.text() == "Connect"
+    assert p.btn_terminal.text() == "Terminal"
+    i18n.set_language("ru")
+    p2 = RemotePanel()
+    assert p2.lbl_state.text() == "Не подключено"
+    assert p2.btn_connect.text() == "Подключить"
+    assert "ssh" in p2.btn_terminal.toolTip()
+    i18n.set_language("en")
+    p.deleteLater(); p2.deleteLater()
+
+
+def test_remote_panel_has_no_robot_specific_defaults(app):
+    from ui.remote_panel import RemotePanel
+    p = RemotePanel()
+    blob = " ".join([p.ed_host.placeholderText(), p.ed_user.placeholderText(), p.ed_ws.placeholderText()]).lower()
+    assert "unitree" not in blob and "192.168.123" not in blob
+    p.deleteLater()
+
+
+def test_small_panels_follow_language(app):
+    from ui.docker_panel import DockerPanel
+    from ui.library_manager import LibraryManager
+
+    class FakeDocker:
+        def list_containers(self, *a, **k): return []
+        client = None
+
+    lib = LibraryManager(FakeDocker())
+    assert lib.install_btn.text() == "Install"
+    assert lib.type_combo.itemText(0).startswith("apt")
+    i18n.set_language("ru")
+    lib2 = LibraryManager(FakeDocker())
+    assert lib2.install_btn.text() == "Установить"
+    assert "Менеджер" in [w.text() for w in lib2.findChildren(QtWidgets.QLabel)][0]
+    i18n.set_language("en")
+    lib.deleteLater(); lib2.deleteLater()
+
+
+    dp = DockerPanel(FakeDocker())
+    assert dp.label.text() == "Docker Containers"
+    assert dp.table.horizontalHeaderItem(2).text() == "Status"
+    dp.timer.stop()
+    i18n.set_language("ru")
+    dp2 = DockerPanel(FakeDocker())
+    assert dp2.label.text() == "Docker-контейнеры"
+    assert dp2.table.horizontalHeaderItem(2).text() == "Статус"
+    dp2.timer.stop()
+    i18n.set_language("en")
+    dp.deleteLater(); dp2.deleteLater()
+
+
+def test_buttons_have_vector_icons_not_emoji(app):
+    """Emoji in labels depend on OS fonts; buttons use vector icons."""
+    from ui.remote_panel import RemotePanel
+    p = RemotePanel()
+    for b in (p.btn_save, p.btn_connect, p.btn_sync, p.btn_build, p.btn_cancel, p.btn_terminal):
+        assert not b.icon().isNull(), b.text()
+    p.deleteLater()
+
+
+def test_no_pictographic_emoji_in_ui_strings():
+    """Neither the dictionaries nor the UI code may contain emoji pictograms (⚠ ↑ ✕ are allowed)."""
+    import glob, json, re
+    emo = re.compile("[\U0001F300-\U0001FAFF✅❌⏹▶♻✨⚡✂⇅⛔]")
+    root = os.path.dirname(os.path.dirname(__file__))
+    for code in ("en", "ru"):
+        data = json.load(open(os.path.join(root, "locales", f"{code}.json"), encoding="utf-8"))
+        bad = [k for k, v in data.items() if isinstance(v, str) and emo.search(v)]
+        assert not bad, (code, bad)
+    for f in glob.glob(os.path.join(root, "ui", "*.py")):
+        for n, line in enumerate(open(f, encoding="utf-8"), 1):
+            if not line.lstrip().startswith("#"):
+                assert not emo.search(line), (f, n, line.strip())
+
+
+def test_file_browser_texts_and_sizes(app):
+    from ui.file_browser import FileBrowser, _size
+    fb = FileBrowser()
+    assert fb.lbl_file.text() == "No file open"
+    assert fb.tree.headerItem().text(0) == "Name"
+    assert _size(512) == "512 B" and _size(2048) == "2 KB" and _size(5 * 1024 ** 3) == "5 GB"
+    i18n.set_language("ru")
+    fb2 = FileBrowser()
+    assert fb2.lbl_file.text() == "Файл не открыт"
+    assert fb2.tree.headerItem().text(1) == "Размер"
+    assert fb2.btn_save.text().startswith("Сохранить")
+    assert _size(2048) == "2 КБ"
+    i18n.set_language("en")
+    fb.deleteLater(); fb2.deleteLater()
+
+
+def test_file_browser_source_labels(app, tmp_path):
+    from ui.file_browser import FileBrowser
+    fb = FileBrowser()
+    fb.set_sources(str(tmp_path), None)
+    assert fb.cmb_source.itemText(0).startswith("Project (local)")
+    i18n.set_language("ru")
+    fb.set_sources(str(tmp_path), None)
+    assert fb.cmb_source.itemText(0).startswith("Проект (локально)")
+    i18n.set_language("en")
+    fb.deleteLater()
+
+
+def test_terminal_log_dialog_close_button_translated(app):
+    from PySide6 import QtWidgets
+    from core import i18n
+    from ui.dashboard import TerminalLogDialog
+    for lang, word in (("en", "Close"), ("ru", "Закрыть")):
+        i18n.set_language(lang)
+        dlg = TerminalLogDialog("node", ["line"])
+        texts = [b.text() for b in dlg.findChildren(QtWidgets.QPushButton)]
+        assert word in texts and "[ CLOSE ]" not in texts
+    i18n.set_language("en")

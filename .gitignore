@@ -2,7 +2,13 @@ venv/
 __pycache__/
 *.pyc
 .blueprint/
+# example state is part of the example; it cannot be opened without it
+!examples/*/.blueprint/
+examples/*/.blueprint/*
+!examples/*/.blueprint/state.yaml
 BlueprintStudioProjects/
 /build
 /dist
 ROS2Studio.spec
+# only the docker file in the root, not the docker_image/ folder
+/docker

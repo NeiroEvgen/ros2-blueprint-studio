@@ -1,28 +1,27 @@
+import logging
 import os
 import json
-import shutil
-import platform
 
 class WorkspaceManager:
-    # 1. Получаем путь к домашней директории пользователя
+    # 1. User home folder
     USER_HOME = os.path.expanduser("~")
     
-    # 2. Строим путь к Документам
+    # 2. Documents folder
     DOCUMENTS_DIR = os.path.join(USER_HOME, "Documents")
     
-    # 3. Целевая папка для проектов
+    # 3. Target folder for projects
     WORKSPACE_DIR = os.path.join(DOCUMENTS_DIR, "BlueprintStudioProjects")
 
     @staticmethod
     def get_workspace_root():
-        """Возвращает путь к папке с проектами, создавая её при необходимости"""
+        """Returns the projects folder, creating it if needed."""
         if not os.path.exists(WorkspaceManager.WORKSPACE_DIR):
             try:
                 os.makedirs(WorkspaceManager.WORKSPACE_DIR)
-                print(f"📁 Created new workspace at: {WorkspaceManager.WORKSPACE_DIR}")
+                logging.info(f"Created new workspace at: {WorkspaceManager.WORKSPACE_DIR}")
             except OSError as e:
-                print(f"❌ Error creating workspace: {e}")
-                # Fallback на случай проблем с правами - создаем рядом со скриптом
+                logging.warning(f"Error creating workspace: {e}")
+                # fallback if permissions are a problem: create it next to the script
                 fallback = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "BlueprintStudioProjects")
                 fallback = os.path.abspath(fallback)
                 if not os.path.exists(fallback):
@@ -36,14 +35,14 @@ class WorkspaceManager:
         root = WorkspaceManager.get_workspace_root()
         if not os.path.exists(root):
             return []
-        # Возвращаем только папки
+        # folders only
         return [d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))]
 
     @staticmethod
     def create_project(project_name, project_type="python"):
         """
-        Создает новый проект с полной структурой ROS 2 пакета.
-        project_type: 'python' или 'cpp'
+        Creates a new project with the full ROS 2 package structure.
+        project_type: 'python', 'cpp' or 'mixed'
         """
         root = WorkspaceManager.get_workspace_root()
         path = os.path.join(root, project_name)
@@ -51,14 +50,18 @@ class WorkspaceManager:
         if os.path.exists(path):
             raise FileExistsError(f"Project '{project_name}' already exists!")
             
-        # 1. Создаем структуру папок
+        # 1. Folder structure
         os.makedirs(path)
-        os.makedirs(os.path.join(path, "src"))
-        os.makedirs(os.path.join(path, "launch"))
-        os.makedirs(os.path.join(path, "docker"))
-        os.makedirs(os.path.join(path, ".blueprint")) # Для метаданных редактора
+        # Layout: everything ROS 2 lives in src/ (CMakeLists/package.xml/launch are created by
+        # ProjectManager.save_project), next to it only docker/ and .blueprint/.
+        from core.layout import ProjectLayout
+        lay = ProjectLayout(path)
+        os.makedirs(lay.src)
+        os.makedirs(lay.launch)
+        os.makedirs(lay.docker)
+        os.makedirs(lay.blueprint)  # editor metadata
 
-        # 2. Сохраняем конфиг Blueprint
+        # 2. Blueprint config
         config = {
             "name": project_name,
             "type": project_type,
@@ -68,9 +71,7 @@ class WorkspaceManager:
         with open(os.path.join(path, "project_config.json"), 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=4)
 
-        # 3. Генерируем ROS-файлы (package.xml, CMakeLists.txt)
-        WorkspaceManager._create_package_xml(path, project_name)
-        WorkspaceManager._create_cmakelists(path, project_name)
+        # 3. Docker template only; no root CMakeLists/package.xml any more.
         WorkspaceManager._create_docker_template(path, project_name)
 
         return path
@@ -78,7 +79,7 @@ class WorkspaceManager:
     @staticmethod
     def get_project_type(project_path):
         """
-        Читает тип проекта из конфига или угадывает по файлам.
+        Reads the project type from the config or guesses it from the files.
         """
         config_path = os.path.join(project_path, "project_config.json")
         if os.path.exists(config_path):
@@ -89,7 +90,7 @@ class WorkspaceManager:
             except:
                 pass
         
-        # Для старых проектов (без конфига) - угадываем
+        # old projects (no config): guess
         src_dir = os.path.join(project_path, "src")
         if os.path.exists(src_dir):
             for f in os.listdir(src_dir):
@@ -98,7 +99,7 @@ class WorkspaceManager:
         
         return "python"
 
-    # --- ГЕНЕРАТОРЫ ФАЙЛОВ ---
+    # --- FILE GENERATORS ---
 
     @staticmethod
     def _create_package_xml(path, name):
@@ -129,7 +130,7 @@ class WorkspaceManager:
 
     @staticmethod
     def _create_cmakelists(path, name):
-        # Гибридный CMake для поддержки и C++, и Python скриптов в одной папке src
+        # hybrid CMake supporting both C++ and Python scripts in one src folder
         content = f"""cmake_minimum_required(VERSION 3.8)
 project({name})
 
@@ -165,7 +166,7 @@ ament_package()
 
     @staticmethod
     def _create_docker_template(path, name):
-        # Базовый композ для Docker
+        # base compose for Docker
         content = f"""version: '3'
 services:
   {name}_node:
