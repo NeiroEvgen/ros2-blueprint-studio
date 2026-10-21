@@ -125,8 +125,11 @@ class RemoteRunner:
             f"exec setsid -w bash -c {shlex.quote('echo ' + _PGID_MARK + ' $$; ' + script)} 2>&1")
         chan = self.ssh.get_transport().open_session()
         chan.exec_command(wrapped)
-        with self._lock:
-            self._current_channel = chan
+        if not name:
+            # only the foreground command (build) is cancellable via cancel(); a named
+            # background process must not overwrite or clear its channel and pgid
+            with self._lock:
+                self._current_channel = chan
 
         buf = b""
         pgid = None
@@ -139,9 +142,10 @@ class RemoteRunner:
                 if m:
                     pgid = int(m.group(1))
                     with self._lock:
-                        self._current_pgid = pgid
                         if name:
                             self._running[name] = pgid
+                        else:
+                            self._current_pgid = pgid
                     return
             on_line(line)
 
@@ -176,10 +180,11 @@ class RemoteRunner:
             return rc
         finally:
             with self._lock:
-                self._current_channel = None
-                self._current_pgid = None
                 if name:
                     self._running.pop(name, None)
+                else:
+                    self._current_channel = None
+                    self._current_pgid = None
             chan.close()
 
     def _transport_alive(self):
