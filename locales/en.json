@@ -394,5 +394,20 @@
   "import.no_package_xml": "package.xml not found: importing as a set of files.",
   "import.no_sources": "No .py/.cpp files found in the selected folder.",
   "import.too_big": "Skipped (too large): {file}",
-  "import.read_failed": "Could not read {file}: {error}"
+  "import.read_failed": "Could not read {file}: {error}",
+  "params.err_start": "Could not start the parameter bridge: {detail}",
+  "params.err_no_rclpy": "rclpy is not available where the bridge runs (ROS 2 environment not sourced?): {detail}",
+  "params.err_start_failed": "The parameter bridge failed to start: {detail}",
+  "params.err_closed": "The parameter bridge is not running (session stopped or connection lost). {detail}",
+  "params.err_timeout": "No answer from the parameter bridge: {detail}",
+  "params.err_no_node": "Node {detail} does not answer parameter requests (is it running?)",
+  "params.err_no_param": "The node has no parameter {detail}",
+  "params.err_type": "Wrong value type: {detail}",
+  "params.err_rejected": "The node rejected the value: {detail}",
+  "params.err_internal": "Parameter bridge error: {detail}",
+  "params.no_answer": "the bridge did not report readiness",
+  "params.read_only": "The parameter is read-only",
+  "params.out_of_range": "The value is outside the declared range {min}…{max}",
+  "params.confirm_no_range": "The node declares no range for this parameter. Send the value to the real robot?",
+  "params.confirm_jump": "A change of {percent}% of the range in one step. Send it to the real robot?"
 }

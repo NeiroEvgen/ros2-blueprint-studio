@@ -396,5 +396,20 @@
   "import.no_package_xml": "package.xml не найден — импортирую как набор файлов.",
   "import.no_sources": "В выбранной папке не найдено ни одного .py/.cpp файла.",
   "import.too_big": "Пропущен (слишком большой): {file}",
-  "import.read_failed": "Не прочитан {file}: {error}"
+  "import.read_failed": "Не прочитан {file}: {error}",
+  "params.err_start": "Не удалось запустить мост параметров: {detail}",
+  "params.err_no_rclpy": "Там, где запускается мост, нет rclpy (не подключено окружение ROS 2?): {detail}",
+  "params.err_start_failed": "Мост параметров не запустился: {detail}",
+  "params.err_closed": "Мост параметров не работает (сессия остановлена или связь потеряна). {detail}",
+  "params.err_timeout": "Мост параметров не ответил: {detail}",
+  "params.err_no_node": "Нода {detail} не отвечает на запросы параметров (она запущена?)",
+  "params.err_no_param": "У ноды нет параметра {detail}",
+  "params.err_type": "Неверный тип значения: {detail}",
+  "params.err_rejected": "Нода отклонила значение: {detail}",
+  "params.err_internal": "Ошибка моста параметров: {detail}",
+  "params.no_answer": "мост не сообщил о готовности",
+  "params.read_only": "Параметр только для чтения",
+  "params.out_of_range": "Значение вне объявленного диапазона {min}…{max}",
+  "params.confirm_no_range": "Нода не объявила диапазон для этого параметра. Отправить значение на реального робота?",
+  "params.confirm_jump": "Изменение на {percent}% диапазона за один шаг. Отправить на реального робота?"
 }
