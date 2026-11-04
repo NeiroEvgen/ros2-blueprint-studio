@@ -1,0 +1,4 @@
+# Documentation site only (mkdocs.yml); Studio itself does not need these.
+mkdocs==1.6.1
+mkdocs-material==9.8.0
+markdown-callouts==0.4.0

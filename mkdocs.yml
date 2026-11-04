@@ -1,0 +1,65 @@
+# Documentation site: https://neiroevgen.github.io/ros2-blueprint-studio/
+# Local preview: pip install -r docs/requirements.txt && mkdocs serve
+# Published by .github/workflows/docs.yml
+site_name: ROS 2 Blueprint Studio
+site_description: A visual editor for ROS 2 that produces real ROS 2 code. Tutorials and documentation.
+site_url: https://neiroevgen.github.io/ros2-blueprint-studio/
+repo_url: https://github.com/NeiroEvgen/ros2-blueprint-studio
+repo_name: NeiroEvgen/ros2-blueprint-studio
+edit_uri: edit/test-0.6.0/docs/
+docs_dir: docs
+
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: slate              # dark by default, like Studio
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Light theme
+    - scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Dark theme
+  features:
+    - navigation.footer          # previous / next chapter at the bottom
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - toc.follow
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - github-callouts            # > [!NOTE] / > [!WARNING]: the same boxes on GitHub and on the site
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.details
+
+nav:
+  - Home: index.md
+  - Tutorials:
+      - tutorials/README.md
+      - 1. Workspace, package and build: tutorials/01-workspace-and-package.md
+      - 2. Publisher and subscriber (Python): tutorials/02-publisher-subscriber-python.md
+      - 3. Publisher and subscriber (C++): tutorials/03-publisher-subscriber-cpp.md
+      - 4. Service and client: tutorials/04-service-client.md
+      - 5. Looking at a running system: tutorials/05-inspecting-a-running-system.md
+      - 6. Parameters, tuned live: tutorials/06-parameters.md
+      - 7. Launch files: tutorials/07-launch-files.md
+  - Known limitations: KNOWN_LIMITATIONS.md

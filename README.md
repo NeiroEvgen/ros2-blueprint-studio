@@ -35,9 +35,10 @@ robot over SSH. No local ROS 2 installation needed: it works on **Windows** and 
 
 ## Learn ROS 2 with it
 
-[**docs/tutorials**](docs/tutorials/README.md) follows the official ROS 2 Humble tutorials in
-Studio: what you do instead of the terminal, what Studio generates, and where it differs.
-Every chapter's project was built and run against ROS 2 Humble.
+The tutorials follow the official ROS 2 Humble tutorials in Studio: what you do instead of the
+terminal, what Studio generates, and where it differs. Every chapter's project was built and run
+against ROS 2 Humble. Read them on the **[documentation site](https://neiroevgen.github.io/ros2-blueprint-studio/)**
+(search, chapter navigation) or here in [docs/tutorials](docs/tutorials/README.md).
 
 | | |
 |---|---|

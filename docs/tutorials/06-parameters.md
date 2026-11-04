@@ -113,8 +113,9 @@ With **Real robot** on, or with a robot connected on the Remote tab, the window 
   declared range, asks for confirmation first;
 - **Revert** asks too.
 
-A jump of a gain on a real robot is a jerk of a joint. Declaring ranges in your nodes is what
-makes these checks possible.
+> [!CAUTION]
+> A jump of a gain on a real robot is a jerk of a joint. Declaring ranges in your nodes is what
+> makes these checks possible, and they do not replace the robot's own emergency stop.
 
 ## Check it like the official tutorial
 

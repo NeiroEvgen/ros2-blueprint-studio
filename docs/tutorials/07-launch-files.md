@@ -115,9 +115,11 @@ $ ros2 node list
   node is a script, so the same goes after `--ros-args`: `-r __node:=new_name`, `-r __ns:=/robot`,
   `-r /from:=/to`, `-p name:=value`. For C++ nodes `Node(package=..., executable=...)` works as in
   the official tutorial.
-- **Run does not start your file.** **Run** always starts `project_launch.py`. Start your own
-  launch file from the container terminal as above (stop Studio's Run first, or you get the nodes
-  twice).
+
+> [!NOTE]
+> **Run does not start your file.** **Run** always starts `project_launch.py`. Start your own
+> launch file from the container terminal as above (stop Studio's Run first, or you get the nodes
+> twice).
 
 ## Where Studio differs
 

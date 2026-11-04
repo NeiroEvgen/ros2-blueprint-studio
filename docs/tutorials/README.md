@@ -15,7 +15,7 @@ Read the official tutorial alongside: it explains the concepts, these chapters s
 
 - Docker is installed and running (Docker Desktop on Windows). Studio runs ROS 2 Humble in a
   container, so you do not need a local ROS 2 installation.
-- Studio is installed (see the main [README](../../README.md)). The first Run pulls the ROS 2 image
+- Studio is installed (see [Install](https://github.com/NeiroEvgen/ros2-blueprint-studio#install)). The first Run pulls the ROS 2 image
   (about 2 GB) and takes a few minutes.
 
 ## Chapters
@@ -34,5 +34,7 @@ Read the official tutorial alongside: it explains the concepts, these chapters s
 
 ## How the examples were checked
 
-Every chapter's project was built in Studio and run in a real ROS 2 Humble container; the
-screenshots and logs come from that run.
+> [!TIP]
+> Every chapter's project was built in Studio and run in a real ROS 2 Humble container; the
+> screenshots and logs come from those runs. If something looks different on your machine,
+> that is a bug: please report it.

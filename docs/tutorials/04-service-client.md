@@ -86,10 +86,13 @@ with a callback.
   *Interval* seconds with the *a* and *b* fields. Put `a` and `b` in your code instead if you need
   real input.
 - **The answer comes in a callback, never by waiting.** `call_async` plus `add_done_callback`
-  (C++: `async_send_request` with a callback). Waiting for the future inside a timer callback
-  (`rclpy.spin_until_future_complete` there, or `future.get()` in C++) blocks the node's only
-  executor thread: the response can never be processed and the node hangs. This is the most
-  common service bug in ROS 2; the template avoids it.
+  (C++: `async_send_request` with a callback). The template does it this way on purpose:
+
+  > [!WARNING]
+  > Never wait for a service response inside a callback (`rclpy.spin_until_future_complete`
+  > in a timer callback, or `future.get()` in C++). It blocks the node's only executor thread:
+  > the response can never be processed and the node hangs. This is the most common service
+  > bug in ROS 2.
 - **"service not available" is normal at start.** The client may start before the server; it
   checks `service_is_ready()` and tries again on the next tick, like the official
   `wait_for_service` loop.

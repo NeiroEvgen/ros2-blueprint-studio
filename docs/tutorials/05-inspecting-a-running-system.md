@@ -134,8 +134,9 @@ Messages:          10
 Topic information: Topic: /chatter | Type: std_msgs/msg/String | Count: 10 | Serialization Format: cdr
 ```
 
-Stop the recording with **Ctrl+C**: the bag is closed properly only then. Killing the process
-leaves a bag without metadata that `ros2 bag info` cannot read.
+> [!WARNING]
+> Stop the recording with **Ctrl+C**: the bag is closed properly only then. Killing the process
+> leaves a bag without metadata that `ros2 bag info` cannot read.
 
 ```bash
 ros2 bag play demo_bag                                  # back on /chatter: listener hears it too
