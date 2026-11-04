@@ -241,3 +241,28 @@ class TestNonUtf8File:
         assert "target_link_libraries(Node yaml-cpp)" in user
         assert "# своя библиотека" in user
         assert (src / "CMakeLists.txt.bak").read_bytes() == original
+
+
+class TestCrlfFile:
+    """
+    CMakeLists saved with Windows line endings (Notepad, VS Code, git autocrlf): the USER markers
+    were not found, the whole file was "migrated" into the USER block, add_executable doubled.
+    """
+
+    def test_crlf_file_is_read_like_lf(self, pm, cpp_project):
+        src, add = cpp_project
+        add("Node.cpp", MAIN_CPP)
+        pm._generate_cpp_build_files(str(src), [])
+        path = src / "CMakeLists.txt"
+        text = path.read_text(encoding="utf-8")
+        body = _user_block(text)
+        edited = text.replace(body, body + "set(FOO bar)\n")
+        path.write_bytes(edited.replace("\n", "\r\n").encode("utf-8"))
+
+        pm._generate_cpp_build_files(str(src), [])
+        pm._generate_cpp_build_files(str(src), [])
+
+        out = _cmake(src)
+        assert out.count("add_executable(") == text.count("add_executable(")
+        assert _user_block(out).count("set(FOO bar)") == 1
+        assert not list(src.glob("CMakeLists.txt.bak*"))          # nothing to migrate, nothing backed up

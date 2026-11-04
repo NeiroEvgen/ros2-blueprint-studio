@@ -270,15 +270,17 @@ def _read_text_any(path: str):
     """
     (text, encoding). A CMakeLists edited in Windows Notepad may be cp1251:
     reading it only as UTF-8 failed, and the USER block was silently replaced by the template.
+    Line endings are normalized to \n like text-mode reading does: with CRLF left in, the USER
+    markers were not found and the file was "migrated" again on every Save (Windows).
     """
     with open(path, 'rb') as f:
         raw = f.read()
-    for enc in ("utf-8", "cp1251"):
+    for enc in ("utf-8", "cp1251", "latin-1"):      # latin-1 is single-byte: decodes anything
         try:
-            return raw.decode(enc), enc
+            text = raw.decode(enc)
         except UnicodeDecodeError:
             continue
-    return raw.decode("latin-1"), "latin-1"      # single-byte: decodes anything
+        return text.replace("\r\n", "\n").replace("\r", "\n"), enc
 
 
 def _backup(path: str):
