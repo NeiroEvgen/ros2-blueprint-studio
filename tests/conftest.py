@@ -144,3 +144,36 @@ def _isolated_settings(tmp_path, monkeypatch):
     # Most tests describe the two-tab mode; the single canvas is enabled explicitly.
     from core import settings
     settings.set("single_canvas", False)
+
+
+# ---------- ROS 2 Humble in Docker (parameter bridge tests) ----------
+
+IMAGE = "ros:humble-ros-core"
+ROS_FIXTURES = os.path.join(ROOT, "tests", "ros")
+
+
+def docker_ready():
+    """Docker works and the image is already pulled (tests never pull it themselves)."""
+    if _shutil.which("docker") is None:
+        return False
+    try:
+        r = _subprocess.run(["docker", "image", "inspect", IMAGE], capture_output=True, timeout=15)
+    except (OSError, _subprocess.TimeoutExpired):
+        return False
+    return r.returncode == 0
+
+
+@pytest.fixture(scope="module")
+def ros_container():
+    """A running demo node with declared ranges (tests/ros/demo_param_node.py)."""
+    if not docker_ready():
+        pytest.skip(f"Docker with the {IMAGE} image is not available")
+    name = f"studio_param_test_{os.getpid()}"
+    _subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+    # own ROS domain: containers on the same Docker network otherwise see each other's nodes
+    _subprocess.run(["docker", "run", "-d", "--name", name, "-e", "ROS_DOMAIN_ID=41",
+                     "-v", f"{ROS_FIXTURES}:/demo:ro", IMAGE, "bash", "-c",
+                     "source /opt/ros/humble/setup.bash && exec python3 -u /demo/demo_param_node.py"],
+                    check=True, capture_output=True)
+    yield name
+    _subprocess.run(["docker", "rm", "-f", name], capture_output=True)

@@ -2,8 +2,8 @@ meta:
   version: '4.0'
   merge:
     cpp_ids:
-    - '0x7fb4e89f9310'
-    - '0x7fb4e8cde650'
+    - '0x7f7d18e5f250'
+    - '0x7f7d1916e060'
     cpp_dy: 0.0
     remap: {}
     py_extra:
@@ -19,7 +19,7 @@ meta:
 graph:
   graph: *id001
   nodes:
-    '0x7fb4e89f9310':
+    '0x7f7d18e5f250':
       type_: ros.cpp.CppStringPubNode
       icon: null
       name: talker
@@ -55,6 +55,7 @@ graph:
         container_group: main
         is_imported: false
         source_file: talker.cpp
+        bound_file: ''
         code_content: "#include \"rclcpp/rclcpp.hpp\"\n#include \"std_msgs/msg/string.hpp\"\
           \nusing namespace std::chrono_literals;\n\nclass talker : public rclcpp::Node\
           \ {\npublic:\n    talker() : Node(\"talker\"), count_(0) {\n        publisher_\
@@ -78,7 +79,7 @@ graph:
         node_name: talker
         topic_name: /chatter
         template_key: cpp_string_pub
-    '0x7fb4e8cde650':
+    '0x7f7d1916e060':
       type_: ros.cpp.CppStringSubNode
       icon: null
       name: listener
@@ -106,6 +107,7 @@ graph:
         container_group: main
         is_imported: false
         source_file: listener.cpp
+        bound_file: ''
         code_content: "#include \"rclcpp/rclcpp.hpp\"\n#include \"std_msgs/msg/string.hpp\"\
           \nusing std::placeholders::_1;\n\nclass listener : public rclcpp::Node {\n\
           public:\n    listener() : Node(\"listener\") {\n        subscription_ =\
@@ -130,8 +132,8 @@ graph:
         template_key: cpp_string_sub
   connections:
   - out:
-    - '0x7fb4e89f9310'
+    - '0x7f7d18e5f250'
     - out
     in:
-    - '0x7fb4e8cde650'
+    - '0x7f7d1916e060'
     - in

@@ -7,7 +7,6 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
-find_package(example_interfaces REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
@@ -18,11 +17,11 @@ find_package(std_msgs REQUIRED)
 include_directories(include)
 
 add_executable(listener cpp/listener.cpp)
-ament_target_dependencies(listener example_interfaces geometry_msgs rclcpp rclcpp_action rclcpp_lifecycle sensor_msgs std_msgs)
+ament_target_dependencies(listener geometry_msgs rclcpp rclcpp_action rclcpp_lifecycle sensor_msgs std_msgs)
 install(TARGETS listener DESTINATION lib/${PROJECT_NAME})
 
 add_executable(talker cpp/talker.cpp)
-ament_target_dependencies(talker example_interfaces geometry_msgs rclcpp rclcpp_action rclcpp_lifecycle sensor_msgs std_msgs)
+ament_target_dependencies(talker geometry_msgs rclcpp rclcpp_action rclcpp_lifecycle sensor_msgs std_msgs)
 install(TARGETS talker DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})

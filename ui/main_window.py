@@ -22,6 +22,7 @@ from core.container_config import ContainerConfigStore, safe_group_name, resolve
 from core.project_importer import import_ros2_package
 from ui.container_settings import ContainerSettingsPanel
 from core.process_manager import ProcessManager
+from core.param_client import BridgeHolder
 
 # === UI MODULES ===
 from ui.ui_manager import UiManager
@@ -54,6 +55,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self._exec_ctx = ExecutionContext()
         self._remote = (False, "", "")   # connected, user@host, container
         self._real_robot = False
+        self._param_bridge = BridgeHolder()   # live parameters (Parameters window)
     
 
         # 4. Docker Connect
@@ -386,6 +388,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             panel = getattr(self, name, None)
             if panel is not None and hasattr(panel, "shutdown") and not panel.shutdown(timeout_ms):
                 leftovers.append(name)
+        self._param_bridge.close()
         return leftovers
 
     def on_save_project(self):
@@ -528,6 +531,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             self.ui.actions['run'].setEnabled(True)
         self.ui.actions['stop'].setEnabled(False)
         self.system_log(t("log.stopped"))
+        self._close_param_bridge()
         self._refresh_context()
 
     def on_export_docker(self):
@@ -554,6 +558,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
     def on_load_project_init(self, path):
         """Load a project and adapt the UI to it."""
         self.current_project_path = path
+        self._close_param_bridge()
         self._offer_layout_migration(path)
         p_type = WorkspaceManager.get_project_type(path)
         self.ui.set_visible_graph(p_type)
@@ -629,6 +634,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
     def _on_remote_changed(self, connected, host, container):
         self._remote = (connected, host, container)
+        self._close_param_bridge()       # the target changed: the next window starts a bridge there
         if hasattr(self.library_manager, "set_remote_connected"):
             self.library_manager.set_remote_connected(connected)
         self._refresh_context()
@@ -792,6 +798,43 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             for name in names:
                 pm.set_lifecycle_state(name, target_state, emit)
         self._background(work)
+
+    # ---------- live parameters ----------
+
+    def _param_target(self):
+        """(key, make_transport, where, remote) of the graph that is running now, or None."""
+        from core import param_client as pc
+        rp = getattr(self, "remote_panel", None)
+        if rp is not None and rp.connected:
+            s = rp.session
+            return (("remote", id(s.ssh)), lambda: pc.SSHTransport(s.ssh, pc.remote_command(s.profile)),
+                    t("params.where_remote", target=s.profile.display()), True)
+        cm = self.container_manager
+        if cm is not None and getattr(cm, "container", None) is not None:
+            name = cm.container_name
+            return (("local", name), lambda: pc.PipeTransport(pc.local_argv(name)),
+                    t("params.where_local"), False)
+        return None
+
+    def _close_param_bridge(self):
+        if self._param_bridge is not None:
+            self._background(lambda emit: self._param_bridge.close())
+
+    def on_params_selected(self, graph, *args, **kwargs):
+        from ui.params_window import ParamsWindow
+        target = self._param_target()
+        if target is None:
+            QtWidgets.QMessageBox.information(self, t("menu.parameters").strip(), t("params.no_target"))
+            return
+        key, make_transport, where, remote = target
+        selected = graph.selected_nodes()
+        guess = self._ros_node_name(selected[0]) if selected else None
+        bridge = self._param_bridge
+        win = ParamsWindow(lambda: bridge.get(key, make_transport), self.current_project_path,
+                           real_robot=self._real_robot or remote, where=where, initial_node=guess, parent=self)
+        win.log.connect(self.system_log)
+        win.show()
+        return win
 
     def _is_lifecycle_node(self, node):
         return 'lifecycle' in getattr(node, 'NODE_NAME', '').lower() or \
@@ -1098,6 +1141,7 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         root_menu.add_command(" " + t("menu.restart_node"), partial(self.on_restart_selected, graph))
         root_menu.add_command(" " + t("menu.freeze"), partial(self.on_freeze_selected, graph, 'deactivate'))
         root_menu.add_command(" " + t("menu.unfreeze"), partial(self.on_freeze_selected, graph, 'activate'))
+        root_menu.add_command(" " + t("menu.parameters"), partial(self.on_params_selected, graph))
         root_menu.add_separator()
 
         # Manual Rescan Action

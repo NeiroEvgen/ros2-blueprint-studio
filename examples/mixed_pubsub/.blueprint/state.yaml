@@ -2,7 +2,7 @@ meta:
   version: '4.0'
   merge:
     cpp_ids:
-    - '0x7fb4e89cd5b0'
+    - '0x7f7d1916eea0'
     cpp_dy: 0.0
     remap: {}
     py_extra:
@@ -18,7 +18,7 @@ meta:
 graph:
   graph: *id001
   nodes:
-    '0x7fb4e89cd480':
+    '0x7f7d1916e2c0':
       type_: ros.py.PyStringPubNode
       icon: null
       name: talker
@@ -54,6 +54,7 @@ graph:
         container_group: main
         is_imported: false
         source_file: talker.py
+        bound_file: ''
         code_content: "import rclpy\nfrom rclpy.node import Node\nfrom std_msgs.msg\
           \ import String\n\n\nclass Talker(Node):\n    def __init__(self):\n    \
           \    super().__init__('talker')\n        self.pub = self.create_publisher(String,\
@@ -76,7 +77,7 @@ graph:
         node_name: talker
         topic_name: /chatter
         template_key: py_string_pub
-    '0x7fb4e89cd5b0':
+    '0x7f7d1916eea0':
       type_: ros.cpp.CppStringSubNode
       icon: null
       name: listener
@@ -104,6 +105,7 @@ graph:
         container_group: main
         is_imported: false
         source_file: listener.cpp
+        bound_file: ''
         code_content: "#include \"rclcpp/rclcpp.hpp\"\n#include \"std_msgs/msg/string.hpp\"\
           \nusing std::placeholders::_1;\n\nclass listener : public rclcpp::Node {\n\
           public:\n    listener() : Node(\"listener\") {\n        subscription_ =\
@@ -128,8 +130,8 @@ graph:
         template_key: cpp_string_sub
   connections:
   - out:
-    - '0x7fb4e89cd480'
+    - '0x7f7d1916e2c0'
     - out
     in:
-    - '0x7fb4e89cd5b0'
+    - '0x7f7d1916eea0'
     - in

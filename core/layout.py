@@ -34,6 +34,7 @@ class ProjectLayout:
     launch = property(lambda s: os.path.join(s.src, "launch"))
     cmake = property(lambda s: os.path.join(s.src, "CMakeLists.txt"))
     package_xml = property(lambda s: os.path.join(s.src, "package.xml"))
+    params_file = property(lambda s: os.path.join(s.src, "config", "params.yaml"))
     docker = property(lambda s: os.path.join(s.root, "docker"))
     blueprint = property(lambda s: os.path.join(s.root, ".blueprint"))
     state_file = property(lambda s: os.path.join(s.blueprint, "state.yaml"))

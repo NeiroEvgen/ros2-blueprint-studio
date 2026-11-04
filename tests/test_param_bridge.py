@@ -295,30 +295,7 @@ def test_commands_carry_the_bridge_source():
 
 # ---------- real rclpy backend against ROS 2 Humble ----------
 
-IMAGE = "ros:humble-ros-core"
-
-
-def _docker_ready():
-    if shutil.which("docker") is None:
-        return False
-    try:
-        r = subprocess.run(["docker", "image", "inspect", IMAGE], capture_output=True, timeout=15)
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return r.returncode == 0
-
-
-@pytest.fixture(scope="module")
-def ros_container():
-    if not _docker_ready():
-        pytest.skip(f"Docker with the {IMAGE} image is not available")
-    name = f"studio_param_test_{os.getpid()}"
-    subprocess.run(["docker", "rm", "-f", name], capture_output=True)
-    subprocess.run(["docker", "run", "-d", "--name", name, "-v", f"{os.path.dirname(DEMO)}:/demo:ro", IMAGE,
-                    "bash", "-c", "source /opt/ros/humble/setup.bash && exec python3 -u /demo/demo_param_node.py"],
-                   check=True, capture_output=True)
-    yield name
-    subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+from tests.conftest import IMAGE, docker_ready as _docker_ready  # noqa: E402
 
 
 class TestRealRos:
@@ -347,3 +324,35 @@ class TestRealRos:
             assert c.set_param("/pid_demo", "rate_hz", 100.0) == 100
         finally:
             c.close()
+
+
+class TestRealRosLaunch:
+    def test_generated_launch_applies_saved_params(self, tmp_path):
+        """params.yaml saved by Studio -> generated launch -> the node starts with the saved value."""
+        if not _docker_ready():
+            pytest.skip(f"Docker with the {IMAGE} image is not available")
+        from core import param_store
+        from core.generators.launch_generator import write_launch_files
+        src = tmp_path / "src"
+        (src / "python").mkdir(parents=True)
+        shutil.copy(DEMO, src / "python" / "demo_param_node.py")
+        param_store.save_values(str(tmp_path), "/pid_demo", {"kp": 7.25})
+        write_launch_files(str(src / "launch"), [{"language": "python", "filename": "demo_param_node.py"}], "pkg")
+        name = f"studio_launch_test_{os.getpid()}"
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+        subprocess.run(["docker", "run", "-d", "--name", name, "-e", "ROS_DOMAIN_ID=42",
+                        "-v", f"{src}:/root/ros2_ws/src/user_project", IMAGE,
+                        "bash", "-c", "source /opt/ros/humble/setup.bash && exec ros2 launch "
+                                      "/root/ros2_ws/src/user_project/launch/project_launch.py"],
+                       check=True, capture_output=True)
+        try:
+            c = ParamClient(PipeTransport(pc.local_argv(name))).start()
+            try:
+                deadline = time.time() + 15
+                while "/pid_demo" not in c.list_nodes() and time.time() < deadline:
+                    time.sleep(0.3)
+                assert {p.name: p.value for p in c.list_params("/pid_demo")}["kp"] == 7.25
+            finally:
+                c.close()
+        finally:
+            subprocess.run(["docker", "rm", "-f", name], capture_output=True)

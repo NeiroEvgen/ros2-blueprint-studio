@@ -310,6 +310,11 @@ class Coalescer:
     def submit(self, key, value):
         self._pending[key] = value
 
+    @property
+    def pending(self):
+        """Keys that still wait to be sent."""
+        return set(self._pending)
+
     def due(self):
         """[(key, value)] to send now; the rest waits for its interval."""
         now = self.clock()
@@ -372,3 +377,37 @@ def check_change(info, old, new, real_robot):
     if span > 0 and jump > REAL_ROBOT_JUMP * span:
         return "confirm", t("params.confirm_jump", percent=round(100 * jump / span))
     return "ok", None
+
+
+class BridgeHolder:
+    """
+    One bridge per target (local session container or the connected robot), shared by all
+    Parameters windows. A new one is started when the target changes or the old one died.
+    Thread-safe: get() is called from window worker threads, close() from the UI.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._key = None
+        self._client = None
+
+    def get(self, key, make_transport):
+        with self._lock:
+            if self._client is not None and self._client.alive and self._key == key:
+                return self._client
+            old, self._client, self._key = self._client, None, None
+        if old is not None:
+            old.close()
+        client = ParamClient(make_transport()).start()
+        with self._lock:
+            if self._client is None:
+                self._client, self._key = client, key
+                return client
+        client.close()                          # another window started one meanwhile
+        return self.get(key, make_transport)
+
+    def close(self):
+        with self._lock:
+            old, self._client, self._key = self._client, None, None
+        if old is not None:
+            old.close()

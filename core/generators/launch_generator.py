@@ -2,6 +2,8 @@
 import os
 
 CONTAINER_PYTHON_DIR = "/root/ros2_ws/src/user_project/python"
+# src/config/params.yaml as seen in the session container (written by the Parameters window)
+CONTAINER_PARAMS_FILE = "/root/ros2_ws/src/user_project/config/params.yaml"
 
 
 class LaunchCompiler:
@@ -15,8 +17,11 @@ class LaunchCompiler:
         code += "from launch import LaunchDescription\n"
         code += "from launch_ros.actions import Node\n"
         code += "from launch.actions import ExecuteProcess\n\n"
+        code += f"PARAMS_FILE = {r(CONTAINER_PARAMS_FILE)}\n\n"
         code += "def generate_launch_description():\n"
-        code += "    ld = LaunchDescription()\n\n"
+        code += "    ld = LaunchDescription()\n"
+        code += "    # values saved from the Parameters window; checked at launch time, not at generation\n"
+        code += "    params = [PARAMS_FILE] if os.path.exists(PARAMS_FILE) else []\n\n"
 
         cpp_nodes = [s for s in self.scripts if s['language'] == 'cpp']
         py_nodes = [s for s in self.scripts if s['language'] == 'python']
@@ -29,6 +34,7 @@ class LaunchCompiler:
                 code += f"        package={r(self.package_name)},\n"
                 code += f"        executable={r(exec_name)},\n"
                 code += f"        name={r(exec_name)},\n"
+                code += "        parameters=params,\n"
                 code += "        output='screen',\n"
                 code += "        emulate_tty=True\n"
                 code += "    ))\n\n"
@@ -38,7 +44,8 @@ class LaunchCompiler:
             for node in py_nodes:
                 path = os.path.normpath(f"{CONTAINER_PYTHON_DIR}/{node.get('relpath') or node['filename']}").replace(os.sep, "/")
                 code += "    ld.add_action(ExecuteProcess(\n"
-                code += f"        cmd=['python3', '-u', {r(path)}],\n"
+                code += f"        cmd=['python3', '-u', {r(path)}]"
+                code += " + (['--ros-args', '--params-file', PARAMS_FILE] if params else []),\n"
                 code += "        output='screen',\n"
                 code += "        shell=True,\n"
                 code += "        emulate_tty=True\n"

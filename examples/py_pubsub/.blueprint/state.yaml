@@ -17,7 +17,7 @@ meta:
 graph:
   graph: *id001
   nodes:
-    '0x7fb4e8ccf230':
+    '0x7f7d18e79940':
       type_: ros.py.PyStringPubNode
       icon: null
       name: talker
@@ -53,6 +53,7 @@ graph:
         container_group: main
         is_imported: false
         source_file: talker.py
+        bound_file: ''
         code_content: "import rclpy\nfrom rclpy.node import Node\nfrom std_msgs.msg\
           \ import String\n\n\nclass Talker(Node):\n    def __init__(self):\n    \
           \    super().__init__('talker')\n        self.pub = self.create_publisher(String,\
@@ -75,7 +76,7 @@ graph:
         node_name: talker
         topic_name: /chatter
         template_key: py_string_pub
-    '0x7fb4e8bcd590':
+    '0x7f7d1918a0d0':
       type_: ros.py.PyStringSubNode
       icon: null
       name: listener
@@ -99,6 +100,7 @@ graph:
         container_group: main
         is_imported: false
         source_file: listener.py
+        bound_file: ''
         code_content: "import rclpy\nfrom rclpy.node import Node\nfrom std_msgs.msg\
           \ import String\n\nclass listener(Node):\n    def __init__(self):\n    \
           \    super().__init__('listener')\n        \n        # [AUTO-GEN-PUBS]\n\
@@ -123,8 +125,8 @@ graph:
         template_key: py_string_sub
   connections:
   - out:
-    - '0x7fb4e8ccf230'
+    - '0x7f7d18e79940'
     - out
     in:
-    - '0x7fb4e8bcd590'
+    - '0x7f7d1918a0d0'
     - in
