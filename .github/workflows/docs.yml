@@ -1,5 +1,7 @@
-# Builds the documentation site (mkdocs.yml, docs/) and publishes it to GitHub Pages.
-# Repository settings: Pages -> Source: GitHub Actions.
+# Builds the documentation site (mkdocs.yml, docs/) and pushes it to the gh-pages branch.
+# Repository settings: Pages -> Source: Deploy from a branch -> gh-pages / (root).
+# (The "GitHub Actions" source got stuck in "updating_pages" on the first deployment;
+#  publishing from a branch is GitHub's older, independent path.)
 name: docs
 
 on:
@@ -9,16 +11,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write        # to push the built site to gh-pages
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,16 +29,9 @@ jobs:
       - run: mkdocs build --strict           # fails on broken links and missing images
         env:
           NO_MKDOCS_2_WARNING: "1"
-      - uses: actions/upload-pages-artifact@v3
+      - uses: peaceiris/actions-gh-pages@v4
         with:
-          path: site
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          publish_branch: gh-pages
+          force_orphan: true                 # the branch holds only the latest site
