@@ -71,7 +71,7 @@ def test_save_warns_about_wired_nodes_with_different_topics(win):
     g, pub, sub = pub_sub(win, "/a", "/a")
     pub.outputs()["out"].connect_to(sub.inputs()["in"])
     sub.set_property("topic_name", "/typo")            # the subscriber side does not push back
-    assert win._topic_mismatches() == [("p1", "s1", "/a", "/typo")]
+    assert win._topic_mismatches() == [("topic_name", "p1", "s1", "/a", "/typo")]
     win._save_now()
     assert any("p1" in m and "s1" in m and "/typo" in m for m in win._logs)
 

@@ -344,7 +344,7 @@ class UiManager:
     def rebuild_palette(self, node_classes, project_type="python"):
         self.node_palette.clear()
         categories = {
-            "Input (Subscribers)": [], "Output (Publishers)": [],
+            "Input (Subscribers)": [], "Output (Publishers)": [], "Services": [],
             "Logic & Processing": [], "Tools & Utility": [], "Coursework": []
         }
         for node_cls in node_classes:
@@ -360,6 +360,7 @@ class UiManager:
             
             if "PubNode" in name: categories["Output (Publishers)"].append(item)
             elif "SubNode" in name: categories["Input (Subscribers)"].append(item)
+            elif name.startswith("Service"): categories["Services"].append(item)
             elif "Monitor" in name or "Group" in name or "Note" in name: categories["Tools & Utility"].append(item)
             
             else: categories["Logic & Processing"].append(item)

@@ -1,5 +1,88 @@
 # === PYTHON TEMPLATES ===
 PYTHON_TEMPLATES = {
+    "ServiceServer": """import rclpy
+from rclpy.node import Node
+from example_interfaces.srv import AddTwoInts
+
+class {class_name}(Node):
+    def __init__(self):
+        super().__init__('{node_name}')
+        
+        # [AUTO-GEN-PUBS]
+        {EXEC_OUT_INIT}
+        
+        # [AUTO-GEN-SUBS]
+        {EXEC_IN_INIT}
+
+        # the service: every request is answered in add_two_ints_callback
+        self.srv = self.create_service(AddTwoInts, '{service_name}', self.add_two_ints_callback)
+
+    def add_two_ints_callback(self, request, response):
+        response.sum = request.a + request.b
+        self.get_logger().info('Incoming request: a: %d b: %d' % (request.a, request.b))
+        # [AUTO-GEN-FIRE]
+        {EXEC_FIRE}
+        return response
+
+def main():
+    rclpy.init()
+    node = {class_name}()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+""",
+
+    "ServiceClient": """import rclpy
+from rclpy.node import Node
+from example_interfaces.srv import AddTwoInts
+
+class {class_name}(Node):
+    def __init__(self):
+        super().__init__('{node_name}')
+        
+        # [AUTO-GEN-PUBS]
+        {EXEC_OUT_INIT}
+        
+        # [AUTO-GEN-SUBS]
+        {EXEC_IN_INIT}
+
+        self.cli = self.create_client(AddTwoInts, '{service_name}')
+        # one request per period; the answer comes in a callback, so the node never blocks spin()
+        self.timer = self.create_timer({interval}, self.send_request)
+
+    def send_request(self):
+        if not self.cli.service_is_ready():
+            self.get_logger().info('service not available, waiting again...')
+            return
+        req = AddTwoInts.Request()
+        req.a = {a}
+        req.b = {b}
+        future = self.cli.call_async(req)
+        future.add_done_callback(lambda f: self.get_logger().info(
+            'Result of add_two_ints: for %d + %d = %d' % (req.a, req.b, f.result().sum)))
+        # [AUTO-GEN-FIRE]
+        {EXEC_FIRE}
+
+def main():
+    rclpy.init()
+    node = {class_name}()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+""",
+
     "Default": """import rclpy
 from rclpy.node import Node
 
@@ -157,6 +240,65 @@ if __name__ == '__main__':
 # C++ TEMPLATES
 # ==========================================
 CPP_TEMPLATES = {
+    "ServiceServer": """#include <memory>
+#include "rclcpp/rclcpp.hpp"
+#include "example_interfaces/srv/add_two_ints.hpp"
+using AddTwoInts = example_interfaces::srv::AddTwoInts;
+
+class {class_name} : public rclcpp::Node {
+public:
+    {class_name}() : Node("{node_name}") {
+        // the service: every request is answered in this callback
+        service_ = this->create_service<AddTwoInts>("{service_name}",
+            [this](const std::shared_ptr<AddTwoInts::Request> request,
+                   std::shared_ptr<AddTwoInts::Response> response) {
+                response->sum = request->a + request->b;
+                RCLCPP_INFO(this->get_logger(), "Incoming request: a: %ld b: %ld",
+                            static_cast<long>(request->a), static_cast<long>(request->b));
+            });
+    }
+private:
+    rclcpp::Service<AddTwoInts>::SharedPtr service_;
+};
+
+int main(int a, char** b){rclcpp::init(a,b);rclcpp::spin(std::make_shared<{class_name}>());rclcpp::shutdown();return 0;}
+""",
+
+    "ServiceClient": """#include <chrono>
+#include <memory>
+#include "rclcpp/rclcpp.hpp"
+#include "example_interfaces/srv/add_two_ints.hpp"
+using AddTwoInts = example_interfaces::srv::AddTwoInts;
+
+class {class_name} : public rclcpp::Node {
+public:
+    {class_name}() : Node("{node_name}") {
+        client_ = this->create_client<AddTwoInts>("{service_name}");
+        // one request per period; the answer comes in a callback, so the node never blocks spin()
+        timer_ = this->create_wall_timer(std::chrono::duration<double>({interval}), [this]() {
+            if (!client_->service_is_ready()) {
+                RCLCPP_INFO(this->get_logger(), "service not available, waiting again...");
+                return;
+            }
+            auto request = std::make_shared<AddTwoInts::Request>();
+            request->a = {a};
+            request->b = {b};
+            client_->async_send_request(request,
+                [this, request](rclcpp::Client<AddTwoInts>::SharedFuture future) {
+                    RCLCPP_INFO(this->get_logger(), "Result of add_two_ints: for %ld + %ld = %ld",
+                                static_cast<long>(request->a), static_cast<long>(request->b),
+                                static_cast<long>(future.get()->sum));
+                });
+        });
+    }
+private:
+    rclcpp::Client<AddTwoInts>::SharedPtr client_;
+    rclcpp::TimerBase::SharedPtr timer_;
+};
+
+int main(int a, char** b){rclcpp::init(a,b);rclcpp::spin(std::make_shared<{class_name}>());rclcpp::shutdown();return 0;}
+""",
+
     "Default": """#include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
 
@@ -321,7 +463,8 @@ TEMPLATES.update(CPP_TEMPLATES)
 def template_name(template_key):
     """Node key ('cpp_string_pub', 'py_timer'...) -> template name in *_TEMPLATES."""
     k = (template_key or "").lower()
-    for needle, name in (("custom", "Custom"), ("lifecycle", "Lifecycle"), ("timer", "Timer"),
+    for needle, name in (("service_server", "ServiceServer"), ("service_client", "ServiceClient"),
+                         ("custom", "Custom"), ("lifecycle", "Lifecycle"), ("timer", "Timer"),
                          ("pub", "Publisher"), ("sub", "Subscriber"), ("action", "ActionClient")):
         if needle in k:
             return name

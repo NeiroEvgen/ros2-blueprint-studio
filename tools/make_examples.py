@@ -15,43 +15,6 @@ import tempfile
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-# The palette Python publisher template waits for a trigger from a timer node; for a
-# self-contained example the publisher gets its own code with a timer.
-PY_TALKER = """import rclpy
-from rclpy.node import Node
-from std_msgs.msg import String
-
-
-class Talker(Node):
-    def __init__(self):
-        super().__init__('talker')
-        self.pub = self.create_publisher(String, '/chatter', 10)
-        self.i = 0
-        self.create_timer(1.0, self.tick)
-
-    def tick(self):
-        msg = String()
-        msg.data = f'Py: {self.i}'
-        self.pub.publish(msg)
-        self.get_logger().info(f'Published: {msg.data}')
-        self.i += 1
-
-
-def main():
-    rclpy.init()
-    node = Talker()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    node.destroy_node()
-    rclpy.shutdown()
-
-
-if __name__ == '__main__':
-    main()
-"""
-
 EXAMPLES = {
     # name: (project type, (publisher type, subscriber type))
     "py_pubsub": ("python", ("ros.py.PyStringPubNode", "ros.py.PyStringSubNode")),
@@ -87,8 +50,6 @@ def build(out_dir: str) -> list:
         for node, node_name in ((pub, "talker"), (sub, "listener")):
             node.set_property("node_name", node_name)
             node.set_property("topic_name", "/chatter")
-        if pub_t.startswith("ros.py."):
-            pub.set_property("code_content", PY_TALKER)
         pub.outputs()["out"].connect_to(sub.inputs()["in"])
         res = win.project_manager.save_project(path)
         if not (res and res[0]):

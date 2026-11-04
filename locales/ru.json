@@ -440,5 +440,7 @@
   "params.err_bad_transition": "Переход невозможен: {detail}",
   "params.err_transition_failed": "Нода отказала в переходе: {detail}",
   "log.topic_synced": "«{node}» теперь использует топик {topic} (провод от «{source}»)",
-  "log.topic_mismatch": "⚠ «{pub}» и «{sub}» соединены проводом, но у них разные топики ({pub_topic} и {sub_topic}): ROS их не соединит"
+  "log.topic_mismatch": "⚠ «{pub}» и «{sub}» соединены проводом, но у них разные топики ({pub_topic} и {sub_topic}): ROS их не соединит",
+  "log.service_synced": "«{node}» теперь использует сервис {topic} (провод от «{source}»)",
+  "log.service_mismatch": "⚠ «{pub}» и «{sub}» соединены проводом, но у них разные сервисы ({pub_topic} и {sub_topic}): клиент будет ждать вечно"
 }

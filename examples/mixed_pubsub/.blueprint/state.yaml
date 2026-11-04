@@ -2,7 +2,7 @@ meta:
   version: '4.0'
   merge:
     cpp_ids:
-    - '0x7f7d1916eea0'
+    - '0x7fd4e3dab100'
     cpp_dy: 0.0
     remap: {}
     py_extra:
@@ -18,7 +18,7 @@ meta:
 graph:
   graph: *id001
   nodes:
-    '0x7f7d1916e2c0':
+    '0x7fd4e3daa520':
       type_: ros.py.PyStringPubNode
       icon: null
       name: talker
@@ -41,7 +41,7 @@ graph:
       selected: false
       visible: true
       width: 226.4375
-      height: 125.7
+      height: 172.95000000000002
       pos:
       - 0.0
       - 0.0
@@ -56,16 +56,20 @@ graph:
         source_file: talker.py
         bound_file: ''
         code_content: "import rclpy\nfrom rclpy.node import Node\nfrom std_msgs.msg\
-          \ import String\n\n\nclass Talker(Node):\n    def __init__(self):\n    \
-          \    super().__init__('talker')\n        self.pub = self.create_publisher(String,\
-          \ '/chatter', 10)\n        self.i = 0\n        self.create_timer(1.0, self.tick)\n\
-          \n    def tick(self):\n        msg = String()\n        msg.data = f'Py:\
-          \ {self.i}'\n        self.pub.publish(msg)\n        self.get_logger().info(f'Published:\
-          \ {msg.data}')\n        self.i += 1\n\n\ndef main():\n    rclpy.init()\n\
-          \    node = Talker()\n    try:\n        rclpy.spin(node)\n    except KeyboardInterrupt:\n\
-          \        pass\n    node.destroy_node()\n    rclpy.shutdown()\n\n\nif __name__\
-          \ == '__main__':\n    main()\n"
-        code_sync_hash: 41952e90a068378b91cb92721147e41cf1094aa0
+          \ import String\n\nclass talker(Node):\n    def __init__(self):\n      \
+          \  super().__init__('talker')\n        \n        # [AUTO-GEN-PUBS]\n   \
+          \     \n\n        # the node's main publisher\n        self.pub = self.create_publisher(String,\
+          \ '/chatter', 10)\n        \n        # [AUTO-GEN-SUBS]\n        \n     \
+          \   \n        # publishes on its own timer, like the official tutorial's\
+          \ minimal_publisher\n        self.timer = self.create_timer(0.5, self.timer_callback)\n\
+          \        self.i = 0\n\n    def timer_callback(self):\n        msg = String()\n\
+          \        msg.data = f\"Py: {self.i}\"\n        self.pub.publish(msg)\n \
+          \       self.get_logger().info(f'Publishing: \"{msg.data}\"')\n        self.i\
+          \ += 1\n        \n        # [AUTO-GEN-FIRE]\n        \n\ndef main():\n \
+          \   rclpy.init()\n    node = talker()\n    try:\n        rclpy.spin(node)\n\
+          \    except KeyboardInterrupt:\n        pass\n    node.destroy_node()\n\
+          \    rclpy.shutdown()\n\nif __name__ == '__main__':\n    main()\n"
+        code_sync_hash: 914ac8b1ffe6652fe13028504ade262f978794da
         saved_ports_config:
         - type: out
           name: out
@@ -76,8 +80,9 @@ graph:
           multi: true
         node_name: talker
         topic_name: /chatter
+        interval: '0.5'
         template_key: py_string_pub
-    '0x7f7d1916eea0':
+    '0x7fd4e3dab100':
       type_: ros.cpp.CppStringSubNode
       icon: null
       name: listener
@@ -130,8 +135,8 @@ graph:
         template_key: cpp_string_sub
   connections:
   - out:
-    - '0x7f7d1916e2c0'
+    - '0x7fd4e3daa520'
     - out
     in:
-    - '0x7f7d1916eea0'
+    - '0x7fd4e3dab100'
     - in

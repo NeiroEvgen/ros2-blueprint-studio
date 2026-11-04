@@ -2,32 +2,42 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-
-class Talker(Node):
+class talker(Node):
     def __init__(self):
         super().__init__('talker')
+        
+        # [AUTO-GEN-PUBS]
+        
+
+        # the node's main publisher
         self.pub = self.create_publisher(String, '/chatter', 10)
+        
+        # [AUTO-GEN-SUBS]
+        
+        
+        # publishes on its own timer, like the official tutorial's minimal_publisher
+        self.timer = self.create_timer(0.5, self.timer_callback)
         self.i = 0
-        self.create_timer(1.0, self.tick)
 
-    def tick(self):
+    def timer_callback(self):
         msg = String()
-        msg.data = f'Py: {self.i}'
+        msg.data = f"Py: {self.i}"
         self.pub.publish(msg)
-        self.get_logger().info(f'Published: {msg.data}')
+        self.get_logger().info(f'Publishing: "{msg.data}"')
         self.i += 1
-
+        
+        # [AUTO-GEN-FIRE]
+        
 
 def main():
     rclpy.init()
-    node = Talker()
+    node = talker()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     node.destroy_node()
     rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()

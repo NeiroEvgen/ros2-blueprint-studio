@@ -6,11 +6,11 @@ class talker : public rclcpp::Node {
 public:
     talker() : Node("talker"), count_(0) {
         publisher_ = this->create_publisher<std_msgs::msg::String>("/chatter", 10);
-        timer_ = this->create_wall_timer(1s, [this](){
+        timer_ = this->create_wall_timer(std::chrono::duration<double>(0.5), [this](){
             auto msg = std_msgs::msg::String();
             msg.data = "Cpp: " + std::to_string(count_++);
             publisher_->publish(msg);
-            RCLCPP_INFO(this->get_logger(), "Pub: '%s'", msg.data.c_str());
+            RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", msg.data.c_str());
         });
     }
 private:

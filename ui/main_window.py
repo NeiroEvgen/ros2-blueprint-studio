@@ -238,49 +238,52 @@ class RosVisualRunner(QtWidgets.QMainWindow):
             graph.property_changed.connect(self._on_property_changed)
             self.setup_graph_context_menus(graph)
 
-    # ---------- wires and topics ----------
-    # ROS connects nodes by topic name: the Topic fields decide, the wire only draws it.
-    # So a wire makes the subscriber take the publisher's topic, and a publisher's new topic
-    # follows its wires. (Loading a project does not emit these signals: saved fields stay.)
+    # ---------- wires, topics and services ----------
+    # ROS connects nodes by name: the Topic/Service fields decide, the wire only draws it.
+    # So a wire copies the name from the side that owns it (publisher -> subscriber,
+    # server -> client), and a changed name follows its wires. Loading a project does not
+    # emit these signals: saved fields stay as they are.
+    # field -> which end of the wire owns the name: "out" (publisher) or "in" (server)
+    _WIRED_NAMES = (("topic_name", "out"), ("service_name", "in"))
 
     @staticmethod
-    def _topic_links(node):
-        """Nodes wired to this node's outputs that also have a Topic field."""
-        out = []
-        for port in node.output_ports():
-            for other in port.connected_ports():
-                peer = other.node()
-                if peer.has_property('topic_name'):
-                    out.append(peer)
-        return out
+    def _wired_peers(node, field, owner_side):
+        """Nodes on this node's owning side (outputs for topics, inputs for services) that have the field."""
+        ports = node.output_ports() if owner_side == "out" else node.input_ports()
+        return [p.node() for port in ports for p in port.connected_ports() if p.node().has_property(field)]
 
-    def _sync_topic(self, src, dst):
-        topic = src.get_property('topic_name')
-        if topic and dst.get_property('topic_name') != topic:
-            dst.set_property('topic_name', topic)
-            self.system_log(t("log.topic_synced", node=dst.name(), topic=topic, source=src.name()))
+    def _sync_name(self, field, owner, follower):
+        name = owner.get_property(field)
+        if name and follower.get_property(field) != name:
+            follower.set_property(field, name)
+            key = "log.topic_synced" if field == "topic_name" else "log.service_synced"
+            self.system_log(t(key, node=follower.name(), topic=name, source=owner.name()))
 
     def _on_port_connected(self, in_port, out_port):
         src, dst = out_port.node(), in_port.node()
-        if src.has_property('topic_name') and dst.has_property('topic_name'):
-            self._sync_topic(src, dst)
+        for field, owner_side in self._WIRED_NAMES:
+            if src.has_property(field) and dst.has_property(field):
+                owner, follower = (src, dst) if owner_side == "out" else (dst, src)
+                self._sync_name(field, owner, follower)
 
     def _on_property_changed(self, node, name, value):
-        if name == 'topic_name':
-            for peer in self._topic_links(node):
-                self._sync_topic(node, peer)
+        for field, owner_side in self._WIRED_NAMES:
+            if name == field:
+                for peer in self._wired_peers(node, field, owner_side):
+                    self._sync_name(field, node, peer)
 
     def _topic_mismatches(self):
-        """(publisher, subscriber, its topic, their topic) for wired nodes whose Topic fields differ."""
+        """(field, owner, follower, owner's name, follower's name) for wired nodes whose names differ."""
         found = []
         for g in self.graphs.all():
             for node in g.all_nodes():
-                if not node.has_property('topic_name'):
-                    continue
-                for peer in self._topic_links(node):
-                    if peer.get_property('topic_name') != node.get_property('topic_name'):
-                        found.append((node.name(), peer.name(), node.get_property('topic_name'),
-                                      peer.get_property('topic_name')))
+                for field, owner_side in self._WIRED_NAMES:
+                    if not node.has_property(field):
+                        continue
+                    for peer in self._wired_peers(node, field, owner_side):
+                        if peer.get_property(field) != node.get_property(field):
+                            found.append((field, node.name(), peer.name(),
+                                          node.get_property(field), peer.get_property(field)))
         return found
 
     def _set_node_visible(self, node, visible):
@@ -361,8 +364,9 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
     def _save_now(self):
         """Save the current project -> (ok, apt_deps); a successful Save clears "unsaved changes"."""
-        for pub, sub, pub_topic, sub_topic in self._topic_mismatches():
-            self.system_log(t("log.topic_mismatch", pub=pub, sub=sub, pub_topic=pub_topic, sub_topic=sub_topic))
+        for field, owner, follower, owner_name, follower_name in self._topic_mismatches():
+            key = "log.topic_mismatch" if field == "topic_name" else "log.service_mismatch"
+            self.system_log(t(key, pub=owner, sub=follower, pub_topic=owner_name, sub_topic=follower_name))
         ok, deps = self._save_result(self.project_manager.save_project(self.current_project_path))
         if ok:
             self._mark_clean()

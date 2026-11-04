@@ -122,6 +122,20 @@
       "nav_msgs"
     ]
   },
+  "example_interfaces": {
+    "apt": [
+      "ros-humble-example-interfaces"
+    ],
+    "cmake_find": [
+      "example_interfaces"
+    ],
+    "cmake_link": [
+      "example_interfaces"
+    ],
+    "xml_depend": [
+      "example_interfaces"
+    ]
+  },
   "std_srvs": {
     "apt": [
       "ros-humble-std-srvs"

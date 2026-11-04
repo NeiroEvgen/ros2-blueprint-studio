@@ -2,8 +2,8 @@ meta:
   version: '4.0'
   merge:
     cpp_ids:
-    - '0x7f7d18e5f250'
-    - '0x7f7d1916e060'
+    - '0x7fd4e3ddf250'
+    - '0x7fd4e3daa2c0'
     cpp_dy: 0.0
     remap: {}
     py_extra:
@@ -19,7 +19,7 @@ meta:
 graph:
   graph: *id001
   nodes:
-    '0x7f7d18e5f250':
+    '0x7fd4e3ddf250':
       type_: ros.cpp.CppStringPubNode
       icon: null
       name: talker
@@ -42,7 +42,7 @@ graph:
       selected: false
       visible: true
       width: 226.4375
-      height: 125.7
+      height: 172.95000000000002
       pos:
       - 0.0
       - 0.0
@@ -60,14 +60,15 @@ graph:
           \nusing namespace std::chrono_literals;\n\nclass talker : public rclcpp::Node\
           \ {\npublic:\n    talker() : Node(\"talker\"), count_(0) {\n        publisher_\
           \ = this->create_publisher<std_msgs::msg::String>(\"/chatter\", 10);\n \
-          \       timer_ = this->create_wall_timer(1s, [this](){\n            auto\
-          \ msg = std_msgs::msg::String();\n            msg.data = \"Cpp: \" + std::to_string(count_++);\n\
-          \            publisher_->publish(msg);\n            RCLCPP_INFO(this->get_logger(),\
-          \ \"Pub: '%s'\", msg.data.c_str());\n        });\n    }\nprivate:\n    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr\
+          \       timer_ = this->create_wall_timer(std::chrono::duration<double>(0.5),\
+          \ [this](){\n            auto msg = std_msgs::msg::String();\n         \
+          \   msg.data = \"Cpp: \" + std::to_string(count_++);\n            publisher_->publish(msg);\n\
+          \            RCLCPP_INFO(this->get_logger(), \"Publishing: '%s'\", msg.data.c_str());\n\
+          \        });\n    }\nprivate:\n    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr\
           \ publisher_;\n    rclcpp::TimerBase::SharedPtr timer_;\n    size_t count_;\n\
           };\n\nint main(int a, char** b){rclcpp::init(a,b);rclcpp::spin(std::make_shared<talker>());rclcpp::shutdown();return\
           \ 0;}\n"
-        code_sync_hash: cb5737b249cc0514594cf63b117c4b140d7b6f08
+        code_sync_hash: 3da4a492167404a41d4a9f548b5384aec884b70b
         saved_ports_config:
         - type: out
           name: out
@@ -78,8 +79,9 @@ graph:
           multi: true
         node_name: talker
         topic_name: /chatter
+        interval: '0.5'
         template_key: cpp_string_pub
-    '0x7f7d1916e060':
+    '0x7fd4e3daa2c0':
       type_: ros.cpp.CppStringSubNode
       icon: null
       name: listener
@@ -132,8 +134,8 @@ graph:
         template_key: cpp_string_sub
   connections:
   - out:
-    - '0x7f7d18e5f250'
+    - '0x7fd4e3ddf250'
     - out
     in:
-    - '0x7f7d1916e060'
+    - '0x7fd4e3daa2c0'
     - in

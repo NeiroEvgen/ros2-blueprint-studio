@@ -31,6 +31,9 @@ def render_pristine_template(code, custom, node_name, is_cpp):
         "{node_name}": str(custom.get("node_name") or node_name or "node"),
         "{topic_name}": str(custom.get("topic_name") or "/chatter"),
         "{interval}": str(custom.get("interval") or 1.0),
+        "{service_name}": str(custom.get("service_name") or "/add_two_ints"),
+        "{a}": str(custom.get("a") or 0),
+        "{b}": str(custom.get("b") or 0),
     }
     out = tmpl
     for k, v in values.items():

@@ -1,10 +1,14 @@
 from NodeGraphQt import BaseNode
 # import the dictionaries separately
-from .templates import PYTHON_TEMPLATES, CPP_TEMPLATES
+from .templates import PYTHON_TEMPLATES, CPP_TEMPLATES, template_name
 
 # colours
 EXEC_COLOR = (255, 255, 255) # white for logic
 DATA_COLOR = (100, 100, 100)
+# service ports (client -> server); the nodes themselves: server orange, client pink
+SRV_COLOR = (255, 200, 40)
+SRV_SERVER_NODE_COLOR = (200, 100, 20)
+SRV_CLIENT_NODE_COLOR = (180, 50, 120)
 
 MSG_COLORS = {
     "std_msgs/Bool":    (230, 50, 50),
@@ -39,23 +43,7 @@ class RosNodeBase(BaseNode):
         is_cpp_class = self.__class__.__name__.startswith('Cpp')
         is_cpp = is_cpp_id or is_cpp_class
 
-        key_lower = template_key.lower()
-        final_key = "Default" 
-    
-        if "custom" in key_lower:
-            final_key = "Custom"
-        elif "lifecycle" in key_lower:
-            final_key = "Lifecycle"
-        elif "timer" in key_lower:
-            final_key = "Timer"
-        elif "pub" in key_lower:
-            final_key = "Publisher"
-        elif "sub" in key_lower:
-            final_key = "Subscriber"
-        elif "action" in key_lower:
-            final_key = "ActionClient"
-        elif "trigger" in key_lower:
-            final_key = "Default"
+        final_key = template_name(template_key)
 
         target_dict = CPP_TEMPLATES if is_cpp else PYTHON_TEMPLATES
         
