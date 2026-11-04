@@ -12,3 +12,25 @@ BlueprintStudioProjects/
 ROS2Studio.spec
 # only the docker file in the root, not the docker_image/ folder
 /docker
+
+# add-ons are kept outside the repo (run_studio.py finds Studio wherever it is)
+studio_addon/
+addons/
+# logs
+*.log
+log/
+logs/
+# colcon output when a project is built inside the repo (tests/golden/build is tracked)
+install/
+# backups and temporary files written by Studio and editors
+*.bak
+*.bak[0-9]*
+*.tmp
+*.swp
+*~
+# tools, OS
+.pytest_cache/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
