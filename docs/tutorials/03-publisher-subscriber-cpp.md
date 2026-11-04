@@ -25,7 +25,9 @@ Unlike Python, C++ has to be compiled, so the tutorial also edits `package.xml` 
 ![ROS2 Dashboard after Run](img/03_dashboard.png)
 
 C++ nodes appear under their executable names (`talker-1`, `listener-2`), not as `python3-N`:
-the launch file starts them as ROS nodes from the package.
+the launch file starts them as ROS nodes from the package. It also names each node after its file,
+the title on the canvas: in a C++ project the *Name* field is not used (here both are `talker` and
+`listener`, so it does not show).
 
 ## What Studio generated
 
@@ -107,4 +109,4 @@ ros2 topic echo /chatter
 | `CMakeLists.txt` executables and install rules | generated; your additions in the USER block |
 | `colcon build`, `source`, `ros2 run` | **Run**; `ros2 run` also works in the container |
 
-Next: service and client (chapter 4).
+Next: service and client, [chapter 4](04-service-client.md).
