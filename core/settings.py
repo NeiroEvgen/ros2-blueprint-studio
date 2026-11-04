@@ -9,7 +9,9 @@ import json
 import os
 from typing import Any
 
-DEFAULTS = {"language": None, "single_canvas": True}   # None -> detect from the system
+DEFAULTS = {"language": None,     # None -> detect from the system
+            "single_canvas": True,
+            "palette_favorites": []}   # node ids starred in the palette
 
 
 def settings_dir() -> str:

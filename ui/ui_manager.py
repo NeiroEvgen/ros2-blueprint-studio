@@ -226,8 +226,28 @@ class UiManager:
         lbl.setStyleSheet("background: #222; color: #ddd; padding: 5px; font-weight: bold; border-bottom: 1px solid #444;")
         palette_layout.addWidget(lbl)
         
+        # search, language filter, favorites only
+        filters = QtWidgets.QHBoxLayout()
+        filters.setContentsMargins(4, 4, 4, 2)
+        self.palette_search = QtWidgets.QLineEdit()
+        self.palette_search.setClearButtonEnabled(True)
+        self.palette_search.textChanged.connect(lambda _t: self._render_palette())
+        filters.addWidget(self.palette_search, 1)
+        self.palette_lang = QtWidgets.QComboBox()
+        self.palette_lang.addItems(["", "Python", "C++"])      # texts set in retranslate()
+        self.palette_lang.currentIndexChanged.connect(lambda _i: self._render_palette())
+        filters.addWidget(self.palette_lang)
+        self.palette_fav_only = QtWidgets.QToolButton()
+        self.palette_fav_only.setText("★")
+        self.palette_fav_only.setCheckable(True)
+        self.palette_fav_only.toggled.connect(lambda _c: self._render_palette())
+        filters.addWidget(self.palette_fav_only)
+        palette_layout.addLayout(filters)
+
         # draggable list
         self.node_palette = DraggableListWidget()
+        self.node_palette.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.node_palette.customContextMenuRequested.connect(self._palette_menu)
         self.node_palette.setDragEnabled(True)
         self.node_palette.setStyleSheet("border: none; background: #2b2b2b;")
         palette_layout.addWidget(self.node_palette)
@@ -321,6 +341,12 @@ class UiManager:
         a['real_robot'].setText(t("ui.real_robot"))
         a['real_robot'].setToolTip(t("ui.real_robot_tip"))
         self.palette_label.setText(t("ui.node_palette"))
+        if getattr(self, "palette_search", None) is not None:
+            self.palette_search.setPlaceholderText(t("palette.search"))
+            self.palette_lang.setItemText(0, t("palette.lang_all"))
+            self.palette_lang.setToolTip(t("palette.lang_tip"))
+            self.palette_fav_only.setToolTip(t("palette.favorites_only"))
+            self._render_palette()
         self.btn_back.setText(t("ui.back"))
         if not self.breadcrumb_label.text():
             self.breadcrumb_label.setText(t("ui.root"))
@@ -341,59 +367,83 @@ class UiManager:
         else:
             self.tabs.setTabVisible(0, False); self.tabs.setTabVisible(1, True); self.tabs.setCurrentIndex(1)
 
+    # ---------- node palette ----------
+
+    _HEADER_KEYS = {"favorites": "palette.cat_favorites", "publishers": "palette.cat_publishers",
+                    "subscribers": "palette.cat_subscribers", "services": "palette.cat_services",
+                    "logic": "palette.cat_logic", "tools": "palette.cat_tools"}
+
     def rebuild_palette(self, node_classes, project_type="python"):
-        self.node_palette.clear()
-        categories = {
-            "Input (Subscribers)": [], "Output (Publishers)": [], "Services": [],
-            "Logic & Processing": [], "Tools & Utility": [], "Coursework": []
-        }
-        for node_cls in node_classes:
-            identifier = node_cls.type_; name = node_cls.NODE_NAME
-            # mixed: show everything; single-language projects: only their language
-            if project_type == "python" and "ros.cpp" in identifier: continue
-            if project_type == "cpp" and (".py" in identifier): continue
-            if "internal" in identifier: continue
-            if identifier.endswith(".FileNode"): continue      # created by a green mark, not from the palette
-
-            item = QtWidgets.QListWidgetItem(name)
-            item.setData(QtCore.Qt.UserRole, identifier)
-            
-            if "PubNode" in name: categories["Output (Publishers)"].append(item)
-            elif "SubNode" in name: categories["Input (Subscribers)"].append(item)
-            elif name.startswith("Service"): categories["Services"].append(item)
-            elif "Monitor" in name or "Group" in name or "Note" in name: categories["Tools & Utility"].append(item)
-            
-            else: categories["Logic & Processing"].append(item)
-
-        for cat_name, items in categories.items():
-            if not items: continue
-            header = QtWidgets.QListWidgetItem(f"--- {cat_name} ---")
-            header.setFlags(QtCore.Qt.NoItemFlags)
-            header.setForeground(QtGui.QColor("#aaa")); header.setBackground(QtGui.QColor("#222")); header.setTextAlignment(QtCore.Qt.AlignCenter)
-            self.node_palette.addItem(header)
-            for item in items: self.node_palette.addItem(item)
-
-        # --- USER PALETTES (Native Format) ---
+        """Collects the entries (built-in nodes + user palettes) and shows them with the current filters."""
         from core import palette_share
-        user_palettes_root = palette_share.PALETTES_ROOT
-        if os.path.exists(user_palettes_root):
-            for palette_name in os.listdir(user_palettes_root):
-                palette_path = os.path.join(user_palettes_root, palette_name)
-                if not os.path.isdir(palette_path): continue
-                
-                header = QtWidgets.QListWidgetItem(f"--- Palette: {palette_name} ---")
-                header.setFlags(QtCore.Qt.NoItemFlags)
-                header.setForeground(QtGui.QColor("#00ffaa")); header.setBackground(QtGui.QColor("#1a1a1a")); header.setTextAlignment(QtCore.Qt.AlignCenter)
-                self.node_palette.addItem(header)
-                
-                for node_folder in os.listdir(palette_path):
-                    node_path = os.path.join(palette_path, node_folder)
-                    if os.path.isdir(node_path) and os.path.exists(os.path.join(node_path, "node.yaml")):
-                        item = QtWidgets.QListWidgetItem(node_folder)
-                        # encode the node folder path
-                        item.setData(QtCore.Qt.UserRole, f"USER_NODE:{palette_name}/{node_folder}")
-                        item.setForeground(QtGui.QColor("#00ffaa"))
-                        self.node_palette.addItem(item)
+        from ui import palette_model
+        self._palette_project_type = project_type
+        self._palette_entries = (palette_model.builtin_entries(node_classes, project_type)
+                                 + palette_model.user_entries(palette_share.PALETTES_ROOT, project_type))
+        mixed = project_type == "mixed"
+        self.palette_lang.setVisible(mixed)          # one-language projects show only their language
+        if not mixed:
+            self.palette_lang.setCurrentIndex(0)
+        self._render_palette()
+
+    def _palette_favorites(self):
+        from core import settings
+        return set(settings.get("palette_favorites") or [])
+
+    def _render_palette(self):
+        from ui import palette_model
+        entries = getattr(self, "_palette_entries", None)
+        if entries is None or self.node_palette is None:
+            return
+        language = ("all", "python", "cpp")[max(0, self.palette_lang.currentIndex())]
+        favorites = self._palette_favorites()
+        groups = palette_model.arrange(entries, self.palette_search.text(), language, favorites,
+                                       self.palette_fav_only.isChecked())
+        show_language = self._palette_project_type == "mixed"
+        self.node_palette.clear()
+        for key, items in groups:
+            user = key.startswith("palette:")
+            title = t("palette.cat_user", name=key[len("palette:"):]) if user else t(self._HEADER_KEYS[key])
+            header = QtWidgets.QListWidgetItem(f"--- {title} ---")
+            header.setFlags(QtCore.Qt.NoItemFlags)
+            header.setForeground(QtGui.QColor("#00ffaa" if user else "#aaa"))
+            header.setBackground(QtGui.QColor("#1a1a1a" if user else "#222"))
+            header.setTextAlignment(QtCore.Qt.AlignCenter)
+            self.node_palette.addItem(header)
+            for e in items:
+                text = e.label(show_language)
+                item = QtWidgets.QListWidgetItem(("★ " if e.id in favorites else "") + text)
+                item.setData(QtCore.Qt.UserRole, e.id)
+                item.setToolTip(e.doc or e.id)
+                if user:
+                    item.setForeground(QtGui.QColor("#00ffaa"))
+                self.node_palette.addItem(item)
+        if not groups:
+            empty = QtWidgets.QListWidgetItem(t("palette.nothing"))
+            empty.setFlags(QtCore.Qt.NoItemFlags)
+            empty.setForeground(QtGui.QColor("#888"))
+            self.node_palette.addItem(empty)
+
+    def toggle_palette_favorite(self, node_id):
+        from core import settings
+        favs = list(settings.get("palette_favorites") or [])
+        if node_id in favs:
+            favs.remove(node_id)
+        else:
+            favs.append(node_id)
+        settings.set("palette_favorites", favs)
+        self._render_palette()
+
+    def _palette_menu(self, pos):
+        item = self.node_palette.itemAt(pos)
+        node_id = item.data(QtCore.Qt.UserRole) if item else None
+        if not node_id:
+            return
+        menu = QtWidgets.QMenu(self.node_palette)
+        starred = node_id in self._palette_favorites()
+        act = menu.addAction(t("palette.unstar") if starred else t("palette.star"))
+        act.triggered.connect(lambda: self.toggle_palette_favorite(node_id))
+        menu.exec(self.node_palette.mapToGlobal(pos))
 
     def create_palette(self, callback):
         self.node_palette.itemDoubleClicked.connect(callback)

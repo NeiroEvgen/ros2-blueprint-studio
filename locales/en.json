@@ -450,5 +450,19 @@
   "docker.network_changed": "ROS network settings changed (domain, DDS or Real robot): recreating the session container. Dependencies are installed again once.",
   "log.network_isolated": "Local session: ROS traffic stays on this computer (ROS_LOCALHOST_ONLY=1). Turn on Real robot to talk to robots on the network.",
   "log.network_open": "Real robot: the session is open to the network; nodes see and can command robots in the same ROS domain.",
-  "log.network_next_run": "The network mode applies on the next Run (the session container is recreated)."
+  "log.network_next_run": "The network mode applies on the next Run (the session container is recreated).",
+  "palette.search": "Search nodes…",
+  "palette.lang_all": "All languages",
+  "palette.lang_tip": "Show nodes of one language (mixed projects)",
+  "palette.favorites_only": "Only favorites (right-click a node to star it)",
+  "palette.star": "★ Add to favorites",
+  "palette.unstar": "Remove from favorites",
+  "palette.nothing": "No nodes match",
+  "palette.cat_favorites": "★ Favorites",
+  "palette.cat_publishers": "Publishers",
+  "palette.cat_subscribers": "Subscribers",
+  "palette.cat_services": "Services",
+  "palette.cat_logic": "Logic & Processing",
+  "palette.cat_tools": "Tools & Utility",
+  "palette.cat_user": "Palette: {name}"
 }

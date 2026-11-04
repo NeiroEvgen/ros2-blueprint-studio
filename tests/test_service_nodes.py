@@ -80,7 +80,7 @@ def win(app, tmp_path):
 def test_palette_has_a_services_group(win):
     items = [win.ui.node_palette.item(i).text() for i in range(win.ui.node_palette.count())]
     i = items.index("--- Services ---")
-    assert items[i + 1:i + 3] == ["ServiceServer", "ServiceClient"]
+    assert sorted(items[i + 1:i + 3]) == ["ServiceClient", "ServiceServer"]
 
 
 def test_wire_gives_client_the_server_name(win):
