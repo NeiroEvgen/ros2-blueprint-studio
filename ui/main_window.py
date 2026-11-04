@@ -784,19 +784,41 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self._background(work)
 
     def on_freeze_selected(self, graph, target_state, *args, **kwargs):
-        names = []
-        for node in graph.selected_nodes():
-            if self._is_lifecycle_node(node):
-                names.append(self._ros_node_name(node))
-            else:
-                self.system_log(t("log.not_lifecycle", name=node.name()))
-        if not names:
+        """
+        Freeze = deactivate, Unfreeze = activate (configure first if needed): managed (lifecycle)
+        nodes, through the parameter bridge, locally or on the robot connected on the Remote tab.
+        """
+        from core.param_client import ParamBridgeError, drive_lifecycle, match_node
+        guesses = [self._ros_node_name(n) for n in graph.selected_nodes()]
+        if not guesses:
             return
-        pm = self.process_manager
+        target = self._param_target()
+        if target is None:
+            self.system_log(t("lc.no_target"))
+            return
+        key, make_transport, _, _ = target
+        goal = "active" if target_state == "activate" else "inactive"
+        bridge = self._param_bridge
 
         def work(emit):
-            for name in names:
-                pm.set_lifecycle_state(name, target_state, emit)
+            try:
+                nodes = bridge.get(key, make_transport).list_nodes()
+            except ParamBridgeError as e:
+                emit(str(e))
+                return
+            client = bridge.get(key, make_transport)
+            for guess in guesses:
+                node = match_node(nodes, guess)
+                if node is None:
+                    emit(t("lc.not_running", name=guess))
+                    continue
+                try:
+                    before, steps, after = drive_lifecycle(client, node, goal)
+                except ParamBridgeError as e:
+                    emit(f"{node}: {e}")
+                    continue
+                emit(t("lc.changed", node=node, before=before, after=after, steps=" → ".join(steps))
+                     if steps else t("lc.already", node=node, state=after))
         self._background(work)
 
     # ---------- live parameters ----------
@@ -836,10 +858,6 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         win.show()
         return win
 
-    def _is_lifecycle_node(self, node):
-        return 'lifecycle' in getattr(node, 'NODE_NAME', '').lower() or \
-               'lifecycle' in node.type_.lower()
-    
     def on_save_node_to_palette(self, node):
         palette_name, ok = QtWidgets.QInputDialog.getText(self, t("dlg.save_palette_title"), t("dlg.save_palette_prompt"))
         if not (ok and palette_name): return

@@ -114,33 +114,5 @@ class ProcessManager:
         return self.start_node(node_name, info['language'], info['package_name'],
                                info['entry'], status_callback)
 
-    # ---- lifecycle (freezing via the standard ROS 2 mechanism) ---------------
-
-    def set_lifecycle_state(self, node_name, target_state, status_callback=None):
-        """target_state: 'configure' | 'activate' | 'deactivate' | 'cleanup' | 'shutdown'"""
-        def log(m):
-            if status_callback: status_callback(m)
-        container = self._container(log)
-        if container is None:
-            return False
-        cmd = ("source /opt/ros/humble/setup.bash && "
-               "source /root/ros2_ws/install/setup.bash 2>/dev/null; "
-               f"ros2 lifecycle set {shlex.quote('/' + node_name)} {shlex.quote(target_state)}")
-        result = container.exec_run(["bash", "-c", cmd])
-        output = result.output.decode(errors='ignore').strip()
-        if result.exit_code == 0:
-            log(f"'{node_name}' -> {target_state}: {output}")
-            return True
-        log(f"⚠ Lifecycle transition failed for '{node_name}': {output}")
-        return False
-
-    def get_lifecycle_state(self, node_name):
-        container = getattr(self.docker, "container", None) if self.docker else None
-        if container is None:
-            return ""
-        cmd = f"source /opt/ros/humble/setup.bash && ros2 lifecycle get {shlex.quote('/' + node_name)}"
-        result = container.exec_run(["bash", "-c", cmd])
-        return result.output.decode(errors='ignore').strip()
-
     def list_running(self):
         return list(self.processes.keys())

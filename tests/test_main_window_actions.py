@@ -240,11 +240,8 @@ class TestNodeMenuCommands:
         assert calls == [("Talker", True, {"language": "cpp", "package_name": pkg, "entry": "talker"})]
 
     def test_freeze_without_docker_reports(self, win):
-        from core.process_manager import ProcessManager
-        win.process_manager = ProcessManager(None)
+        """No session and no robot: Freeze says where it works instead of failing (bridge path: test_params_window)."""
+        win.container_manager = None
         g, n = self._node(win, "ros.cpp.CppCustomNode", "cam.cpp")
-        win._is_lifecycle_node = lambda node: True
         win.on_freeze_selected(g, "deactivate")
-        win._bg_tasks.wait_all(5000)
-        QtWidgets.QApplication.processEvents()
         assert any("Run" in m for m in win._logs)

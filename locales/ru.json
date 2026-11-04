@@ -125,7 +125,6 @@
   "log.user_node_import_error": "Ошибка импорта пользовательской ноды: {error}",
   "log.no_session_for_node": "Сессия не запущена — сначала нажмите Run.",
   "log.restart_no_file": "У '{name}' нет файла с кодом — перезапускать нечего.",
-  "log.not_lifecycle": "'{name}' — не lifecycle-нода, пропускаю.",
   "dlg.save_palette_title": "Сохранить в палитру",
   "dlg.save_palette_prompt": "Введите имя палитры:",
   "log.node_saved_palette": " Нода '{node}' сохранена в палитру '{palette}' как обычные файлы.",
@@ -432,5 +431,12 @@
   "params.nothing_to_save": "В этом окне ничего не меняли",
   "params.saved": "Сохранено в {path}: {names}",
   "params.no_target": "Живые параметры доступны, пока проект запущен (Запуск) или робот подключён на вкладке «Удалённо».",
-  "params.file_broken": "Не удалось прочитать {path} ({error}); файл не изменён"
+  "params.file_broken": "Не удалось прочитать {path} ({error}); файл не изменён",
+  "lc.no_target": "Заморозка работает, пока проект запущен (Запуск) или робот подключён на вкладке «Удалённо».",
+  "lc.not_running": "«{name}»: такой запущенной ноды нет",
+  "lc.changed": "{node}: {before} → {after} ({steps})",
+  "lc.already": "{node} уже в состоянии {state}",
+  "params.err_not_lifecycle": "{detail} — не lifecycle-нода (managed)",
+  "params.err_bad_transition": "Переход невозможен: {detail}",
+  "params.err_transition_failed": "Нода отказала в переходе: {detail}"
 }

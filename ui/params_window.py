@@ -17,7 +17,7 @@ from PySide6 import QtCore, QtWidgets
 
 from core import param_store
 from core.i18n import t
-from core.param_client import Coalescer, ParamBridgeError, check_change, snap
+from core.param_client import Coalescer, ParamBridgeError, check_change, match_node, snap
 
 SEND_INTERVAL = 0.1          # s: at most this often per parameter while a slider moves
 SLIDER_STEPS = 1000          # resolution of a slider over a continuous range
@@ -317,7 +317,7 @@ class ParamsWindow(QtWidgets.QWidget):
         self.log.emit(msg)
 
     def _on_nodes(self, nodes):
-        pick = self._match(nodes, self.node or self.initial_node) if nodes else ""
+        pick = (match_node(nodes, self.node or self.initial_node) or nodes[0]) if nodes else ""
         self.cb_node.blockSignals(True)         # one load below, not a second one from the signal
         self.cb_node.clear()
         self.cb_node.addItems(nodes)
@@ -328,18 +328,6 @@ class ParamsWindow(QtWidgets.QWidget):
             self._set_state(t("params.no_nodes"))
             return
         self._on_node_picked(pick)
-
-    @staticmethod
-    def _match(nodes, guess):
-        """The running node that the graph node most likely is: exact, same last segment, then case-insensitive."""
-        if guess:
-            g = guess if guess.startswith("/") else "/" + guess
-            for cond in (lambda n: n == g, lambda n: n.rsplit("/", 1)[-1] == g[1:],
-                         lambda n: n.rsplit("/", 1)[-1].lower() == g[1:].lower()):
-                for n in nodes:
-                    if cond(n):
-                        return n
-        return nodes[0]
 
     def _on_node_picked(self, node):
         if not node or self.client is None:

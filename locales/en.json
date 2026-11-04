@@ -123,7 +123,6 @@
   "log.user_node_import_error": "Error importing user node: {error}",
   "log.no_session_for_node": "No running session — press Run first.",
   "log.restart_no_file": "'{name}' has no source file — nothing to restart.",
-  "log.not_lifecycle": "'{name}' is not a lifecycle node, skipping.",
   "dlg.save_palette_title": "Save to Palette",
   "dlg.save_palette_prompt": "Enter Palette Name:",
   "log.node_saved_palette": " Node '{node}' saved to palette '{palette}' as native files.",
@@ -430,5 +429,12 @@
   "params.nothing_to_save": "Nothing was changed in this window",
   "params.saved": "Saved to {path}: {names}",
   "params.no_target": "Live parameters are available while the project is running (Run) or a robot is connected on the Remote tab.",
-  "params.file_broken": "{path} cannot be read ({error}); the file was not changed"
+  "params.file_broken": "{path} cannot be read ({error}); the file was not changed",
+  "lc.no_target": "Freeze/Unfreeze work while the project is running (Run) or a robot is connected on the Remote tab.",
+  "lc.not_running": "'{name}': no such running node",
+  "lc.changed": "{node}: {before} → {after} ({steps})",
+  "lc.already": "{node} is already {state}",
+  "params.err_not_lifecycle": "{detail} is not a lifecycle (managed) node",
+  "params.err_bad_transition": "Transition not possible: {detail}",
+  "params.err_transition_failed": "The node refused the transition: {detail}"
 }

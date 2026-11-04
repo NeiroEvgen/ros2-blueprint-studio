@@ -15,6 +15,10 @@ Protocol: one JSON object per line on stdin/stdout.
     -> {"id": 3, "op": "set", "node": "/talker", "name": "kp", "value": 1.5}
     <- {"id": 3, "ok": true, "value": 1.5}
     <- {"id": 3, "ok": false, "error": "rejected", "detail": "<reason from the node>"}
+    -> {"id": 4, "op": "lifecycle_get", "node": "/camera"}
+    <- {"id": 4, "ok": true, "state": "inactive"}
+    -> {"id": 5, "op": "lifecycle_set", "node": "/camera", "transition": "activate"}
+    <- {"id": 5, "ok": true, "state": "active"}
 Events without an id: {"event": "ready", "version": 1} at start, {"event": "fatal", ...} before exit.
 """
 import json
@@ -22,6 +26,7 @@ import os
 import sys
 
 PROTOCOL_VERSION = 1
+LIFECYCLE_TRANSITIONS = ("configure", "cleanup", "activate", "deactivate", "shutdown")
 
 # rcl_interfaces/msg/ParameterType
 TYPE_NAMES = {0: "not_set", 1: "bool", 2: "int", 3: "double", 4: "string", 5: "byte_array",
@@ -111,6 +116,13 @@ class Bridge:
                 if "value" not in req:
                     raise BridgeError("bad_request", "value is required")
                 body = {"value": self.backend.set_param(self._node(req), name, req["value"])}
+            elif op == "lifecycle_get":
+                body = {"state": self.backend.lifecycle_get(self._node(req))}
+            elif op == "lifecycle_set":
+                transition = req.get("transition")
+                if transition not in LIFECYCLE_TRANSITIONS:
+                    raise BridgeError("bad_request", f"transition must be one of {', '.join(LIFECYCLE_TRANSITIONS)}")
+                body = {"state": self.backend.lifecycle_set(self._node(req), transition)}
             else:
                 raise BridgeError("unknown_op", str(op))
             return {"id": rid, "ok": True, **body}
@@ -180,13 +192,27 @@ class RclpyBackend:
             raise BridgeError("timeout", f"{node}/{suffix}")
         return fut.result()
 
-    def list_nodes(self):
+    def _discover(self, settle=0.5):
+        """
+        Right after start DDS discovery delivers nodes one by one: wait until the node list
+        has not changed for `settle` seconds (or the timeout), so the first answer is complete.
+        """
         import time
-        if not self._warmed_up:                     # DDS discovery needs a moment after start
-            end = time.time() + self.timeout
-            while time.time() < end and len(self.node.get_node_names_and_namespaces()) <= 1:
-                self.rclpy.spin_once(self.node, timeout_sec=0.1)
-            self._warmed_up = True
+        if self._warmed_up:
+            return
+        end = time.time() + self.timeout
+        seen, stable_since = None, time.time()
+        while time.time() < end:
+            now = len(self.node.get_node_names_and_namespaces())
+            if now != seen:
+                seen, stable_since = now, time.time()
+            elif now > 1 and time.time() - stable_since >= settle:
+                break
+            self.rclpy.spin_once(self.node, timeout_sec=0.05)
+        self._warmed_up = True
+
+    def list_nodes(self):
+        self._discover()
         me = self.node.get_fully_qualified_name()
         out = []
         for name, ns in self.node.get_node_names_and_namespaces():
@@ -244,6 +270,47 @@ class RclpyBackend:
         if not res or not res[0].successful:
             raise BridgeError("rejected", res[0].reason if res else "")
         return coerced
+
+
+    # ---- lifecycle (managed nodes): /<node>/get_state, change_state, get_available_transitions ----
+
+    def _require_lifecycle(self, node):
+        """no_node if the node is not in the graph, not_lifecycle if it has no lifecycle services."""
+        import time
+        self._discover()
+        ns, _, name = node.rpartition("/")
+        end = time.time() + self.timeout
+        while True:
+            try:
+                services = {s for s, _ in self.node.get_service_names_and_types_by_node(name, ns or "/")}
+            except Exception:                       # the node is not (yet) known to the graph
+                services = None
+            if services is not None and f"{node}/get_state" in services:
+                return
+            if time.time() >= end:
+                raise BridgeError("no_node" if services is None else "not_lifecycle", node)
+            self.rclpy.spin_once(self.node, timeout_sec=0.1)
+
+    def lifecycle_get(self, node):
+        from lifecycle_msgs.srv import GetState
+        self._require_lifecycle(node)
+        return self._call(GetState, node, "get_state", GetState.Request()).current_state.label
+
+    def lifecycle_set(self, node, transition):
+        from lifecycle_msgs.srv import ChangeState, GetAvailableTransitions
+        state = self.lifecycle_get(node)
+        available = self._call(GetAvailableTransitions, node, "get_available_transitions",
+                               GetAvailableTransitions.Request()).available_transitions
+        match = next((t.transition for t in available if t.transition.label == transition), None)
+        if match is None:
+            labels = ", ".join(sorted({t.transition.label for t in available})) or "-"
+            raise BridgeError("bad_transition", f"{transition} from '{state}' (possible: {labels})")
+        req = ChangeState.Request()
+        req.transition.id = match.id
+        req.transition.label = match.label
+        if not self._call(ChangeState, node, "change_state", req).success:
+            raise BridgeError("transition_failed", f"{transition} from '{state}'")
+        return self.lifecycle_get(node)
 
 
 def main():

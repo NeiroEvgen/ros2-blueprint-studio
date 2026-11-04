@@ -285,6 +285,14 @@ class ParamClient:
         """The value the node really has now (after type conversion). ParamBridgeError if refused."""
         return self.request("set", node=node, name=name, value=value)["value"]
 
+    def lifecycle_get(self, node):
+        """'unconfigured' | 'inactive' | 'active' | 'finalized' (state label of a managed node)."""
+        return self.request("lifecycle_get", node=node)["state"]
+
+    def lifecycle_set(self, node, transition):
+        """One transition ('configure', 'activate', ...); returns the state after it."""
+        return self.request("lifecycle_set", node=node, transition=transition)["state"]
+
     def close(self):
         self._closed = True
         try:
@@ -294,6 +302,48 @@ class ParamClient:
 
 
 # ---------- helpers for the UI ----------
+
+def match_node(nodes, guess):
+    """
+    The running node that a graph node most likely is: exact name, then the same last
+    segment (a namespace added by launch), then case-insensitive. None if nothing fits.
+    """
+    if not guess:
+        return None
+    g = guess if guess.startswith("/") else "/" + guess
+    for cond in (lambda n: n == g, lambda n: n.rsplit("/", 1)[-1] == g[1:],
+                 lambda n: n.rsplit("/", 1)[-1].lower() == g[1:].lower()):
+        for n in nodes:
+            if cond(n):
+                return n
+    return None
+
+
+# state -> transitions that bring a managed node to the goal ("frozen" = inactive)
+_LIFECYCLE_PLAN = {
+    ("unconfigured", "active"): ("configure", "activate"),
+    ("inactive", "active"): ("activate",),
+    ("active", "active"): (),
+    ("active", "inactive"): ("deactivate",),
+    ("inactive", "inactive"): (),
+    ("unconfigured", "inactive"): (),       # not configured yet: nothing runs, nothing to freeze
+}
+
+
+def drive_lifecycle(client, node, goal):
+    """
+    Brings a managed node to goal ('active' | 'inactive'). Returns (state before, transitions done, state after).
+    ParamBridgeError from the bridge (not_lifecycle, a transition the node refused, ...) goes to the caller.
+    """
+    before = client.lifecycle_get(node)
+    plan = _LIFECYCLE_PLAN.get((before, goal))
+    if plan is None:
+        raise ParamBridgeError("bad_transition", f"{goal} from '{before}'")
+    state = before
+    for transition in plan:
+        state = client.lifecycle_set(node, transition)
+    return before, list(plan), state
+
 
 class Coalescer:
     """

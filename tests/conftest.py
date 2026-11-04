@@ -165,7 +165,7 @@ def docker_ready():
 
 @pytest.fixture(scope="module")
 def ros_container():
-    """A running demo node with declared ranges (tests/ros/demo_param_node.py)."""
+    """Demo nodes: parameters with ranges (pid_demo) and a managed node (camera_demo), tests/ros/."""
     if not docker_ready():
         pytest.skip(f"Docker with the {IMAGE} image is not available")
     name = f"studio_param_test_{os.getpid()}"
@@ -173,7 +173,8 @@ def ros_container():
     # own ROS domain: containers on the same Docker network otherwise see each other's nodes
     _subprocess.run(["docker", "run", "-d", "--name", name, "-e", "ROS_DOMAIN_ID=41",
                      "-v", f"{ROS_FIXTURES}:/demo:ro", IMAGE, "bash", "-c",
-                     "source /opt/ros/humble/setup.bash && exec python3 -u /demo/demo_param_node.py"],
+                     "source /opt/ros/humble/setup.bash && "
+                     "python3 -u /demo/demo_param_node.py & python3 -u /demo/demo_lifecycle_node.py & wait"],
                     check=True, capture_output=True)
     yield name
     _subprocess.run(["docker", "rm", "-f", name], capture_output=True)

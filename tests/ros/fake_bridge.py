@@ -21,13 +21,30 @@ class FakeBackend:
         }}
 
     def list_nodes(self):
-        return list(self.params)
+        return list(self.params) + list(self.lifecycle)
 
     def list_params(self, node):
         if node not in self.params:
             raise pb.BridgeError("no_node", node)
         return [{"name": n, "type": p["type"], "value": p["value"], "read_only": p.get("read_only", False),
                  "description": "", "range": p.get("range")} for n, p in sorted(self.params[node].items())]
+
+    lifecycle = {"/cam": "unconfigured"}
+    _moves = {("unconfigured", "configure"): "inactive", ("inactive", "activate"): "active",
+              ("active", "deactivate"): "inactive", ("inactive", "cleanup"): "unconfigured"}
+
+    def lifecycle_get(self, node):
+        if node not in self.lifecycle:
+            raise pb.BridgeError("not_lifecycle" if node in self.params else "no_node", node)
+        return self.lifecycle[node]
+
+    def lifecycle_set(self, node, transition):
+        state = self.lifecycle_get(node)
+        new = self._moves.get((state, transition))
+        if new is None:
+            raise pb.BridgeError("bad_transition", f"{transition} from '{state}'")
+        self.lifecycle[node] = new
+        return new
 
     def set_param(self, node, name, value):
         if node not in self.params:

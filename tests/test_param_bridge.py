@@ -60,6 +60,12 @@ class Backend:
             raise ZeroDivisionError("x")
         return value
 
+    def lifecycle_get(self, node):
+        return "inactive"
+
+    def lifecycle_set(self, node, transition):
+        return {"activate": "active"}.get(transition, "inactive")
+
 
 class TestHandle:
     bridge = pb.Bridge(Backend())
@@ -69,6 +75,13 @@ class TestHandle:
         assert self.bridge.handle({"id": 2, "op": "list_nodes"})["nodes"] == ["/a", "/b"]
         assert self.bridge.handle({"id": 3, "op": "list", "node": "pid"})["params"][0]["node"] == "/pid"
         assert self.bridge.handle({"id": 4, "op": "set", "node": "/p", "name": "kp", "value": 2})["value"] == 2
+
+    def test_lifecycle_ops(self):
+        assert self.bridge.handle({"id": 1, "op": "lifecycle_get", "node": "cam"})["state"] == "inactive"
+        assert self.bridge.handle({"id": 2, "op": "lifecycle_set", "node": "/cam",
+                                   "transition": "activate"})["state"] == "active"
+        bad = self.bridge.handle({"id": 3, "op": "lifecycle_set", "node": "/cam", "transition": "explode"})
+        assert bad["error"] == "bad_request"
 
     @pytest.mark.parametrize("req, error", [
         ({"id": 1, "op": "nope"}, "unknown_op"),
@@ -110,7 +123,7 @@ def client():
 
 class TestClientOverPipes:
     def test_list_and_set(self, client):
-        assert client.list_nodes() == ["/pid"]
+        assert "/pid" in client.list_nodes()
         params = {p.name: p for p in client.list_params("/pid")}
         assert params["kp"].range == {"min": 0.0, "max": 10.0, "step": 0.0} and params["frame"].read_only
         assert client.set_param("/pid", "kp", 2) == 2.0
@@ -124,6 +137,15 @@ class TestClientOverPipes:
                 client.set_param(*args)
             assert e.value.code == code
             assert not str(e.value).startswith("params.")      # a real text, not the key
+
+    def test_lifecycle_over_pipes(self, client):
+        assert client.list_nodes() == ["/cam", "/pid"]                 # sorted by the bridge
+        assert pc.drive_lifecycle(client, "/cam", "active") == ("unconfigured", ["configure", "activate"], "active")
+        assert pc.drive_lifecycle(client, "/cam", "inactive") == ("active", ["deactivate"], "inactive")
+        assert pc.drive_lifecycle(client, "/cam", "inactive") == ("inactive", [], "inactive")
+        with pytest.raises(ParamBridgeError) as e:
+            client.lifecycle_get("/pid")
+        assert e.value.code == "not_lifecycle" and "/pid" in str(e.value)
 
     def test_concurrent_requests_get_their_own_answers(self, client):
         results, errors = {}, []
@@ -165,7 +187,7 @@ class TestClientOverPipes:
     def test_setup_noise_before_ready_is_ignored(self):
         c = fake_client("noise").start(timeout=10)
         try:
-            assert c.list_nodes() == ["/pid"]
+            assert "/pid" in c.list_nodes()
         finally:
             c.close()
 
@@ -232,6 +254,44 @@ class TestOverSSH:
 
 
 # ---------- UI helpers ----------
+
+class TestMatchNode:
+    nodes = ["/robot/talker", "/listener", "/Camera"]
+
+    @pytest.mark.parametrize("guess, expected", [
+        ("listener", "/listener"), ("/listener", "/listener"), ("talker", "/robot/talker"),
+        ("camera", "/Camera"), ("nope", None), ("", None), (None, None),
+    ])
+    def test_match(self, guess, expected):
+        assert pc.match_node(self.nodes, guess) == expected
+
+
+class TestDriveLifecycle:
+    class Client:
+        def __init__(self, state):
+            self.state, self.done = state, []
+
+        def lifecycle_get(self, node):
+            return self.state
+
+        def lifecycle_set(self, node, transition):
+            self.done.append(transition)
+            self.state = {"configure": "inactive", "activate": "active", "deactivate": "inactive"}[transition]
+            return self.state
+
+    def test_unfreeze_configures_first(self):
+        c = self.Client("unconfigured")
+        assert pc.drive_lifecycle(c, "/n", "active") == ("unconfigured", ["configure", "activate"], "active")
+
+    def test_freeze_unconfigured_does_nothing(self):
+        c = self.Client("unconfigured")
+        assert pc.drive_lifecycle(c, "/n", "inactive") == ("unconfigured", [], "unconfigured") and not c.done
+
+    def test_finalized_is_an_error(self):
+        with pytest.raises(ParamBridgeError) as e:
+            pc.drive_lifecycle(self.Client("finalized"), "/n", "active")
+        assert e.value.code == "bad_transition"
+
 
 class TestCoalescer:
     def test_only_last_value_at_most_once_per_interval(self):
@@ -322,6 +382,32 @@ class TestRealRos:
                 assert e.value.code == code
             assert c.set_param("/pid_demo", "mask", [4, 5]) == [4, 5]
             assert c.set_param("/pid_demo", "rate_hz", 100.0) == 100
+        finally:
+            c.close()
+
+    def test_lifecycle_on_a_managed_node(self, ros_container):
+        c = ParamClient(PipeTransport(pc.local_argv(ros_container))).start()
+        try:
+            deadline = time.time() + 10
+            while "/camera_demo" not in c.list_nodes() and time.time() < deadline:
+                time.sleep(0.2)
+            assert pc.drive_lifecycle(c, "/camera_demo", "active") == \
+                ("unconfigured", ["configure", "activate"], "active")
+            assert pc.drive_lifecycle(c, "/camera_demo", "inactive") == ("active", ["deactivate"], "inactive")
+            for args, code in [(("/camera_demo", "activate"), None), (("/pid_demo", "activate"), "not_lifecycle"),
+                               (("/nope", "activate"), "no_node"), (("/camera_demo", "configure"), "bad_transition")]:
+                if code is None:
+                    c.lifecycle_set(*args)
+                    c.lifecycle_set("/camera_demo", "deactivate")
+                    continue
+                with pytest.raises(ParamBridgeError) as e:
+                    c.lifecycle_set(*args)
+                assert e.value.code == code, args
+            c.set_param("/camera_demo", "broken", True)          # on_activate returns FAILURE now
+            with pytest.raises(ParamBridgeError) as e:
+                c.lifecycle_set("/camera_demo", "activate")
+            assert e.value.code == "transition_failed"
+            c.set_param("/camera_demo", "broken", False)
         finally:
             c.close()
 

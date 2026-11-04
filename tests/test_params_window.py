@@ -389,6 +389,56 @@ class TestMainWindow:
         win._on_remote_changed(False, "", "")
         assert wait(lambda: len(closed) >= 2)
 
+    class LcClient:
+        def __init__(self, states):
+            self.states = dict(states)
+
+        def list_nodes(self):
+            return list(self.states)
+
+        def lifecycle_get(self, node):
+            if self.states[node] is None:
+                raise ParamBridgeError("not_lifecycle", node)
+            return self.states[node]
+
+        def lifecycle_set(self, node, transition):
+            self.states[node] = {"configure": "inactive", "activate": "active", "deactivate": "inactive"}[transition]
+            return self.states[node]
+
+    def freeze(self, win, client, target_state, names):
+        logs = []
+        win.system_log = logs.append
+        win.container_manager = type("CM", (), {"container": object(), "container_name": "sess"})()
+        win._param_bridge = type("B", (), {"get": lambda self, key, make: client, "close": lambda self: None})()
+        graph = win.graphs.all()[0]
+        for n in graph.all_nodes():
+            n.set_selected(n.name() in names)
+        win.on_freeze_selected(graph, target_state)
+        assert wait(lambda: len(logs) >= len(names), 5000)
+        return logs
+
+    def test_unfreeze_configures_and_activates(self, win):
+        client = self.LcClient({"/talker": "unconfigured", "/listener": None})
+        logs = self.freeze(win, client, "activate", ["talker", "listener"])
+        assert client.states["/talker"] == "active"
+        assert any("unconfigured → active" in m and "configure → activate" in m for m in logs)
+        assert any("/listener" in m and "lifecycle" in m for m in logs)       # not a managed node
+
+    def test_freeze_reports_already_inactive_and_missing_nodes(self, win):
+        client = self.LcClient({"/talker": "inactive"})
+        logs = self.freeze(win, client, "deactivate", ["talker", "listener"])
+        assert any("already inactive" in m for m in logs)
+        assert any("listener" in m and "no such running node" in m for m in logs)
+
+    def test_freeze_without_target(self, win):
+        logs = []
+        win.system_log = logs.append
+        win.container_manager = type("CM", (), {"container": None, "container_name": "s"})()
+        graph = win.graphs.all()[0]
+        graph.all_nodes()[0].set_selected(True)
+        win.on_freeze_selected(graph, "deactivate")
+        assert logs and "Run" in logs[0]
+
     def test_menu_has_parameters_entry(self, win):
         from core.i18n import t
         graph = win.graphs.all()[0]

@@ -1,9 +1,9 @@
 """
-Restart/Freeze from the context menu.
+Restart from the context menu.
 
 Restart used to always answer "not tracked": nodes start from the launch file, and
-ProcessManager only knew the ones it started itself. Freeze without Docker or without a session
-failed with AttributeError on None. Docker faked.
+ProcessManager only knew the ones it started itself. Without Docker or without a session it
+failed with AttributeError on None. Docker faked. (Freeze/Unfreeze go through the parameter bridge now.)
 """
 import re
 import types
@@ -88,12 +88,4 @@ def test_no_docker_or_no_session_is_reported_not_crashed(docker):
     logs = []
     spec = node_spec("ros.py.X", "talker.py", "demo")
     assert pm.restart_node("talker", logs.append, spec=spec) is False
-    assert pm.set_lifecycle_state("talker", "deactivate", logs.append) is False
-    assert pm.get_lifecycle_state("talker") == ""
-    assert len(logs) == 2 and all("Run" in m for m in logs)
-
-
-def test_lifecycle_name_is_quoted():
-    c = FakeContainer()
-    assert pm_with(c).set_lifecycle_state("cam node", "activate", lambda m: None) is True
-    assert "ros2 lifecycle set '/cam node' activate" in c.calls[0][0]
+    assert len(logs) == 1 and "Run" in logs[0]
