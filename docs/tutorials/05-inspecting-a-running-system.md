@@ -102,7 +102,7 @@ Boolean value is: False
 
 `ros2 param set` works too, but for tuning use Studio's **Parameters** window (right-click a node →
 *Parameters…*): sliders for declared ranges, the node's own refusals shown, values saved into the
-project. That is chapter 6.
+project. That is [chapter 6](06-parameters.md).
 
 ## Actions
 

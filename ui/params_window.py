@@ -421,6 +421,7 @@ class ParamsWindow(QtWidgets.QWidget):
             return                              # a newer value is already on its way
         row.revert_display()
         row.set_status(False, str(exc))
+        self._set_state(f"{row.info.name}: {exc}")          # visible at once, not only in the tooltip
         self.log.emit(f"{self.node}/{row.info.name}: {exc}")
 
     # ---------- buttons ----------

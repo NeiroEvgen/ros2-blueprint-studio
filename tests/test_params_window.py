@@ -140,6 +140,7 @@ class TestSimulation:
         assert wait(lambda: w.rows["kp"].status.text() == "✗")
         assert editor(w, "kp").value() == 1.0 and w.rows["kp"].confirmed == 1.0
         assert "cursed" in w.rows["kp"].status.toolTip()
+        assert "kp" in w.lbl_state.text() and "cursed" in w.lbl_state.text()   # not only in the tooltip
 
     def test_bad_list_is_not_sent(self, make_window):
         w, client = make_window()
