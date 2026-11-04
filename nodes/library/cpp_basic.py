@@ -7,6 +7,7 @@ class CppStringPubNode(RosNodeBase):
         self.add_output('out',color=MSG_COLORS['std_msgs/String'])
         self.add_text_input('node_name','Name',text='cpp_str_pub')
         self.add_text_input('topic_name','Topic',text='/chatter')
+        self.add_text_input('interval','Interval (s)',text='0.5')
         self._init_template('cpp_string_pub')
         self.set_color(20,20,100)
 

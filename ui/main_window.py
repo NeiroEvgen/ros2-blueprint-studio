@@ -234,7 +234,54 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         """Connects graph signals for opening the editor and the settings."""
         for graph in self.graphs.all():
             graph.node_double_clicked.connect(self.on_node_double_clicked)
+            graph.port_connected.connect(self._on_port_connected)
+            graph.property_changed.connect(self._on_property_changed)
             self.setup_graph_context_menus(graph)
+
+    # ---------- wires and topics ----------
+    # ROS connects nodes by topic name: the Topic fields decide, the wire only draws it.
+    # So a wire makes the subscriber take the publisher's topic, and a publisher's new topic
+    # follows its wires. (Loading a project does not emit these signals: saved fields stay.)
+
+    @staticmethod
+    def _topic_links(node):
+        """Nodes wired to this node's outputs that also have a Topic field."""
+        out = []
+        for port in node.output_ports():
+            for other in port.connected_ports():
+                peer = other.node()
+                if peer.has_property('topic_name'):
+                    out.append(peer)
+        return out
+
+    def _sync_topic(self, src, dst):
+        topic = src.get_property('topic_name')
+        if topic and dst.get_property('topic_name') != topic:
+            dst.set_property('topic_name', topic)
+            self.system_log(t("log.topic_synced", node=dst.name(), topic=topic, source=src.name()))
+
+    def _on_port_connected(self, in_port, out_port):
+        src, dst = out_port.node(), in_port.node()
+        if src.has_property('topic_name') and dst.has_property('topic_name'):
+            self._sync_topic(src, dst)
+
+    def _on_property_changed(self, node, name, value):
+        if name == 'topic_name':
+            for peer in self._topic_links(node):
+                self._sync_topic(node, peer)
+
+    def _topic_mismatches(self):
+        """(publisher, subscriber, its topic, their topic) for wired nodes whose Topic fields differ."""
+        found = []
+        for g in self.graphs.all():
+            for node in g.all_nodes():
+                if not node.has_property('topic_name'):
+                    continue
+                for peer in self._topic_links(node):
+                    if peer.get_property('topic_name') != node.get_property('topic_name'):
+                        found.append((node.name(), peer.name(), node.get_property('topic_name'),
+                                      peer.get_property('topic_name')))
+        return found
 
     def _set_node_visible(self, node, visible):
         """Hides/shows a node together with its connections."""
@@ -314,6 +361,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
 
     def _save_now(self):
         """Save the current project -> (ok, apt_deps); a successful Save clears "unsaved changes"."""
+        for pub, sub, pub_topic, sub_topic in self._topic_mismatches():
+            self.system_log(t("log.topic_mismatch", pub=pub, sub=sub, pub_topic=pub_topic, sub_topic=sub_topic))
         ok, deps = self._save_result(self.project_manager.save_project(self.current_project_path))
         if ok:
             self._mark_clean()

@@ -7,6 +7,7 @@ class PyStringPubNode(RosNodeBase):
         self.add_output('out',color=MSG_COLORS['std_msgs/String'])
         self.add_text_input('node_name','Name',text='py_str_pub')
         self.add_text_input('topic_name','Topic',text='/chatter')
+        self.add_text_input('interval','Interval (s)',text='0.5')
         self._init_template('py_string_pub')
 
 class PyStringSubNode(RosNodeBase):

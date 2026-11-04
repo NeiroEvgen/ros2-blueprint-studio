@@ -436,5 +436,7 @@
   "lc.already": "{node} is already {state}",
   "params.err_not_lifecycle": "{detail} is not a lifecycle (managed) node",
   "params.err_bad_transition": "Transition not possible: {detail}",
-  "params.err_transition_failed": "The node refused the transition: {detail}"
+  "params.err_transition_failed": "The node refused the transition: {detail}",
+  "log.topic_synced": "'{node}' now uses topic {topic} (wired to '{source}')",
+  "log.topic_mismatch": "⚠ '{pub}' and '{sub}' are wired but use different topics ({pub_topic} and {sub_topic}): ROS will not connect them"
 }

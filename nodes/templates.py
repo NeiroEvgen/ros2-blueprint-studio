@@ -89,14 +89,15 @@ class {class_name}(Node):
         # [AUTO-GEN-SUBS]
         {EXEC_IN_INIT}
         
-        # listen to the trigger from the timer
-        self.trigger_sub = self.create_subscription(String, 'topic_1', self.trigger_callback, 10)
+        # publishes on its own timer, like the official tutorial's minimal_publisher
+        self.timer = self.create_timer({interval}, self.timer_callback)
         self.i = 0
 
-    def trigger_callback(self, msg):
-        out_msg = String()
-        out_msg.data = f"Py: {self.i}"
-        self.pub.publish(out_msg)
+    def timer_callback(self):
+        msg = String()
+        msg.data = f"Py: {self.i}"
+        self.pub.publish(msg)
+        self.get_logger().info(f'Publishing: "{msg.data}"')
         self.i += 1
         
         # [AUTO-GEN-FIRE]
@@ -232,11 +233,11 @@ class {class_name} : public rclcpp::Node {
 public:
     {class_name}() : Node("{node_name}"), count_(0) {
         publisher_ = this->create_publisher<std_msgs::msg::String>("{topic_name}", 10);
-        timer_ = this->create_wall_timer(1s, [this](){
+        timer_ = this->create_wall_timer(std::chrono::duration<double>({interval}), [this](){
             auto msg = std_msgs::msg::String();
             msg.data = "Cpp: " + std::to_string(count_++);
             publisher_->publish(msg);
-            RCLCPP_INFO(this->get_logger(), "Pub: '%s'", msg.data.c_str());
+            RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", msg.data.c_str());
         });
     }
 private:
