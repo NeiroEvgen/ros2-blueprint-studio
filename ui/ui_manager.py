@@ -1,4 +1,3 @@
-import os
 from core.i18n import t
 from PySide6 import QtWidgets, QtCore, QtGui
 from ui.fonts import MONO_CSS
@@ -97,10 +96,6 @@ class UiManager:
         self.console_ros = None
         self.node_palette = None
         self.actions = {}
-        
-        self.user_lib_path = os.path.join(os.path.dirname(__file__), "user_lib")
-        if not os.path.exists(self.user_lib_path):
-            os.makedirs(self.user_lib_path)
 
     def on_group_clicked(self):
         graph = self.main_window.graphs.current(self.tabs.currentIndex())

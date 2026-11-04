@@ -1,12 +1,35 @@
 import os
 import shutil
+import sys
 import zipfile
 import yaml
 
 # relative to the application folder, not the current one: started from a shortcut or another
 # folder, a relative path pointed elsewhere and the palettes "disappeared"
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PALETTES_ROOT = os.path.join(APP_DIR, "nodes", "user_palettes")
+BUNDLED_PALETTES = os.path.join(APP_DIR, "nodes", "user_palettes")
+
+
+def palettes_root(frozen=None):
+    """
+    Where user palettes live. From sources: nodes/user_palettes. A packed EXE unpacks itself into a
+    temporary folder that is deleted on exit, so palettes saved there were lost: there they live in
+    Studio's settings folder, seeded once with the bundled examples.
+    """
+    frozen = getattr(sys, "frozen", False) if frozen is None else frozen
+    if not frozen:
+        return BUNDLED_PALETTES
+    from core.settings import settings_dir
+    root = os.path.join(settings_dir(), "user_palettes")
+    if not os.path.isdir(root):
+        if os.path.isdir(BUNDLED_PALETTES):
+            shutil.copytree(BUNDLED_PALETTES, root)
+        else:
+            os.makedirs(root, exist_ok=True)
+    return root
+
+
+PALETTES_ROOT = palettes_root()
 STUDIO_VERSION = "0.6.0"
 
 

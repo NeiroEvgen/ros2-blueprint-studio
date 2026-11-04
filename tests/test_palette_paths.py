@@ -55,3 +55,15 @@ def test_saved_palette_node_found_from_other_cwd(win, tmp_path, monkeypatch):
     before = len(graph.all_nodes())
     win.add_user_node_logic("USER_NODE:MyPal/Talker")
     assert len(graph.all_nodes()) == before + 1
+
+
+def test_packed_exe_keeps_palettes_in_the_settings_folder(tmp_path, monkeypatch):
+    """A onefile EXE unpacks to a temp folder deleted on exit: palettes saved there were lost."""
+    from core import palette_share
+    monkeypatch.setenv("STUDIO_SETTINGS_DIR", str(tmp_path / "settings"))
+    root = palette_share.palettes_root(frozen=True)
+    assert root == str(tmp_path / "settings" / "user_palettes")
+    assert os.listdir(root) == os.listdir(palette_share.BUNDLED_PALETTES)      # examples seeded once
+    (tmp_path / "settings" / "user_palettes" / "mine").mkdir()
+    assert "mine" in os.listdir(palette_share.palettes_root(frozen=True))     # not re-seeded over
+    assert palette_share.palettes_root(frozen=False) == palette_share.BUNDLED_PALETTES
