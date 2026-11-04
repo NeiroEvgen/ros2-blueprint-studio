@@ -173,3 +173,5 @@ destroyed, the callback is removed. The C++ node behaves the same in the window.
 | `ros2 param list / get / set` | the Parameters window; the commands work in the container |
 | refusing a value | `add_on_set_parameters_callback`; the reason shows in the window |
 | parameters from a launch file | **Save to project** → `src/config/params.yaml` → the generated launch |
+
+Next: [chapter 7](07-launch-files.md), launch files.
