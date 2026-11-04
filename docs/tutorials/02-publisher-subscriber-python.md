@@ -13,19 +13,18 @@ connects them because they use **the same topic name and message type**.
 
 Start from the Python project of [chapter 1](01-workspace-and-package.md).
 
-1. From the **Node Palette** drag three nodes onto the canvas:
-   **Timer (Start)**, **StringPub**, **StringSub**.
+1. From the **Node Palette** drag **StringPub** and **StringSub** onto the canvas.
 2. Fill the fields on the nodes:
 
    | Node | Name | Other fields |
    |---|---|---|
-   | Timer (Start) | `tick` | Interval (s): `0.5` |
-   | StringPub | `talker` | Topic: `/chatter` |
-   | StringSub | `listener` | Topic: `/chatter` |
+   | StringPub | `talker` | Topic: `/chatter`, Interval (s): `0.5` |
+   | StringSub | `listener` | (Topic is set by the wire in the next step) |
 
    *Name* is the ROS node name (what `ros2 node list` shows); the file on disk is named after the
    node's title on the canvas.
-3. Connect **out** of `talker` to **in** of `listener`.
+3. Connect **out** of `talker` to **in** of `listener`. The subscriber takes the publisher's
+   topic: the System Log says `'listener' now uses topic /chatter (wired to 'talker')`.
 4. **Run**. Studio saves, starts the session container and launches the nodes.
 
 ![The canvas](img/02_canvas.png)
@@ -35,57 +34,62 @@ double-click a row for its whole log.
 
 ![ROS2 Dashboard after Run](img/02_dashboard.png)
 
-`listener` prints `Heard: Py: 0`, `Py: 1`, ... twice a second. Python nodes appear as
-`python3-1`, `python3-2`, ... : these are launch's process names, numbered in the order of the
-launch file (`tick`, `talker`, `listener` here). `talker` itself does not log; only the listener does.
+`talker` prints `Publishing: "Py: 0"`, `listener` prints `Heard: Py: 0`, twice a second.
+Python nodes appear as `python3-1`, `python3-2`: these are launch's process names, numbered in the
+order of the launch file (`talker`, then `listener` here).
 
 ## What Studio generated
 
-`src/python/talker.py` (comments trimmed):
+`src/python/talker.py` (comments trimmed), the official publisher with other names:
 
 ```python
 class talker(Node):
     def __init__(self):
         super().__init__('talker')
         self.pub = self.create_publisher(String, '/chatter', 10)
-        self.trigger_sub = self.create_subscription(String, 'topic_1', self.trigger_callback, 10)
+        self.timer = self.create_timer(0.5, self.timer_callback)
         self.i = 0
 
-    def trigger_callback(self, msg):
-        out_msg = String()
-        out_msg.data = f"Py: {self.i}"
-        self.pub.publish(out_msg)
+    def timer_callback(self):
+        msg = String()
+        msg.data = f"Py: {self.i}"
+        self.pub.publish(msg)
+        self.get_logger().info(f'Publishing: "{msg.data}"')
         self.i += 1
 ```
 
-`src/python/listener.py` is the official subscriber almost line by line: `create_subscription(String,
-'/chatter', self.callback, 10)` and a callback that logs `Heard: ...`. `src/launch/project_launch.py`
-starts all three files.
+`src/python/listener.py` is the official subscriber: `create_subscription(String, '/chatter',
+self.callback, 10)` and a callback that logs `Heard: ...`. `src/launch/project_launch.py` starts both
+files.
 
-## Where Studio differs from the official tutorial
+## Topics, wires and the Topic field
 
-- **The publisher has no timer of its own.** In the official code the timer lives inside
-  `minimal_publisher`. Studio's palette splits *when* from *what*: **Timer (Start)** publishes a
-  tick on `topic_1`, and every node with a trigger subscription (here `talker`) acts on it.
-  One timer can drive several publishers. Without a Timer node on the canvas, `talker` never
-  publishes, and the listener stays silent. (The C++ publisher in chapter 3 has its own timer.)
-- **The wire does not create the topic. The Topic field does.** ROS connects nodes by topic name, and
-  Studio writes the *Topic* field into the code. The wire shows the connection on the canvas, but if
-  the two Topic fields differ, the nodes will not talk even with a wire between them. Keep them equal.
-- **Your edits stay.** Double-click a node to open its file in your editor. As long as the code is
-  Studio's unchanged template, Studio fills in the names on Save; once you edit it, your version is
-  kept. From then on the code decides, not the node's fields: the ROS node name is whatever
-  `super().__init__(...)` says, the topic is whatever `create_publisher` says.
+ROS does not know about the wire. It connects a publisher and a subscriber when their **topic
+names and message types match**, and Studio writes the *Topic* field into the code. The wire keeps
+the fields in step:
+
+- connecting a wire gives the subscriber the publisher's topic;
+- changing a publisher's topic changes it on every node wired to it;
+- if wired nodes still end up with different topics (you edited the subscriber's field), Save
+  warns in the System Log: *'talker' and 'listener' are wired but use different topics*.
+
+Nodes without a wire talk too, as long as the topics match: that is how ROS works, the wire is
+for you.
+
+## Your code stays yours
+
+Double-click a node to open its file in your editor. As long as the code is Studio's unchanged
+template, Studio fills in the names from the node's fields on Save. Once you edit it, your version
+is kept, and from then on the code decides, not the fields: the ROS node name is whatever
+`super().__init__(...)` says, the topic is whatever `create_publisher` says.
 
 ### Variant: exactly the official publisher
 
-1. Double-click `talker` and replace the whole file with the tutorial's `publisher_member_function.py`.
+1. Double-click `talker` and replace the whole file with the tutorial's
+   `publisher_member_function.py`.
 2. In it, change the topic `'topic'` to `'/chatter'`, the one `listener` subscribes to.
-3. Delete the Timer node: the official publisher has its own timer. On Save, Studio moves the
-   no longer used `tick.py` to `.blueprint/trash/` instead of deleting it.
-4. **Run**. The dashboard shows `Publishing: "Hello World: 0"` from the publisher and
-   `Heard: Hello World: 0` from `listener`; `ros2 node list` now shows `/minimal_publisher`
-   instead of `/talker`, the name from the code.
+3. **Run**. The dashboard shows `Publishing: "Hello World: 0"` and `Heard: Hello World: 0`;
+   `ros2 node list` now shows `/minimal_publisher` instead of `/talker`, the name from the code.
 
 ## Check it like the official tutorial
 
@@ -95,8 +99,8 @@ ROS 2 environment, so the same commands work there:
 ```bash
 docker exec -it ros2_orchestrator_session bash
 source /opt/ros/humble/setup.bash
-ros2 node list          # /listener  /talker  /tick
-ros2 topic list         # /chatter  /parameter_events  /rosout  /topic_1
+ros2 node list          # /listener  /talker
+ros2 topic list         # /chatter  /parameter_events  /rosout
 ros2 topic echo /chatter
 ```
 
@@ -105,9 +109,9 @@ ros2 topic echo /chatter
 | Concept (official tutorial) | Where it is in Studio |
 |---|---|
 | publisher, `create_publisher(type, topic, qos)` | StringPub node, *Topic* field |
+| timer, `create_timer(period, callback)` | StringPub node, *Interval* field |
 | subscriber and callback | StringSub node, `callback` in its file |
-| timer | Timer (Start) node, *Interval* field |
-| nodes are matched by topic name and type | the *Topic* fields, not the wire |
+| nodes are matched by topic name and type | the *Topic* fields; the wire keeps them equal |
 | `setup.py` entry points, `ros2 run` | not used: the launch file runs the scripts ([chapter 1](01-workspace-and-package.md)) |
 
-Next: the same pair in C++ (chapter 3, planned).
+Next: the same pair in C++, [chapter 3](03-publisher-subscriber-cpp.md).

@@ -24,7 +24,7 @@ Read the official tutorial alongside: it explains the concepts, these chapters s
 |---|---|---|---|
 | 1 | [Workspace, package and build](01-workspace-and-package.md) | Creating a workspace · Creating a package · Using colcon to build packages | ready |
 | 2 | [Publisher and subscriber (Python)](02-publisher-subscriber-python.md) | Writing a simple publisher and subscriber (Python) | ready |
-| 3 | Publisher and subscriber (C++) | Writing a simple publisher and subscriber (C++) | planned |
+| 3 | [Publisher and subscriber (C++)](03-publisher-subscriber-cpp.md) | Writing a simple publisher and subscriber (C++) | ready |
 | 4 | Service and client | Writing a simple service and client (C++ / Python) | planned |
 | 5 | Parameters, tuned live | Using parameters in a class (C++ / Python) | planned |
 | 6 | Launch files | Launch: Creating a launch file | planned |
