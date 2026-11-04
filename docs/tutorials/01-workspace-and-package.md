@@ -79,6 +79,10 @@ my_project/
   a dependency is still on you: it is the first thing to check when a build fails.
 - **The container is the workspace.** Everything ROS runs inside Docker. Your files stay on your
   disk; the container only mounts `src/`. `build/`, `install/` and `log/` live in the container.
+- **A local run stays on your computer.** Studio starts the session with `ROS_LOCALHOST_ONLY=1`:
+  your nodes do not see, and cannot command, robots on the same network, even in the same
+  `ROS_DOMAIN_ID`. Turn on **Real robot** (toolbar) to open the session to the network; the
+  container is recreated on the next Run when this or the domain/DDS settings change.
 
 ## Try it
 

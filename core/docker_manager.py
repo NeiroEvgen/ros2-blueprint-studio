@@ -59,6 +59,19 @@ def project_image_tag(project_path):
 DEPS_STAMP_PREFIX = "/root/ros2_ws/.studio_deps_"
 PROJECT_LABEL = "studio.project_src"
 
+# DDS settings that decide which nodes see each other. A container keeps the environment it was
+# created with, so when they differ from what this Run wants, the container is recreated: a reused
+# one silently kept the old domain/DDS (and the old network exposure).
+ROS_NETWORK_KEYS = ("ROS_DOMAIN_ID", "ROS_LOCALHOST_ONLY", "RMW_IMPLEMENTATION",
+                    "CYCLONEDDS_URI", "FASTRTPS_DEFAULT_PROFILES_FILE")
+
+
+def ros_network_env(env):
+    """The ROS network part of an environment: a dict or Docker's ["KEY=VALUE", ...]."""
+    if isinstance(env, (list, tuple)):
+        env = dict(e.split("=", 1) for e in env if "=" in e)
+    return {k: str(env[k]) for k in ROS_NETWORK_KEYS if env.get(k) not in (None, "")}
+
 
 class _NullTimer:
     """Stand-in when timing is not needed."""
@@ -146,7 +159,11 @@ class RosContainerManager:
                 self.image_name, project_image)
             owner = (getattr(existing, "labels", None) or {}).get(PROJECT_LABEL)
             same_project = owner is None or owner == abs_src      # no label: an old container
-            usable = same_image and same_project and not force_recreate
+            same_network = (ros_network_env(existing.attrs.get('Config', {}).get('Env') or [])
+                            == ros_network_env(getattr(self, 'extra_env', {}) or {}))
+            if same_image and same_project and not same_network:
+                log(t("docker.network_changed"))
+            usable = same_image and same_project and same_network and not force_recreate
             if usable and existing.status == "running":
                 self.container = existing
                 log("Reusing existing live session (container already running).")

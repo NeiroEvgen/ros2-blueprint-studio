@@ -440,5 +440,15 @@
   "log.topic_synced": "'{node}' now uses topic {topic} (wired to '{source}')",
   "log.topic_mismatch": "⚠ '{pub}' and '{sub}' are wired but use different topics ({pub_topic} and {sub_topic}): ROS will not connect them",
   "log.service_synced": "'{node}' now uses service {topic} (wired to '{source}')",
-  "log.service_mismatch": "⚠ '{pub}' and '{sub}' are wired but use different services ({pub_topic} and {sub_topic}): the client will wait forever"
+  "log.service_mismatch": "⚠ '{pub}' and '{sub}' are wired but use different services ({pub_topic} and {sub_topic}): the client will wait forever",
+  "rp.switch_cancelling": "Another project is opened: stopping the build on the target and disconnecting…",
+  "rp.checking_sync": "Checking that the target has the current files…",
+  "rp.outdated_title": "The target has older files",
+  "rp.outdated_text": "Files that differ between the project and the target: {count}\n\n{files}\n\nThe build uses the files on the target, so it would build the old code.",
+  "rp.sync_and_build": "Sync and build",
+  "rp.build_as_is": "Build as is",
+  "docker.network_changed": "ROS network settings changed (domain, DDS or Real robot): recreating the session container. Dependencies are installed again once.",
+  "log.network_isolated": "Local session: ROS traffic stays on this computer (ROS_LOCALHOST_ONLY=1). Turn on Real robot to talk to robots on the network.",
+  "log.network_open": "Real robot: the session is open to the network; nodes see and can command robots in the same ROS domain.",
+  "log.network_next_run": "The network mode applies on the next Run (the session container is recreated)."
 }

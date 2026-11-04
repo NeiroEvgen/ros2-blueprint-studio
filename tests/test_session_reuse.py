@@ -143,3 +143,46 @@ def test_invalid_project_image_reference_does_not_break_run(tmp_path):
     m.start_session(proj, logs.append)
     assert m.client.created[0] == "img:1"
     assert any("WARN" in l for l in logs)
+
+
+# ---------- ROS network settings ----------
+# A container keeps the environment it was created with: a reused one silently kept the old
+# ROS domain / DDS / network exposure. Now it is recreated when they differ.
+
+def test_ros_network_env_reads_dicts_and_docker_lists():
+    from core.docker_manager import ros_network_env
+    assert ros_network_env(["PATH=/bin", "ROS_DOMAIN_ID=5", "ROS_LOCALHOST_ONLY=1", "X=a=b"]) == \
+        {"ROS_DOMAIN_ID": "5", "ROS_LOCALHOST_ONLY": "1"}
+    assert ros_network_env({"ROS_DOMAIN_ID": 5, "RMW_IMPLEMENTATION": ""}) == {"ROS_DOMAIN_ID": "5"}
+
+
+def _box_with_env(src, env):
+    box = Box("running", "img:1", src)
+    box.attrs["Config"]["Env"] = [f"{k}={v}" for k, v in env.items()]
+    return box
+
+
+def test_same_network_settings_reuse(tmp_path):
+    m, proj, src = start(tmp_path, None)
+    m.extra_env = {"ROS_DOMAIN_ID": "0", "ROS_LOCALHOST_ONLY": "1"}
+    box = _box_with_env(src, {"ROS_DOMAIN_ID": "0", "ROS_LOCALHOST_ONLY": "1", "PATH": "/bin"})
+    m.client.existing = box
+    m.start_session(proj)
+    assert m.container is box and not box.removed
+
+
+@pytest.mark.parametrize("old", [
+    {"ROS_DOMAIN_ID": "0", "ROS_LOCALHOST_ONLY": "0"},     # Real robot was on
+    {"ROS_DOMAIN_ID": "7", "ROS_LOCALHOST_ONLY": "1"},     # another domain
+    {"ROS_DOMAIN_ID": "0"},                                # created before isolation existed
+])
+def test_changed_network_settings_recreate(tmp_path, old):
+    m, proj, src = start(tmp_path, None)
+    m.extra_env = {"ROS_DOMAIN_ID": "0", "ROS_LOCALHOST_ONLY": "1"}
+    box = _box_with_env(src, old)
+    m.client.existing = box
+    logs = []
+    m.start_session(proj, logs.append)
+    assert box.removed and m.client.created is not None
+    assert m.client.created[1]["environment"]["ROS_LOCALHOST_ONLY"] == "1"
+    assert any("recreating" in x for x in logs)

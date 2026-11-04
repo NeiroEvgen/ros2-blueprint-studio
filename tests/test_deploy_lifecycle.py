@@ -9,6 +9,7 @@ Qt offscreen, Docker faked.
 import os
 import shutil
 import threading
+import time
 
 import pytest
 
@@ -165,3 +166,52 @@ def test_remote_panel_shutdown_cancels_build_and_waits(app):
     panel._tasks.start(lambda emit: time.sleep(0.3), parent=panel)
     assert panel.shutdown(5000) is True
     assert cancelled == [1] and disconnected == [1] and not panel._tasks.busy
+
+
+def test_remote_project_switch_during_build_cancels_on_target(app, tmp_path):
+    """Opening another project during a remote Build used to drop the connection and leave colcon running."""
+    from ui.remote_panel import RemotePanel
+    panel = RemotePanel()
+    calls, changes = [], []
+    panel.connection_changed.connect(lambda *a: changes.append(a))
+    panel.session = type("S", (), {
+        "cancel": lambda self: calls.append("cancel"),
+        "disconnect": lambda self: calls.append("disconnect"),
+        "connected": True})()
+    panel._building = True
+    panel._tasks.start(lambda emit: time.sleep(0.3), parent=panel)
+    panel.set_project(str(tmp_path))
+    assert calls == ["cancel", "disconnect"] and not panel._tasks.busy
+    assert panel.session is None and not panel._building
+    assert changes and changes[-1][0] is False
+
+
+def test_remote_project_switch_when_idle_just_disconnects(app, tmp_path):
+    from ui.remote_panel import RemotePanel
+    panel = RemotePanel()
+    calls = []
+    panel.session = type("S", (), {
+        "cancel": lambda self: calls.append("cancel"),
+        "disconnect": lambda self: calls.append("disconnect"),
+        "connected": True})()
+    panel.set_project(str(tmp_path))
+    assert calls == ["disconnect"]
+
+
+@pytest.mark.parametrize("real_robot, expected", [(False, "1"), (True, "0")])
+def test_run_isolates_the_session_unless_real_robot(win, real_robot, expected):
+    """Linux runs the session with host networking: a local run must not join robots' DDS traffic."""
+    win._real_robot = real_robot
+    win.on_run_project()
+    assert win.container_manager.extra_env["ROS_LOCALHOST_ONLY"] == expected
+    assert any(("ROS_LOCALHOST_ONLY=1" in m) != real_robot for m in win._logs)
+
+
+def test_isolation_survives_a_broken_container_config(win):
+    os.makedirs(os.path.join(win.current_project_path, ".blueprint", "containers"), exist_ok=True)
+    with open(os.path.join(win.current_project_path, ".blueprint", "containers", "main.yaml"), "w",
+              encoding="utf-8") as f:
+        f.write("[broken")
+    win._real_robot = False
+    win.on_run_project()
+    assert win.container_manager.extra_env.get("ROS_LOCALHOST_ONLY") == "1"

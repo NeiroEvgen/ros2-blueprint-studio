@@ -506,18 +506,26 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         if not self.container_manager or not self.container_manager.container:
             self.system_log(t("log.session_not_running"))
             return
-        try:
-            self.container_manager.start_foxglove_bridge(self.system_log)
-        except Exception as e:
-            self.system_log(t("log.foxglove_error", error=e))
-            return
+        # the first start installs foxglove_bridge with apt (minutes): off the UI thread,
+        # otherwise the window froze and Windows offered to kill Studio
+        button = self.ui.actions['visualize']
+        button.setEnabled(False)
+        manager = self.container_manager
 
-        # open Foxglove in the browser, auto-connecting to ws://localhost:8765
-        import webbrowser
-        url = ("https://app.foxglove.dev/?ds=foxglove-websocket"
-               "&ds.url=ws%3A%2F%2Flocalhost%3A8765")
-        webbrowser.open(url)
-        self.system_log(t("log.foxglove_opened"))
+        def done(_):
+            button.setEnabled(True)
+            # open Foxglove in the browser, auto-connecting to ws://localhost:8765
+            import webbrowser
+            url = ("https://app.foxglove.dev/?ds=foxglove-websocket"
+                   "&ds.url=ws%3A%2F%2Flocalhost%3A8765")
+            webbrowser.open(url)
+            self.system_log(t("log.foxglove_opened"))
+
+        def fail(error):
+            button.setEnabled(True)
+            self.system_log(t("log.foxglove_error", error=error))
+
+        self._background(lambda emit: manager.start_foxglove_bridge(emit), on_done=done, on_fail=fail)
 
     def on_clear_graph(self):
         graph = self.graphs.current(self.ui.tabs.currentIndex())
@@ -549,11 +557,18 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         self.system_log(t("log.starting"))
 
         
+        env = {}
         try:
             store = ContainerConfigStore(self.current_project_path)
-            self.container_manager.extra_env = resolved_env(store.get("main"))
+            env = resolved_env(store.get("main"))
         except Exception as e:
             self.system_log(t("log.env_skipped", error=e))
+        # The session runs with host networking on Linux: without this, nodes of a "local"
+        # simulation joined the DDS domain of real robots on the same network and could
+        # publish to them. Only Real robot mode opens the session to the network.
+        env["ROS_LOCALHOST_ONLY"] = "0" if self._real_robot else "1"
+        self.container_manager.extra_env = env
+        self.system_log(t("log.network_open") if self._real_robot else t("log.network_isolated"))
 
         # 2. Deploy in a separate thread
         self.deploy_worker = DeployWorker(self.container_manager, self.current_project_path, extra_apt_packages=apt_packages)
@@ -707,6 +722,8 @@ class RosVisualRunner(QtWidgets.QMainWindow):
                 self.ui.console_sys.append(t("log.real_robot_not_saved", error=e))
         self._refresh_context()
         self.system_log(t("log.target_robot") if self._real_robot else t("log.target_sim"))
+        if self._deploy_running():
+            self.system_log(t("log.network_next_run"))
 
     def ros_log(self, text):
         self.dashboard.process_log(text)
@@ -812,12 +829,13 @@ class RosVisualRunner(QtWidgets.QMainWindow):
         spec = self._node_run_spec(node)
         return spec["entry"] if spec and spec["language"] == "cpp" else node.name()
 
-    def _background(self, fn):
-        """Docker commands (build, lifecycle) off the UI thread."""
+    def _background(self, fn, on_done=None, on_fail=None):
+        """Docker commands (build, lifecycle, Foxglove) off the UI thread; fn(emit_line)."""
         if not hasattr(self, "_bg_tasks"):
             from ui.qt_worker import TaskHost
             self._bg_tasks = TaskHost()
-        self._bg_tasks.start(fn, on_fail=self.system_log, on_line=self.system_log, parent=self)
+        return self._bg_tasks.start(fn, on_done=on_done, on_fail=on_fail or self.system_log,
+                                    on_line=self.system_log, parent=self)
 
     def on_restart_selected(self, graph, *args, **kwargs):
         jobs = []

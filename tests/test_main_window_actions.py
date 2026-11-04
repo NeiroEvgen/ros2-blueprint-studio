@@ -3,6 +3,7 @@ Main window: the Open/Save toolbar buttons used not to be connected; Run failed 
 TypeError if save_project returned False. Qt offscreen, Docker faked.
 """
 import os
+import time
 import types
 
 import pytest
@@ -245,3 +246,43 @@ class TestNodeMenuCommands:
         g, n = self._node(win, "ros.cpp.CppCustomNode", "cam.cpp")
         win.on_freeze_selected(g, "deactivate")
         assert any("Run" in m for m in win._logs)
+
+
+class TestFoxglove:
+    """Visualize used to install foxglove_bridge with apt in the UI thread: the window froze for minutes."""
+
+    def test_install_runs_in_background_and_opens_browser_after(self, win, monkeypatch):
+        import threading
+        import webbrowser
+        opened, release = [], threading.Event()
+        monkeypatch.setattr(webbrowser, "open", lambda url: opened.append(url))
+
+        class Manager:
+            container = object()
+
+            def start_foxglove_bridge(self, log):
+                log("installing...")
+                release.wait(5)
+        win.container_manager = Manager()
+        win.ui.actions['viz_mode'].setCurrentIndex(0)                  # Foxglove
+        t0 = time.time()
+        win.on_visualize()
+        assert time.time() - t0 < 0.5                                  # the UI thread is free
+        assert not win.ui.actions['visualize'].isEnabled() and not opened
+        release.set()
+        win._bg_tasks.wait_all(5000)
+        QtWidgets.QApplication.processEvents()
+        assert opened and "8765" in opened[0] and win.ui.actions['visualize'].isEnabled()
+
+    def test_failure_is_reported_and_button_comes_back(self, win, monkeypatch):
+        class Manager:
+            container = object()
+
+            def start_foxglove_bridge(self, log):
+                raise RuntimeError("apt failed")
+        win.container_manager = Manager()
+        win.ui.actions['viz_mode'].setCurrentIndex(0)
+        win.on_visualize()
+        win._bg_tasks.wait_all(5000)
+        QtWidgets.QApplication.processEvents()
+        assert any("apt failed" in m for m in win._logs) and win.ui.actions['visualize'].isEnabled()

@@ -118,8 +118,19 @@ class RemotePanel(QtWidgets.QWidget):
         self.ed_cws.setText(p.container_workspace); self.ed_ros.setText(p.ros_setup)
 
     def set_project(self, path):
+        had_session = self.session is not None
+        if had_session and self._tasks.busy:
+            # Sync/Build of the previous project is still running: a bare disconnect left colcon
+            # running on the robot as an orphan. Cancel it there first and wait for the threads.
+            self.log.emit(t("rp.switch_cancelling"))
+            self.shutdown()
+            self._building = False
         if self.session:
             self._disconnect()
+        elif had_session:                       # shutdown() already closed the connection
+            self._state(t("rp.not_connected"))
+            self.log.emit(t("rp.disconnected_log"))
+            self.connection_changed.emit(False, "", "")
         self.project_path = path
         if path:
             self._fill_form(ProfileStore(path).load())
@@ -215,12 +226,7 @@ class RemotePanel(QtWidgets.QWidget):
         self._state(t("rp.sync_running"))
 
         def done(report):
-            self._state(report.summary())
-            if report.conflicts:
-                QtWidgets.QMessageBox.warning(
-                    self, t("rp.conflicts_title"),
-                    t("rp.conflicts_text",
-                      files="\n".join(f"{r}: {w}" for r, w in report.conflicts)))
+            self._show_sync_result(report)
             self._update_buttons()
 
         self._tasks.start(lambda emit: s.sync(on_line=emit, dry_run=dry),
@@ -228,19 +234,75 @@ class RemotePanel(QtWidgets.QWidget):
         self._update_buttons()
 
     def on_build(self):
+        """
+        Build on the target. colcon builds what is ON the target: if the project changed since the
+        last Sync, the robot used to build the old code without a word. A dry-run Sync first
+        (local scan + the manifest on the target, no upload) finds that and asks.
+        """
         s = self.session
+        self._state(t("rp.checking_sync"))
+
+        def checked(report):
+            pending = list(report.uploaded) + list(report.deleted)
+            sync_first = False
+            if pending:
+                choice = self._ask_sync_before_build(pending)
+                if choice == "cancel":
+                    self._state(t("rp.connected", where=s.profile.display()))
+                    self._update_buttons()
+                    return
+                sync_first = choice == "sync"
+            self._start_build(s, sync_first)
+
+        self._tasks.start(lambda emit: s.sync(dry_run=True), checked, self._fail, parent=self)
+        self._update_buttons()
+
+    def _ask_sync_before_build(self, files):
+        """'sync' | 'build' | 'cancel'. Separate method: tests answer instead of a dialog."""
+        shown = "\n".join(files[:15]) + ("\n…" if len(files) > 15 else "")
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setWindowTitle(t("rp.outdated_title"))
+        box.setText(t("rp.outdated_text", count=len(files), files=shown))
+        sync_btn = box.addButton(t("rp.sync_and_build"), QtWidgets.QMessageBox.AcceptRole)
+        build_btn = box.addButton(t("rp.build_as_is"), QtWidgets.QMessageBox.DestructiveRole)
+        box.addButton(QtWidgets.QMessageBox.Cancel)
+        box.setDefaultButton(sync_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        return "sync" if clicked is sync_btn else "build" if clicked is build_btn else "cancel"
+
+    def _start_build(self, s, sync_first):
         self._building = True
         self._state(t("rp.building"))
 
-        def done(rc):
+        def work(emit):
+            if sync_first:
+                report = s.sync(on_line=emit)
+                if report.conflicts:
+                    return report                # not built: the conflicts are shown first
+            return s.build(emit)
+
+        def done(result):
             self._building = False
-            self._state(t("rp.build_ok") if rc == 0 else t("rp.build_failed", rc=rc))
-            self.log.emit(t("rp.build_finished", rc=rc))
+            if not isinstance(result, int):       # Sync stopped on conflicts
+                self._show_sync_result(result)
+                self._update_buttons()
+                return
+            self._state(t("rp.build_ok") if result == 0 else t("rp.build_failed", rc=result))
+            self.log.emit(t("rp.build_finished", rc=result))
             self._update_buttons()
 
-        self._tasks.start(lambda emit: s.build(emit), done, self._fail,
-                          on_line=self.log.emit, parent=self)
+        self._tasks.start(work, done, self._fail, on_line=self.log.emit, parent=self)
         self._update_buttons()
+
+    def _show_sync_result(self, report):
+        self._state(report.summary())
+        if report.conflicts:
+            QtWidgets.QMessageBox.warning(
+                self, t("rp.conflicts_title"),
+                t("rp.conflicts_text",
+                  files="\n".join(f"{r}: {w}" for r, w in report.conflicts)))
 
     def on_terminal(self):
         prof = self.profile_from_form()
