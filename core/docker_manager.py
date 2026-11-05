@@ -343,14 +343,16 @@ class RosContainerManager:
         launch_cmd_full = launch_cmd[:-1] + " 2>&1'"
         launch_stream = self.container.exec_run(launch_cmd_full, stream=True, tty=True)
 
+        # Docker hands over arbitrary chunks: several lines in one, or half a line. Each chunk
+        # used to be stripped and passed on without its newline, so the dashboard (which ends a
+        # line at "\n") glued records together and missed most node output (seen on Windows).
         got_output = False
-        for line in launch_stream.output:
+        for text in colcon.iter_lines(launch_stream.output):
             if not got_output:
                 timer.mark("first_output")
             got_output = True
-            text = line.decode('utf-8', errors='replace').strip()
             if text:
-                ros_callback(text)
+                ros_callback(text + "\n")
 
         if not got_output:
             ros_callback(t("launch.no_output"))

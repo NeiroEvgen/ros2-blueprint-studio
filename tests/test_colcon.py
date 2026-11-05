@@ -133,7 +133,7 @@ def test_ok_build_launches():
     sys_log, ros_log = [], []
     _manager(c).run_project_launch(sys_log.append, ros_log.append)
     assert any("ros2 launch" in x for x in c.cmds)
-    assert "launched" in ros_log
+    assert "launched\n" in ros_log                 # whole lines: the dashboard ends a record at \n
     assert any("Build phase finished" in m for m in sys_log)
 
 

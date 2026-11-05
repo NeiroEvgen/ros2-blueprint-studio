@@ -128,3 +128,40 @@ class TestRunProjectLaunchDeps:
         assert lines[0] == "APT update"
         assert lines[1] == "APT install -y ros-humble-moveit"
         assert lines[2].startswith("ROSDEP install")
+
+
+class LaunchChunks(FakeContainer):
+    """ros2 launch output cut the way Docker delivers it: lines glued, split, CRLF from the tty."""
+    CHUNKS = [b"[INFO] [launch]: Default logging verbosity is set to INFO\r\n[INFO] [python3-1]: process",
+              b" started with pid [35]\r\n",
+              b"[python3-1] [INFO] [123.4] [add_two_ints_server]: Incoming request: a: 2 b: 3\r\n[python3-2] [INF",
+              b"O] [123.5] [add_two_ints_client]: Result of add_two_ints: for 2 + 3 = 5"]
+
+    def exec_run(self, cmd, **kw):
+        if kw.get("stream") and "ros2 launch" in _cmd_text(cmd):
+            self.calls.append((cmd, kw))
+            return types.SimpleNamespace(output=iter(self.CHUNKS), exit_code=0)
+        return super().exec_run(cmd, **kw)
+
+
+class TestLaunchOutput:
+    def test_each_line_reaches_the_dashboard_whole(self):
+        lines = []
+        _manager(LaunchChunks()).run_project_launch(lambda m: None, lines.append)
+        assert lines == [
+            "[INFO] [launch]: Default logging verbosity is set to INFO\n",
+            "[INFO] [python3-1]: process started with pid [35]\n",
+            "[python3-1] [INFO] [123.4] [add_two_ints_server]: Incoming request: a: 2 b: 3\n",
+            "[python3-2] [INFO] [123.5] [add_two_ints_client]: Result of add_two_ints: for 2 + 3 = 5\n",
+        ]
+
+    def test_dashboard_shows_one_row_per_node(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        qtw = pytest.importorskip("PySide6.QtWidgets")
+        qtw.QApplication.instance() or qtw.QApplication([])
+        from ui.dashboard import ConsoleDashboard
+        dash = ConsoleDashboard()
+        _manager(LaunchChunks()).run_project_launch(lambda m: None, dash.process_log)
+        assert "Result of add_two_ints" in "".join(dash.history["python3-2"])
+        assert "Incoming request" in "".join(dash.history["python3-1"])
+        assert not any("set to INFO[INFO]" in "".join(h) for h in dash.history.values())   # nothing glued
