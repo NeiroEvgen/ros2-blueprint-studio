@@ -14,10 +14,15 @@ launch file so the node starts with the right value.
 ## In Studio
 
 Start from the publisher of [chapter 2](02-publisher-subscriber-python.md). Double-click `talker`
-and give it two parameters: the text it publishes, and the period with a declared range.
+and replace **the whole file** with this one: the same publisher, with two parameters, the text
+it publishes and the period with a declared range.
 
 ```python
+import rclpy
+from rclpy.node import Node
 from rcl_interfaces.msg import FloatingPointRange, ParameterDescriptor, SetParametersResult
+from std_msgs.msg import String
+
 
 class Talker(Node):
     def __init__(self):
@@ -51,9 +56,28 @@ class Talker(Node):
         self.pub.publish(msg)
         self.get_logger().info(f'Publishing: "{msg.data}"')
         self.i += 1
+
+
+def main():
+    rclpy.init()
+    node = Talker()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
 ```
 
-(Keep the imports and `main()` of the file; rename the class in `main()` too.)
+> [!TIP]
+> If the node does not show up in the Parameters window, it probably did not start. Double-click
+> its row on the ROS2 Dashboard: a Python traceback there (for example `NameError` after renaming
+> the class but not the call in `main()`) tells you why.
+
 Two things go beyond the official example, and both matter on a real robot:
 
 - **The range** (`FloatingPointRange`) is part of the parameter. ROS itself refuses `period = 5.0`;
