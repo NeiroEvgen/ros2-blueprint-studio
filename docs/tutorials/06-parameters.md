@@ -161,33 +161,78 @@ same refusals.
 
 ## The same in C++
 
-```cpp
-rcl_interfaces::msg::ParameterDescriptor period_desc;
-period_desc.description = "Seconds between messages";
-rcl_interfaces::msg::FloatingPointRange range;
-range.from_value = 0.1;
-range.to_value = 2.0;
-range.step = 0.1;
-period_desc.floating_point_range.push_back(range);
-declare_parameter("message", "Hello world");
-declare_parameter("period", 0.5, period_desc);
+In a C++ project ([chapter 3](03-publisher-subscriber-cpp.md)), double-click `talker` and replace
+**the whole file** `src/cpp/talker.cpp` with this one. Run builds it with colcon as usual.
 
-on_set_ = add_on_set_parameters_callback(
-    [this](const std::vector<rclcpp::Parameter> & params) {
-        rcl_interfaces::msg::SetParametersResult result;
-        result.successful = true;
-        for (const auto & p : params) {
-            if (p.get_name() == "message" && p.as_string().empty()) {
-                result.successful = false;
-                result.reason = "message must not be empty";
-            }
-        }
-        return result;
-    });
+```cpp
+#include <chrono>
+#include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/string.hpp"
+
+class Talker : public rclcpp::Node {
+public:
+    Talker() : Node("talker") {
+        rcl_interfaces::msg::ParameterDescriptor period_desc;
+        period_desc.description = "Seconds between messages";
+        rcl_interfaces::msg::FloatingPointRange range;
+        range.from_value = 0.1;
+        range.to_value = 2.0;
+        range.step = 0.1;
+        period_desc.floating_point_range.push_back(range);
+        declare_parameter("message", "Hello world");
+        declare_parameter("period", 0.5, period_desc);
+
+        on_set_ = add_on_set_parameters_callback(
+            [this](const std::vector<rclcpp::Parameter> & params) {
+                rcl_interfaces::msg::SetParametersResult result;
+                result.successful = true;
+                for (const auto & p : params) {
+                    if (p.get_name() == "message" && p.as_string().empty()) {
+                        result.successful = false;
+                        result.reason = "message must not be empty";
+                        return result;
+                    }
+                }
+                for (const auto & p : params) {
+                    if (p.get_name() == "period") {
+                        restart_timer(p.as_double());
+                    }
+                }
+                return result;
+            });
+        pub_ = create_publisher<std_msgs::msg::String>("/chatter", 10);
+        restart_timer(get_parameter("period").as_double());
+    }
+
+private:
+    void restart_timer(double period) {
+        timer_ = create_wall_timer(std::chrono::duration<double>(period), [this]() {
+            std_msgs::msg::String msg;
+            msg.data = get_parameter("message").as_string() + ": " + std::to_string(count_++);
+            pub_->publish(msg);
+            RCLCPP_INFO(get_logger(), "Publishing: '%s'", msg.data.c_str());
+        });
+    }
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_;
+    rclcpp::TimerBase::SharedPtr timer_;
+    OnSetParametersCallbackHandle::SharedPtr on_set_;
+    size_t count_ = 0;
+};
+
+int main(int argc, char ** argv) {
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<Talker>());
+    rclcpp::shutdown();
+    return 0;
+}
 ```
 
-Keep the handle (`on_set_`, an `OnSetParametersCallbackHandle::SharedPtr` member): when it is
-destroyed, the callback is removed. The C++ node behaves the same in the window.
+- Keep the handle `on_set_` (an `OnSetParametersCallbackHandle::SharedPtr` member): when it is
+  destroyed, the callback is removed and the node stops refusing values.
+- In the Parameters window a C++ node also shows `qos_overrides.…` parameters: rclcpp declares
+  them itself, read-only. Leave them alone.
+- Checked the same way as the Python node: `period` 1.0 applies, 5.0 is refused by the range,
+  an empty `message` by the callback.
 
 ## What you learned
 
